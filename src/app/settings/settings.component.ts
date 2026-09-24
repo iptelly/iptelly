@@ -6,10 +6,11 @@ import { Router } from "@angular/router";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Source } from "../models/source";
 import { MemoryService } from "../memory.service";
-import { ViewMode } from "../models/viewMode";
 import { NgbModal } from "@ng-bootstrap/ng-bootstrap";
 import { ConfirmDeleteModalComponent } from "../confirm-delete-modal/confirm-delete-modal.component";
 import { SORT_TYPES, SortType, getSortTypeText } from "../models/sortType";
+import { RailItem } from "../models/railItem";
+import { ThemeService } from "../theme.service";
 
 @Component({
   selector: "app-settings",
@@ -17,10 +18,11 @@ import { SORT_TYPES, SortType, getSortTypeText } from "../models/sortType";
   styleUrl: "./settings.component.css",
 })
 export class SettingsComponent {
+  readonly railItemEnum = RailItem;
   subscriptions: Subscription[] = [];
   settings: Settings = {
     use_stream_caching: true,
-    default_view: ViewMode.All,
+    default_view: RailItem.Channels,
     volume: 100,
     restream_port: 3000,
     enable_tray_icon: true,
@@ -30,7 +32,6 @@ export class SettingsComponent {
     always_ask_save: false,
     enable_gpu: false,
   };
-  viewModeEnum = ViewMode;
   sources: Source[] = [];
   expiries: Record<number, number> = {};
   timezones: Record<number, string> = {};
@@ -42,7 +43,15 @@ export class SettingsComponent {
     public memory: MemoryService,
     private nav: Router,
     private modal: NgbModal,
+    private theme: ThemeService,
   ) { }
+
+  // Applies immediately (no reload needed) in addition to persisting -
+  // AppComponent only reads this once at startup.
+  onThemeChange() {
+    this.theme.applyTheme(this.settings.theme);
+    this.updateSettings();
+  }
 
   _getSortTypeText(sortType: SortType) {
     return getSortTypeText(sortType);
@@ -86,7 +95,7 @@ export class SettingsComponent {
     invoke("get_settings").then((x) => {
       this.settings = x as Settings;
       if (this.settings.use_stream_caching == undefined) this.settings.use_stream_caching = true;
-      if (this.settings.default_view == undefined) this.settings.default_view = ViewMode.All;
+      if (this.settings.default_view == undefined) this.settings.default_view = RailItem.Channels;
       if (this.settings.volume == undefined) this.settings.volume = 100;
       if (this.settings.restream_port == undefined) this.settings.restream_port = 3000;
       if (this.settings.enable_tray_icon == undefined) this.settings.enable_tray_icon = true;
@@ -95,6 +104,7 @@ export class SettingsComponent {
       if (this.settings.enable_hwdec == undefined) this.settings.enable_hwdec = true;
       if (this.settings.always_ask_save == undefined) this.settings.always_ask_save = false;
       if (this.settings.enable_gpu == undefined) this.settings.enable_gpu = false;
+      if (this.settings.theme == undefined) this.settings.theme = "modern";
     });
   }
 
@@ -162,6 +172,20 @@ export class SettingsComponent {
   async goBack() {
     await this.updateSettings();
     this.router.navigateByUrl("");
+  }
+
+  // Mirrors manage-categories.component.ts's selectRail() - same rail,
+  // same pattern for a route-based (non-home) page: Settings itself is a
+  // no-op, Manage Categories is its own route, everything else goes back
+  // to home with a query param it reads on init to pick the right section.
+  async selectRail(item: RailItem) {
+    if (item === RailItem.Settings) return;
+    await this.updateSettings();
+    if (item === RailItem.ManageCategories) {
+      this.router.navigateByUrl("manage-categories");
+      return;
+    }
+    this.router.navigate([""], { queryParams: { rail: item } });
   }
 
   async updateSettings() {

@@ -29,7 +29,7 @@
   </div>
 </div>
 
-<div style="visibility: hidden; position: fixed" [style.left.px]="menuTopLeftPosition.x"
+<div #contextMenuTrigger style="visibility: hidden; position: fixed" [style.left.px]="menuTopLeftPosition.x"
   [style.top.px]="menuTopLeftPosition.y" [matMenuTriggerFor]="rightMenu"></div>
 
 <mat-menu #rightMenu="matMenu">
@@ -43,7 +43,9 @@
       <ng-container *ngIf="alreadyExistsInFav">Unfavorite</ng-container>
       <ng-container *ngIf="!alreadyExistsInFav">Favorite</ng-container>
     </button>
-    <button [hidden]="isCustom() || viewMode == viewModeEnum.History" mat-menu-item (click)="hide()"> <ng-container
+    <button [hidden]="
+        isCustom() || viewMode == viewModeEnum.History || channel?.media_type == mediaTypeEnum.season
+      " mat-menu-item (click)="hide()"> <ng-container
         *ngIf="alreadyHidden">Unhide</ng-container>
       <ng-container *ngIf="!alreadyHidden">Hide</ng-container>
     </button>
@@ -53,6 +55,14 @@
     </button>
     <button [hidden]="!isMovie() || !downloading" mat-menu-item (click)="cancelDownload()">
       Cancel download
+    </button>
+    <button [hidden]="channel?.media_type != mediaTypeEnum.serie || downloadingSeries" mat-menu-item
+      (click)="downloadSeries()">
+      Download Series
+    </button>
+    <button [hidden]="channel?.media_type != mediaTypeEnum.season || downloadingSeries" mat-menu-item
+      (click)="downloadSeason()">
+      Download Season
     </button>
     <button [hidden]="!isCustom()" mat-menu-item (click)="edit()">Edit</button>
     <button [hidden]="!isCustom()" mat-menu-item (click)="share()">Share</button>

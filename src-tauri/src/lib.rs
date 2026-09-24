@@ -7,7 +7,7 @@ use tauri::{AppHandle, Manager, State};
 use tokio::sync::Mutex;
 use types::{
     AppState, Channel, CustomChannel, CustomChannelExtraData, EPG, EPGNotify, Filters, Group,
-    IdName, NetworkInfo, Settings, Source,
+    IdName, NetworkInfo, SeasonDownloadInfo, Settings, SeriesEpisode, Source,
 };
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 use {
@@ -71,6 +71,9 @@ pub fn run() {
             prune_old_epg,
             build_timeshift_url,
             get_episodes,
+            get_series_episodes_for_download,
+            get_season_episodes_for_download,
+            get_download_base_path,
             favorite_channel,
             unfavorite_channel,
             source_name_exists,
@@ -312,6 +315,23 @@ async fn get_episodes(channel: Channel) -> Result<(), String> {
     xtream::get_episodes(channel)
         .await
         .map_err(map_err_frontend)
+}
+
+#[tauri::command]
+async fn get_series_episodes_for_download(channel: Channel) -> Result<Vec<SeriesEpisode>, String> {
+    xtream::get_series_episodes_for_download(channel)
+        .await
+        .map_err(map_err_frontend)
+}
+
+#[tauri::command(async)]
+fn get_season_episodes_for_download(channel: Channel) -> Result<SeasonDownloadInfo, String> {
+    xtream::get_season_episodes_for_download(channel).map_err(map_err_frontend)
+}
+
+#[tauri::command(async)]
+fn get_download_base_path() -> Result<String, String> {
+    utils::get_download_base_path().map_err(map_err_frontend)
 }
 
 #[tauri::command(async)]

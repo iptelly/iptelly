@@ -62,6 +62,20 @@ export class SourceTileComponent {
     );
   }
 
+  // Only shown when a custom epg_url is set, since in that case refreshEpg()
+  // above refreshes the custom guide instead - this is the one way to force
+  // a re-download of the provider's own built-in xmltv.php without having
+  // to temporarily clear the custom URL. refresh_xtream_epg_only already
+  // wipes this source's stored EPG before re-inserting (see
+  // refresh_epg_from_url), so there's no separate wipe step needed here.
+  async refreshProviderEpg() {
+    await this.memory.tryIPC(
+      "Successfully refreshed provider EPG",
+      "Failed to refresh provider EPG",
+      () => invoke("refresh_xtream_epg_only", { source: this.source }),
+    );
+  }
+
   async pruneEpg() {
     await this.memory.tryIPC(
       "Successfully cleared old EPG data",

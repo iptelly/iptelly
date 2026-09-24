@@ -8,7 +8,8 @@
   top: 0;
   left: 0;
   z-index: 1001;
-  background-color: #171819;
+  background-color: var(--surface-1);
+  border-right: 1px solid var(--border-subtle);
   padding: 0.75rem 0;
   gap: 0.35rem;
 }
@@ -23,7 +24,7 @@
 .rail-logo img {
   height: 2rem;
   width: 2rem;
-  border-radius: 0.35rem;
+  border-radius: var(--radius-sm);
 }
 
 .rail-item {
@@ -32,22 +33,24 @@
   justify-content: center;
   background: none;
   border: none;
-  color: #9ba1a6;
+  color: var(--text-secondary);
   padding: 0.65rem 0;
   margin: 0 0.5rem;
-  border-radius: 0.5rem;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: color 0.2s ease, background-color 0.2s ease;
+  transition: color 0.2s ease, background-color 0.2s ease, transform 0.15s ease;
 }
 
 .rail-item:hover {
-  color: white;
-  background-color: #212326;
+  color: var(--text-primary);
+  background-color: var(--surface-2);
+  transform: translateY(-1px);
 }
 
 .rail-item.active {
-  color: white;
-  background-color: #0d6efd;
+  color: var(--accent-contrast);
+  background-color: var(--accent);
+  box-shadow: var(--shadow-sm);
 }
 
 .rail-icon {

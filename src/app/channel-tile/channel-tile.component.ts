@@ -23,8 +23,10 @@ import { DeleteGroupModalComponent } from "../delete-group-modal/delete-group-mo
 import { RestreamModalComponent } from "../restream-modal/restream-modal.component";
 import { DownloadService } from "../download.service";
 import { Download } from "../models/download";
+import { SeriesEpisode } from "../models/seriesEpisode";
+import { SeasonDownloadInfo } from "../models/seasonDownloadInfo";
 import { Subscription, take } from "rxjs";
-import { save } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { CHANNEL_EXTENSION, GROUP_EXTENSION, RECORD_EXTENSION } from "../models/extensions";
 import { getDateFormatted, getExtension, sanitizeFileName } from "../utils";
 import { NodeType, fromMediaType } from "../models/nodeType";
@@ -74,12 +76,14 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
   @Input() viewMode: number = 0;
   @Input() layout: "grid" | "list" = "grid";
   @ViewChild(MatMenuTrigger, { static: true }) matMenuTrigger!: MatMenuTrigger;
+  @ViewChild("contextMenuTrigger", { static: true }) contextMenuTriggerEl!: ElementRef;
   menuTopLeftPosition = { x: 0, y: 0 };
   showImage: boolean = true;
   starting: boolean = false;
   alreadyExistsInFav = false;
   alreadyHidden = false;
   downloading = false;
+  downloadingSeries = false;
   mediaTypeEnum = MediaType;
   viewModeEnum = ViewMode;
   subscriptions: Subscription[] = [];
@@ -168,7 +172,8 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
   }
 
   onRightClick(event: MouseEvent) {
-    if (this.channel?.media_type == MediaType.season) return;
+    // Used to bail out entirely for season tiles (no context menu at all) -
+    // now needed for Download Season below.
     this.alreadyExistsInFav = this.channel!.favorite!;
     this.alreadyHidden = this.channel!.hidden!;
     this.downloading = this.isDownloading();
@@ -176,6 +181,18 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
     this.menuTopLeftPosition.x = event.clientX;
     this.menuTopLeftPosition.y = event.clientY;
     if (this.memory.currentContextMenu?.menuOpen) this.memory.currentContextMenu.closeMenu();
+    // This tile sits inside cdk-virtual-scroll-viewport, which positions
+    // rows via a CSS transform on their wrapper - per spec, any ancestor
+    // transform becomes the containing block for position:fixed
+    // descendants, so the trigger div below was rendering relative to that
+    // transformed wrapper instead of the actual viewport (landing far from
+    // the real click point, worse the further the wrapper's own offset was
+    // from 0). Moving it to be a direct child of <body> once escapes that
+    // entirely; it can just stay there for every subsequent right-click on
+    // this tile instance.
+    if (this.contextMenuTriggerEl.nativeElement.parentElement !== document.body) {
+      this.renderer.appendChild(document.body, this.contextMenuTriggerEl.nativeElement);
+    }
     this.memory.currentContextMenu = this.matMenuTrigger;
     this.cdr.markForCheck();
     this.matMenuTrigger.openMenu();
@@ -417,6 +434,82 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
     await this.download.abortDownload(this.channel!.id!.toString());
   }
 
+  // Shared by downloadSeries()/downloadSeason() below - prompts for a
+  // destination folder when the user wants that (mirroring downloadVod()'s
+  // IsContainer/AlwaysAskSave check), otherwise uses the same base path
+  // download() itself would default to.
+  private async pickOrGetBaseFolder(title: string): Promise<string | undefined> {
+    if (this.memory.IsContainer || this.memory.AlwaysAskSave) {
+      const folder = await open({ directory: true, canCreateDirectories: true, title });
+      return folder ?? undefined;
+    }
+    return await invoke<string>("get_download_base_path");
+  }
+
+  // Downloads a list of episodes into <base>/<show name>/<season name>/
+  // <episode>.<ext>, one at a time (not in parallel) - sources default to
+  // max_streams=1, and starting a second concurrent stream/download on the
+  // same source cancels the oldest one (see handle_max_streams), so
+  // sequential is both simpler and avoids the batch cancelling itself.
+  private async downloadEpisodeList(
+    baseFolder: string,
+    showName: string,
+    episodes: { channel: Channel; seasonName: string }[],
+  ) {
+    const showFolder = sanitizeFileName(showName);
+    for (const episode of episodes) {
+      const seasonFolder = sanitizeFileName(episode.seasonName);
+      const fileName = `${sanitizeFileName(episode.channel.name!)}.${getExtension(episode.channel.url!)}`;
+      const path = `${baseFolder}/${showFolder}/${seasonFolder}/${fileName}`;
+      const id = episode.channel.id!.toString();
+      const download = await this.download.addDownload(id, episode.channel);
+      this.downloadSubscribe(download);
+      await this.download.download(id, path);
+    }
+  }
+
+  async downloadSeries() {
+    const baseFolder = await this.pickOrGetBaseFolder("Select where to download the series");
+    if (!baseFolder) return;
+    let episodes: SeriesEpisode[];
+    try {
+      episodes = await invoke("get_series_episodes_for_download", { channel: this.channel });
+    } catch (e) {
+      this.error.handleError(e, `Failed to fetch episodes for "${this.channel?.name}"`);
+      return;
+    }
+    this.downloadingSeries = true;
+    this.cdr.markForCheck();
+    await this.downloadEpisodeList(
+      baseFolder,
+      this.channel?.name!,
+      episodes.map((e) => ({ channel: e.channel, seasonName: e.season_name })),
+    );
+    this.downloadingSeries = false;
+    this.cdr.markForCheck();
+  }
+
+  async downloadSeason() {
+    const baseFolder = await this.pickOrGetBaseFolder("Select where to download the season");
+    if (!baseFolder) return;
+    let info: SeasonDownloadInfo;
+    try {
+      info = await invoke("get_season_episodes_for_download", { channel: this.channel });
+    } catch (e) {
+      this.error.handleError(e, `Failed to fetch episodes for "${this.channel?.name}"`);
+      return;
+    }
+    this.downloadingSeries = true;
+    this.cdr.markForCheck();
+    await this.downloadEpisodeList(
+      baseFolder,
+      info.series_name,
+      info.episodes.map((channel) => ({ channel, seasonName: this.channel?.name! })),
+    );
+    this.downloadingSeries = false;
+    this.cdr.markForCheck();
+  }
+
   getExistingDownload() {
     let download = this.download.Downloads.get(this.channel!.id!.toString());
     if (download) {
@@ -451,5 +544,11 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
 
   ngOnDestroy() {
     this.subscriptions.forEach((x) => x.unsubscribe());
+    // Only relevant once a right-click has actually moved this element to
+    // <body> (see onRightClick) - undoes that so a genuinely-destroyed (not
+    // just virtual-scroll-recycled) tile doesn't leak a detached node there.
+    if (this.contextMenuTriggerEl?.nativeElement.parentElement === document.body) {
+      this.renderer.removeChild(document.body, this.contextMenuTriggerEl.nativeElement);
+    }
   }
 }

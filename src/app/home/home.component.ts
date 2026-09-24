@@ -106,6 +106,15 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   nodeStack: Stack = new Stack();
   showScrollTop = false;
 
+  // Not shown for a Category node - the playlist sidebar already shows
+  // which category is selected and lets you pick another (or a different
+  // source) to get back out, so a back button there is redundant. Series/
+  // Season nesting has no sidebar equivalent to get back out with, so it
+  // stays there.
+  showBackButton(): boolean {
+    return this.nodeStack.hasNodes() && this.nodeStack.get()?.type !== NodeType.Category;
+  }
+
   private _viewport?: CdkVirtualScrollViewport;
   private viewportSubscriptions: Subscription[] = [];
 
@@ -237,10 +246,14 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
             sessionStorage.setItem("epgCheckedOnStart", "true");
             invoke("on_start_check_epg");
           }
-          const defaultView = settings.default_view ?? ViewMode.All;
-          if (defaultView == ViewMode.Favorites) this.currentRailItem = RailItem.Favourites;
-          else if (defaultView == ViewMode.History) this.currentRailItem = RailItem.History;
-          else this.currentRailItem = RailItem.Channels;
+          // default_view now stores a RailItem directly (Favourites/
+          // Channels/Movies/Series/History - the Settings dropdown only
+          // offers those 5) rather than the old ViewMode, which could only
+          // distinguish Favorites/History and left Movies/Series
+          // indistinguishable from Channels.
+          const defaultRailItem = settings.default_view ?? RailItem.Channels;
+          this.currentRailItem =
+            defaultRailItem in RailItem ? defaultRailItem : RailItem.Channels;
           // Allows navigating in from another routed page (e.g. Manage
           // Categories' nav rail) directly to a specific view, instead of
           // always landing back on the configured default. Number(null) is
@@ -305,10 +318,6 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     await this.load();
   }
 
-  async reload() {
-    await this.load();
-  }
-
   reset() {
     this.router.navigateByUrl("setup");
   }
@@ -338,6 +347,15 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
         );
         if (dto.type == NodeType.Category) {
           this.filters!.group_id = dto.id;
+          // Entering a category from the sidebar can happen while already
+          // nested in a series/season (e.g. category -> a show -> the same
+          // or a different category) - without clearing these, the stale
+          // series_id sticks around, and search() gives series_id priority
+          // over group_id, so every subsequent category click kept
+          // re-showing that same series' season list instead of the
+          // newly-clicked category.
+          this.filters!.series_id = undefined;
+          this.filters!.season = undefined;
           // The sidebar lists categories across every source, not just
           // whatever's currently selected in the main view - without this
           // (mirroring the Series branch below), group_id could point at a
@@ -355,6 +373,15 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
         } else if (dto.type == NodeType.Series) {
           this.filters!.series_id = dto.id;
           this.filters!.source_ids = [dto.sourceId!];
+          // Without this, clicking into a series from Favourites' channel
+          // list (media_types still [livestream] from there) left
+          // isChannelListView() true for the season/episode grid too,
+          // rendering seasons/episodes as if they were livestream channel
+          // rows - list layout, EPG timeline header and all. The backend
+          // query itself already ignores media_types once series_id is set
+          // (see sql.rs's search()), so this is purely about picking the
+          // right frontend layout.
+          this.filters!.media_types = [MediaType.serie];
         } else if (dto.type == NodeType.Season) this.filters!.season = dto.id;
 
         if (this.filters!.view_type == ViewMode.Hidden) {

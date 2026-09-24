@@ -5,7 +5,7 @@ use crate::log::log;
 use crate::sort_type;
 use crate::types::{
     ChannelPreserve, CustomChannel, CustomChannelExtraData, EPG, EPGNotify, ExportedGroup, Group,
-    IdName, Season,
+    IdName, Season, SeriesEpisode,
 };
 use crate::{
     media_type, source_type,
@@ -369,7 +369,12 @@ pub fn insert_season(tx: &Transaction, season: Season) -> Result<i64> {
 }
 
 pub fn insert_channel(tx: &Transaction, channel: Channel) -> Result<()> {
-    tx.execute(
+    // prepare_cached instead of execute() - this runs once per channel (up
+    // to thousands per refresh), and plain execute() re-parses/re-plans the
+    // SQL text from scratch on every call. prepare_cached compiles it once
+    // per connection and reuses the compiled statement on every subsequent
+    // call with the same SQL text.
+    tx.prepare_cached(
         r#"
 INSERT INTO channels (name, group_id, image, url, source_id, media_type, series_id, favorite, stream_id, tv_archive, tvg_id, season_id, episode_num)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -384,54 +389,110 @@ DO UPDATE SET
     tvg_id = excluded.tvg_id,
     season_id = excluded.season_id;
 "#,
-        params![
-            channel.name,
-            channel.group_id,
-            channel.image,
-            channel.url,
-            channel.source_id,
-            channel.media_type as u8,
-            channel.series_id,
-            channel.favorite,
-            channel.stream_id,
-            channel.tv_archive,
-            channel.tvg_id,
-            channel.season_id,
-            channel.episode_num
-        ],
-    )?;
+    )?
+    .execute(params![
+        channel.name,
+        channel.group_id,
+        channel.image,
+        channel.url,
+        channel.source_id,
+        channel.media_type as u8,
+        channel.series_id,
+        channel.favorite,
+        channel.stream_id,
+        channel.tv_archive,
+        channel.tvg_id,
+        channel.season_id,
+        channel.episode_num
+    ])?;
     Ok(())
 }
 
-pub fn insert_epg_programme(
+// Batched version of insert_channel() for process_xtream()'s bulk
+// live/vod/series import specifically - a playlist can have tens of
+// thousands of channels, and even with a cached statement, that many
+// individual execute() calls each pay their own FFI/bind/step/reset
+// round-trip. Not used by the other insert_channel() call sites (M3U
+// import, custom-channel import, series episode import) since those are
+// either much smaller in scale or insert one row at a time as they go.
+const CHANNEL_INSERT_BATCH_SIZE: usize = 500;
+
+pub(crate) fn insert_channels_batch(tx: &Transaction, channels: &[Channel]) -> Result<()> {
+    for chunk in channels.chunks(CHANNEL_INSERT_BATCH_SIZE) {
+        let placeholders = vec!["(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"; chunk.len()].join(", ");
+        let sql = format!(
+            r#"
+INSERT INTO channels (name, group_id, image, url, source_id, media_type, series_id, favorite, stream_id, tv_archive, tvg_id, season_id, episode_num)
+VALUES {placeholders}
+ON CONFLICT (name, source_id, url, series_id, season_id)
+DO UPDATE SET
+    url = excluded.url,
+    media_type = excluded.media_type,
+    stream_id = excluded.stream_id,
+    image = excluded.image,
+    series_id = excluded.series_id,
+    tv_archive = excluded.tv_archive,
+    tvg_id = excluded.tvg_id,
+    season_id = excluded.season_id;
+"#
+        );
+        let mut params: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(chunk.len() * 13);
+        for channel in chunk {
+            params.push(&channel.name);
+            params.push(&channel.group_id);
+            params.push(&channel.image);
+            params.push(&channel.url);
+            params.push(&channel.source_id);
+            params.push(&channel.media_type);
+            params.push(&channel.series_id);
+            params.push(&channel.favorite);
+            params.push(&channel.stream_id);
+            params.push(&channel.tv_archive);
+            params.push(&channel.tvg_id);
+            params.push(&channel.season_id);
+            params.push(&channel.episode_num);
+        }
+        tx.prepare_cached(&sql)?
+            .execute(params_from_iter(params))?;
+    }
+    Ok(())
+}
+
+// Batched instead of one execute() per row - a playlist's EPG can easily be
+// hundreds of thousands of rows, and even with a cached/precompiled
+// statement, that many individual execute() calls each pay their own
+// FFI/bind/step/reset round-trip. Building multi-row VALUES (...), (...)
+// statements amortizes that per-call overhead across up to
+// EPG_INSERT_BATCH_SIZE rows at once. has_archive/timeshift_url aren't
+// parameterized - this is only ever called from the XMLTV parse path, which
+// never sets either (catch-up URLs are built on demand instead, see
+// xtream::get_timeshift_url_for_epg), so they're just literals here.
+const EPG_INSERT_BATCH_SIZE: usize = 500;
+
+pub(crate) fn insert_epg_programmes_batch(
     tx: &Transaction,
     source_id: i64,
-    tvg_id: &str,
-    title: &str,
-    description: &str,
-    start_timestamp: i64,
-    end_timestamp: i64,
+    programmes: &[crate::xmltv::ParsedProgramme],
     cached_at: i64,
-    has_archive: bool,
-    timeshift_url: Option<&str>,
 ) -> Result<()> {
-    tx.execute(
-        r#"
-INSERT INTO epg_programmes (source_id, tvg_id, title, description, start_timestamp, end_timestamp, cached_at, has_archive, timeshift_url)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
-"#,
-        params![
-            source_id,
-            tvg_id,
-            title,
-            description,
-            start_timestamp,
-            end_timestamp,
-            cached_at,
-            has_archive,
-            timeshift_url
-        ],
-    )?;
+    for chunk in programmes.chunks(EPG_INSERT_BATCH_SIZE) {
+        let placeholders = vec!["(?, ?, ?, ?, ?, ?, ?, 0, NULL)"; chunk.len()].join(", ");
+        let sql = format!(
+            r#"INSERT INTO epg_programmes (source_id, tvg_id, title, description, start_timestamp, end_timestamp, cached_at, has_archive, timeshift_url) VALUES {placeholders}"#
+        );
+        let mut params: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(chunk.len() * 7);
+        for p in chunk {
+            params.push(&source_id);
+            params.push(&p.tvg_id);
+            params.push(&p.title);
+            params.push(&p.description);
+            params.push(&p.start_timestamp);
+            params.push(&p.end_timestamp);
+            params.push(&cached_at);
+        }
+        tx.prepare_cached(&sql)?
+            .execute(params_from_iter(params))?;
+    }
     Ok(())
 }
 
@@ -770,6 +831,97 @@ fn season_row_to_channel(row: &Row) -> std::result::Result<Channel, rusqlite::Er
         episode_num: None,
         hidden: Some(false),
     })
+}
+
+// Every episode across every season of a series in one unpaginated query,
+// joined with the season's name for folder placement - unlike search_series
+// (which returns just the season list) or search() (which needs both
+// series_id AND a specific season set to return episodes), there's no
+// existing path that returns a whole series' episodes at once. Used by
+// get_series_episodes_for_download - see xtream.rs.
+pub fn get_series_episodes(source_id: i64, series_id: u64) -> Result<Vec<SeriesEpisode>> {
+    let sql = get_conn()?;
+    let episodes: Vec<SeriesEpisode> = sql
+        .prepare(
+            r#"
+        SELECT channels.*, seasons.name as season_name, seasons.season_number
+        FROM channels
+        JOIN seasons ON channels.season_id = seasons.id
+        WHERE channels.series_id = ? AND channels.source_id = ? AND channels.media_type = ?
+        ORDER BY seasons.season_number, channels.episode_num
+    "#,
+        )?
+        .query_map(params![series_id, source_id, media_type::MOVIE], |row| {
+            Ok(SeriesEpisode {
+                channel: row_to_channel(row)?,
+                season_name: row.get("season_name")?,
+            })
+        })?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(episodes)
+}
+
+// Episodes of a single season only, for "Download Season" - season_id here
+// is the season pseudo-channel's own id (season_row_to_channel reads it
+// straight from seasons.id), so no join is needed.
+pub fn get_season_episodes(season_id: i64) -> Result<Vec<Channel>> {
+    let sql = get_conn()?;
+    let episodes: Vec<Channel> = sql
+        .prepare(
+            r#"
+        SELECT * FROM channels
+        WHERE season_id = ? AND media_type = ?
+        ORDER BY episode_num
+    "#,
+        )?
+        .query_map(params![season_id, media_type::MOVIE], row_to_channel)?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(episodes)
+}
+
+// The show's own name, looked up by the raw Xtream series_id rather than a
+// foreign key - there's no separate "series" table, a series is just the
+// channels row with media_type=SERIE whose url happens to be that same
+// series_id (see xtream::get_episodes/insert_episode, which is where that
+// id is threaded onto every episode/season row in the first place).
+pub fn get_series_name(source_id: i64, series_id: u64) -> Result<Option<String>> {
+    let sql = get_conn()?;
+    sql.query_row(
+        "SELECT name FROM channels WHERE source_id = ? AND media_type = ? AND url = ?",
+        params![source_id, media_type::SERIE, series_id.to_string()],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(Into::into)
+}
+
+// Given just an episode's own channel id (always reliable, unlike
+// Channel.series_id which row_to_channel never populates when sending
+// episodes to the frontend - see get_series_episodes above), resolves
+// (series_name, season_name) for building its download folder path. Used
+// by download() for the single-episode/movie download case; returns None
+// for a genuine standalone movie (no season_id at all) rather than erroring,
+// so that case can fall back to the existing flat download path.
+pub fn get_episode_folder_names(episode_id: i64) -> Result<Option<(String, String)>> {
+    let sql = get_conn()?;
+    sql.query_row(
+        r#"
+        SELECT series.name, seasons.name
+        FROM channels episode
+        JOIN seasons ON episode.season_id = seasons.id
+        JOIN channels series
+            ON series.media_type = ?
+            AND series.source_id = episode.source_id
+            AND series.url = CAST(episode.series_id AS TEXT)
+        WHERE episode.id = ?
+    "#,
+        params![media_type::SERIE, episode_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .optional()
+    .map_err(Into::into)
 }
 
 use crate::bulk_action_type;

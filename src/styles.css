@@ -3,32 +3,183 @@
 @import "@angular/material/prebuilt-themes/pink-bluegrey.css";
 @import "./assets/css/roboto.css";
 
+/* Shared design tokens - a layered dark surface system (instead of the
+   handful of flat, hand-picked grays previously scattered across
+   component files) plus a single accent used everywhere instead of
+   Bootstrap's stock blue. Components should reference these rather than
+   hardcoding their own colors/radius/shadow values, so the whole app
+   moves together if this palette ever changes again. */
+:root,
+:root[data-theme="modern"] {
+  --bg-base: #16171a;
+  --surface-1: #1d1f23;
+  --surface-2: #25272c;
+  --surface-3: #2e3036;
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  --text-primary: #f2f2f4;
+  --text-secondary: #9a9ca4;
+  --accent: #6d6af0;
+  --accent-hover: #8481f5;
+  --accent-contrast: #ffffff;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.4);
+}
+
+/* "Classic" theme - the flat, pre-redesign palette these tokens replaced,
+   restored as an opt-in alternative rather than deleted outright. Applied
+   by toggling data-theme on <html> (see theme.service.ts), driven by the
+   Settings page's Theme dropdown. */
+:root[data-theme="classic"] {
+  --bg-base: #202124;
+  --surface-1: #1a1b1e;
+  --surface-2: #343a40;
+  --surface-3: #3c4450;
+  --border-subtle: rgba(255, 255, 255, 0.05);
+  --text-primary: #ffffff;
+  --text-secondary: #adb5bd;
+  --accent: #0d6efd;
+  --accent-hover: #0b5ed7;
+  --accent-contrast: #ffffff;
+  --radius-sm: 0.25rem;
+  --radius-md: 0.25rem;
+  --radius-lg: 22px;
+  --shadow-sm: none;
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.3);
+  --shadow-lg: none;
+}
+
 body {
-  background-color: #202124;
-  color: white;
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+}
+
+/* Global overrides for plain Bootstrap classes so every page picks up the
+   new palette automatically, without needing every component file that
+   happens to use .btn/.form-control/.modal-content touched individually. */
+.btn-primary {
+  background-color: var(--accent);
+  border-color: var(--accent);
+  border-radius: var(--radius-sm);
+}
+
+.btn-primary:hover,
+.btn-primary:focus,
+.btn-primary:active {
+  background-color: var(--accent-hover) !important;
+  border-color: var(--accent-hover) !important;
+}
+
+.btn-secondary {
+  background-color: var(--surface-3);
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.btn-secondary:hover,
+.btn-secondary:focus,
+.btn-secondary:active {
+  background-color: var(--surface-2) !important;
+  border-color: var(--border-subtle) !important;
+}
+
+.form-control,
+.form-select {
+  background-color: var(--surface-2);
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+}
+
+.form-control:focus,
+.form-select:focus {
+  background-color: var(--surface-2);
+  border-color: var(--accent);
+  color: var(--text-primary);
+  box-shadow: 0 0 0 0.2rem rgba(109, 106, 240, 0.25);
+}
+
+.form-check-input:checked {
+  background-color: var(--accent);
+  border-color: var(--accent);
+}
+
+.input-group-text {
+  background-color: var(--surface-3);
+  border-color: var(--border-subtle);
+  color: var(--text-secondary);
+}
+
+/* Bootstrap's range input has no color customization of its own beyond a
+   couple of CSS vars this bundled version predates - styled directly via
+   the vendor pseudo-elements instead. Firefox/-moz- rules included for
+   completeness even though this app only ever runs under WebKit. */
+.form-range::-webkit-slider-runnable-track {
+  background-color: var(--surface-2);
+  border-radius: var(--radius-sm);
+  height: 0.4rem;
+}
+
+.form-range::-moz-range-track {
+  background-color: var(--surface-2);
+  border-radius: var(--radius-sm);
+  height: 0.4rem;
+}
+
+.form-range::-webkit-slider-thumb {
+  background-color: var(--accent);
+  box-shadow: var(--shadow-sm);
+  margin-top: -0.35rem;
+}
+
+.form-range::-moz-range-thumb {
+  background-color: var(--accent);
+  box-shadow: var(--shadow-sm);
+  border: none;
+}
+
+.form-range:focus::-webkit-slider-thumb {
+  box-shadow: 0 0 0 0.2rem rgba(109, 106, 240, 0.25);
+}
+
+.form-range:focus::-moz-range-thumb {
+  box-shadow: 0 0 0 0.2rem rgba(109, 106, 240, 0.25);
+}
+
+a {
+  color: var(--accent);
 }
 
 .help-modal__container {
   .help-modal {
-    background-color: #202124 !important;
+    background-color: var(--surface-1) !important;
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
 
     .item {
-      background-color: #202124 !important;
+      background-color: var(--surface-2) !important;
+      border-radius: var(--radius-sm);
 
       .key {
-        background-color: #202124 !important;
+        background-color: var(--surface-3) !important;
+        border-radius: var(--radius-sm);
       }
 
       .description {
-        color: white !important;
+        color: var(--text-primary) !important;
       }
     }
   }
 }
 
 .modal-content {
-  border-radius: 22px !important;
-  background-color: #292b2c;
+  border-radius: var(--radius-lg) !important;
+  background-color: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-lg);
 }
 
 .selectable {

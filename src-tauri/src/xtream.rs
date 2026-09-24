@@ -122,8 +122,10 @@ pub async fn refresh_xtream_epg(mut source: Source) -> Result<()> {
 }
 
 pub async fn get_xtream(mut source: Source, wipe: bool) -> Result<()> {
+    let refresh_start = std::time::Instant::now();
     let url = build_xtream_url(&mut source)?;
     let user_agent = get_user_agent_from_source(&source)?;
+    let fetch_start = std::time::Instant::now();
     let (live, live_cats, vods, vods_cats, series, series_cats) = join!(
         get_xtream_http_data::<Vec<XtreamStream>>(url.clone(), GET_LIVE_STREAMS, &user_agent),
         get_xtream_http_data::<Vec<XtreamCategory>>(
@@ -140,6 +142,19 @@ pub async fn get_xtream(mut source: Source, wipe: bool) -> Result<()> {
             &user_agent
         ),
     );
+    // Timing is phase-level rather than per-request because the 6 calls
+    // above run concurrently via join! - wall-clock time for this block is
+    // ~the slowest single request, not their sum, so timing each one
+    // separately would be misleading about where end-to-end time actually
+    // goes. Logged (not just measured) so a real refresh through the app
+    // shows the breakdown directly in the dev log, without attaching a
+    // profiler.
+    log::log(format!(
+        "[perf] {}: network fetch (6 concurrent requests) took {:?}",
+        source.name,
+        fetch_start.elapsed()
+    ));
+    let db_start = std::time::Instant::now();
     let mut sql = sql::get_conn()?;
     let tx = sql.transaction()?;
     let mut channel_preserve: Vec<ChannelPreserve> = Vec::new();
@@ -150,12 +165,24 @@ pub async fn get_xtream(mut source: Source, wipe: bool) -> Result<()> {
     } else {
         source.id = Some(sql::create_or_find_source_by_name(&tx, &source)?);
     }
+    log::log(format!(
+        "[perf] {}: wipe/setup took {:?}",
+        source.name,
+        db_start.elapsed()
+    ));
     let mut fail_count = 0;
+    let process_start = std::time::Instant::now();
     live.and_then(|live| process_xtream(&tx, live, live_cats?, &source, media_type::LIVESTREAM))
         .unwrap_or_else(|e| {
             log::log(format!("{:?}", e.context("Failed to process live")));
             fail_count += 1;
         });
+    log::log(format!(
+        "[perf] {}: process live took {:?}",
+        source.name,
+        process_start.elapsed()
+    ));
+    let vods_start = std::time::Instant::now();
     vods.and_then(|vods: Vec<XtreamStream>| {
         process_xtream(&tx, vods, vods_cats?, &source, media_type::MOVIE)
     })
@@ -163,6 +190,12 @@ pub async fn get_xtream(mut source: Source, wipe: bool) -> Result<()> {
         log::log(format!("{:?}", e.context("Failed to process vods")));
         fail_count += 1;
     });
+    log::log(format!(
+        "[perf] {}: process vods took {:?}",
+        source.name,
+        vods_start.elapsed()
+    ));
+    let series_start = std::time::Instant::now();
     series
         .and_then(|series: Vec<XtreamStream>| {
             process_xtream(&tx, series, series_cats?, &source, media_type::SERIE)
@@ -171,6 +204,11 @@ pub async fn get_xtream(mut source: Source, wipe: bool) -> Result<()> {
             log::log(format!("{:?}", e.context("Failed to process series")));
             fail_count += 1;
         });
+    log::log(format!(
+        "[perf] {}: process series took {:?}",
+        source.name,
+        series_start.elapsed()
+    ));
     if fail_count > 2 {
         match tx.rollback() {
             Ok(_) => {}
@@ -178,11 +216,22 @@ pub async fn get_xtream(mut source: Source, wipe: bool) -> Result<()> {
         }
         return Err(anyhow::anyhow!("Too many Xtream requests failed"));
     }
+    let finalize_start = std::time::Instant::now();
     if wipe {
         sql::restore_preserve(&tx, source.id.context("no source id")?, channel_preserve)?;
     }
     sql::analyze(&tx)?;
     tx.commit()?;
+    log::log(format!(
+        "[perf] {}: preserve/analyze/commit took {:?}",
+        source.name,
+        finalize_start.elapsed()
+    ));
+    log::log(format!(
+        "[perf] {}: total get_xtream took {:?}",
+        source.name,
+        refresh_start.elapsed()
+    ));
     Ok(())
 }
 
@@ -211,10 +260,15 @@ fn process_xtream(
         })
         .collect();
     let mut groups: HashMap<String, i64> = HashMap::new();
+    // Collected into a Vec and inserted in one batched pass below rather
+    // than one execute() per channel - same rationale as
+    // insert_epg_programmes_batch, and this is the phase that showed up as
+    // "process live/vods/series" in refresh timing.
+    let mut channels: Vec<Channel> = Vec::with_capacity(streams.len());
     for live in streams {
         let category_name = get_cat_name(&cats, get_serde_json_string(&live.category_id));
         convert_xtream_live_to_channel(live, &source, stream_type.clone(), category_name)
-            .and_then(|mut channel| {
+            .map(|mut channel| {
                 sql::set_channel_group_id(
                     &mut groups,
                     &mut channel,
@@ -222,11 +276,11 @@ fn process_xtream(
                     source.id.as_ref().unwrap(),
                 )
                 .unwrap_or_else(|e| log::log(format!("{:?}", e)));
-                sql::insert_channel(&tx, channel)?;
-                Ok(())
+                channels.push(channel);
             })
             .unwrap_or_else(|e| log::log(format!("{:?}", e)));
     }
+    sql::insert_channels_batch(&tx, &channels)?;
     Ok(())
 }
 
@@ -342,6 +396,38 @@ pub async fn get_episodes(channel: Channel) -> Result<()> {
     });
     insert_episodes(&source, seasons, episodes, series_id, channel.image)?;
     Ok(())
+}
+
+// Ensures the series' episodes are populated (get_episodes is idempotent -
+// skips the network call if already fetched) then returns all of them
+// across every season in one flat list, for "Download Series".
+pub async fn get_series_episodes_for_download(channel: Channel) -> Result<Vec<crate::types::SeriesEpisode>> {
+    let series_id: u64 = channel
+        .url
+        .clone()
+        .context("no url")?
+        .parse()
+        .context("invalid series id")?;
+    let source_id = channel.source_id.context("no source id")?;
+    get_episodes(channel).await?;
+    sql::get_series_episodes(source_id, series_id)
+}
+
+// No get_episodes() call needed here (unlike the series-level function
+// above) - a season pseudo-channel only exists on screen once its parent
+// series has already been clicked into, which already fetched/populated
+// this data.
+pub fn get_season_episodes_for_download(
+    season_channel: Channel,
+) -> Result<crate::types::SeasonDownloadInfo> {
+    let source_id = season_channel.source_id.context("no source id")?;
+    let series_id = season_channel.series_id.context("no series id")?;
+    let series_name = sql::get_series_name(source_id, series_id)?.context("series not found")?;
+    let episodes = sql::get_season_episodes(season_channel.id.context("no season id")?)?;
+    Ok(crate::types::SeasonDownloadInfo {
+        series_name,
+        episodes,
+    })
 }
 
 fn insert_episodes(

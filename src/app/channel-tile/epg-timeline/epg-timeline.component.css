@@ -9,8 +9,8 @@
   position: relative;
   height: 100%;
   overflow: hidden;
-  border-radius: 0.25rem;
-  background-color: #202124;
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-base);
 }
 
 .epg-block {
@@ -20,13 +20,13 @@
   display: flex;
   align-items: center;
   padding: 0 0.5rem;
-  background-color: #343a40;
-  border-left: 1px solid #202124;
+  background-color: var(--surface-2);
+  border-left: 1px solid var(--bg-base);
   cursor: default;
 }
 
 .epg-block.now-playing {
-  background-color: #3c4450;
+  background-color: var(--surface-3);
 }
 
 .epg-title {
@@ -34,7 +34,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 0.75rem;
-  color: #d8dadd;
+  color: var(--text-primary);
 }
 
 .now-line {

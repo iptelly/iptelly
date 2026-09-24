@@ -13,4 +13,7 @@ export class Channel {
   tv_archive?: boolean;
   hidden?: boolean;
   tvg_id?: string;
+  series_id?: number;
+  season_id?: number;
+  episode_num?: number;
 }

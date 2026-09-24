@@ -1,6 +1,6 @@
 .epg-item {
-  border-radius: 0.25rem;
-  background-color: #343a40;
+  border-radius: var(--radius-md);
+  background-color: var(--surface-2);
   width: 100%;
   padding: 1rem;
   position: relative;

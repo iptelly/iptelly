@@ -54,9 +54,9 @@
 }
 
 .filterBox {
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   padding: 10px;
-  background-color: #343a40;
+  background-color: var(--surface-2);
   display: block;
   width: fit-content;
 }
@@ -84,34 +84,19 @@
   transform: translateY(-50%) scale(1.1);
 }
 
-.reload-icon {
-  height: 1.75rem;
-  width: 1.75rem;
-  position: absolute;
-  right: 8rem;
-  top: 50%;
-  transform: translateY(-50%);
-  cursor: pointer;
-  transition: transform 0.5s ease;
-}
-
-.reload-icon:hover {
-  transform: translateY(-50%) rotate(360deg) scale(1.1);
-}
-
 .back-row {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
   cursor: pointer;
-  color: #adb5bd;
+  color: var(--text-secondary);
   transition: color 0.2s ease;
   width: 100%;
   justify-content: center;
 }
 
 .back-row:hover {
-  color: white;
+  color: var(--text-primary);
 }
 
 .back-arrow {
@@ -134,21 +119,21 @@
   right: 2rem;
   width: 3rem;
   height: 3rem;
-  background-color: #0d6efd;
+  background-color: var(--accent);
   border-radius: 50%;
   display: flex;
   justify-content: center;
   align-items: center;
   cursor: pointer;
   z-index: 1000;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-md);
   transition: transform 0.2s ease, background-color 0.2s;
   animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
 .scroll-to-top:hover {
   transform: scale(1.1);
-  background-color: #0b5ed7;
+  background-color: var(--accent-hover);
 }
 
 .scroll-to-top svg {

@@ -54,7 +54,9 @@ pub fn normalize_tvg_id(raw: &str) -> String {
 }
 
 pub async fn refresh_source(source: Source) -> Result<()> {
+    let refresh_start = std::time::Instant::now();
     let id = source.id;
+    let source_name = source.name.clone();
     let source_for_epg = source.clone();
     match source.source_type {
         source_type::M3U => m3u::read_m3u8(source, true)?,
@@ -63,6 +65,12 @@ pub async fn refresh_source(source: Source) -> Result<()> {
         source_type::CUSTOM => {}
         _ => return Err(anyhow!("invalid source_type")),
     }
+    log(format!(
+        "[perf] {}: channel refresh took {:?}",
+        source_name,
+        refresh_start.elapsed()
+    ));
+    let epg_start = std::time::Instant::now();
     if let Some(epg_url) = source_for_epg
         .epg_url
         .as_ref()
@@ -90,9 +98,19 @@ pub async fn refresh_source(source: Source) -> Result<()> {
             ));
         }
     }
+    log(format!(
+        "[perf] {}: EPG refresh took {:?}",
+        source_name,
+        epg_start.elapsed()
+    ));
     if let Some(id) = id {
         sql::update_source_last_updated(id)?;
     }
+    log(format!(
+        "[perf] {}: total refresh_source took {:?}",
+        source_name,
+        refresh_start.elapsed()
+    ));
     Ok(())
 }
 
@@ -145,14 +163,19 @@ pub async fn download(
             }
         }
     }
-    let user_agent = headers
-        .and_then(|f| f.user_agent)
-        .or(source.stream_user_agent)
-        .unwrap_or_else(|| DEFAULT_USER_AGENT.to_string());
-    let client = client
-        .user_agent(user_agent)
-        .default_headers(headers_map)
-        .build()?;
+    // Unlike get_user_agent_from_source() (used for Xtream API calls), this
+    // deliberately does NOT fall back to DEFAULT_USER_AGENT ("Fred TV") -
+    // mpv playback (see mpv.rs's set_headers) only sends --user-agent when
+    // one is explicitly configured, otherwise sending nothing and letting
+    // mpv/ffmpeg use its own default, so downloads match that "send
+    // nothing unless configured" behavior instead of always sending
+    // something a provider might not recognize.
+    let user_agent = headers.and_then(|f| f.user_agent).or(source.stream_user_agent);
+    let mut client = client;
+    if let Some(user_agent) = user_agent {
+        client = client.user_agent(user_agent);
+    }
+    let client = client.default_headers(headers_map).build()?;
     let url = channel.url.clone().context("no url provided")?;
     let name = channel.name.clone();
     let mut response = client.get(&url).send().await?;
@@ -160,8 +183,28 @@ pub async fn download(
     let mut downloaded = 0;
     let path = match path {
         Some(p) => p,
-        None => get_download_path(get_filename(name, url)?)?,
+        None => {
+            let filename = get_filename(name, url)?;
+            // Only when nothing explicit was passed (an "always ask" save
+            // dialog pick is respected as-is, same as before) - if this
+            // channel is an episode (its own row links to a season/series),
+            // it goes in the same <show>/<season>/ structure "Download
+            // Series"/"Download Season" use, instead of dumping episodes
+            // flat into the base folder alongside movies.
+            match sql::get_episode_folder_names(channel.id.context("no channel id?")?)? {
+                Some((series_name, season_name)) => {
+                    get_series_download_path(&series_name, &season_name, &filename)?
+                }
+                None => get_download_path(filename)?,
+            }
+        }
     };
+    // "Download Series"/"Download Season" (and now single-episode downloads
+    // above) pass nested show/season folder paths that may not exist yet -
+    // File::create doesn't create parent directories itself.
+    if let Some(parent) = Path::new(&path).parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
     let mut file = tokio::fs::File::create(&path).await?;
     let mut send_threshold: f64 = 0.1;
     if !response.status().is_success() {
@@ -283,16 +326,37 @@ pub fn sanitize(str: String) -> String {
     ILLEGAL_CHARS_REGEX.replace_all(&str, "").to_string()
 }
 
-fn get_download_path(file_name: String) -> Result<String> {
+// Exposed to the frontend (via a thin command wrapper) so "Download Series"
+// can build its own <base>/<show>/<season>/<episode> paths - the plain
+// single-file case still goes through get_download_path below, which just
+// appends a flat filename to this same base.
+pub fn get_download_base_path() -> Result<String> {
     let settings = get_settings()?;
-    let path = match settings.recording_path {
-        Some(path) => path,
-        None => get_default_record_path()?,
-    };
-    let mut path = Path::new(&path).to_path_buf();
+    match settings.recording_path {
+        Some(path) => Ok(path),
+        None => get_default_record_path(),
+    }
+}
+
+fn get_download_path(file_name: String) -> Result<String> {
+    let mut path = Path::new(&get_download_base_path()?).to_path_buf();
     path.push(file_name);
     Ok(path.to_string_lossy().to_string())
 }
+
+// <base>/<show>/<season>/<file> - shared by single-episode downloads
+// (download(), above) and the frontend's "Download Series"/"Download
+// Season" loops, which build this same structure client-side per episode
+// (see channel-tile.component.ts) since get_download_base_path() is
+// exposed to them for exactly that.
+fn get_series_download_path(series_name: &str, season_name: &str, file_name: &str) -> Result<String> {
+    let mut path = Path::new(&get_download_base_path()?).to_path_buf();
+    path.push(sanitize(series_name.to_string()));
+    path.push(sanitize(season_name.to_string()));
+    path.push(file_name);
+    Ok(path.to_string_lossy().to_string())
+}
+
 pub fn get_bin(bin: &str) -> String {
     if OS == "linux" || which(bin).is_ok() {
         return bin.to_string();

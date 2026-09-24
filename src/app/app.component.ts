@@ -1,15 +1,30 @@
-import { Component, HostListener } from "@angular/core";
+import { Component, HostListener, OnInit } from "@angular/core";
+import { invoke } from "@tauri-apps/api/core";
 import { DownloadService } from "./download.service";
+import { ThemeService } from "./theme.service";
+import { Settings } from "./models/settings";
 
 @Component({
   selector: "app-root",
   templateUrl: "./app.component.html",
   styleUrl: "./app.component.css",
 })
-export class AppComponent {
+export class AppComponent implements OnInit {
   title = "open-tv";
 
-  constructor(private download: DownloadService) {}
+  constructor(
+    private download: DownloadService,
+    private theme: ThemeService,
+  ) {}
+
+  ngOnInit(): void {
+    // Applied here (the true root, mounted before any routed page) rather
+    // than in HomeComponent, so it's already correct even if Settings or
+    // Manage Categories ends up being the first thing rendered.
+    invoke("get_settings").then((settings) => {
+      this.theme.applyTheme((settings as Settings).theme);
+    });
+  }
 
   @HostListener("document:contextmenu", ["$event"])
   onRightClick(event: MouseEvent) {

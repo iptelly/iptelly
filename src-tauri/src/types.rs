@@ -48,6 +48,18 @@ pub struct Season {
 }
 
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
+pub struct SeriesEpisode {
+    pub channel: Channel,
+    pub season_name: String,
+}
+
+#[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
+pub struct SeasonDownloadInfo {
+    pub series_name: String,
+    pub episodes: Vec<Channel>,
+}
+
+#[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
 pub struct Source {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<i64>,
@@ -108,6 +120,9 @@ pub struct Settings {
     pub enable_hwdec: Option<bool>,
     pub always_ask_save: Option<bool>,
     pub enable_gpu: Option<bool>,
+    // "modern" (default, unset) or "classic" - toggles which CSS custom
+    // property values apply, see styles.css's :root[data-theme="classic"].
+    pub theme: Option<String>,
 }
 
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
