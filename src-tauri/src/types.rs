@@ -127,6 +127,11 @@ pub struct Settings {
     // Recording always uses mpv regardless of this.
     pub player: Option<String>,
     pub vlc_params: Option<String>,
+    // A literal local IP address (not an interface name) every outgoing
+    // HTTP request (playlists, EPG, downloads) binds to - see
+    // utils::new_http_client_builder(). mpv also gets told to use it for
+    // stream traffic itself (see mpv.rs).
+    pub network_interface: Option<String>,
 }
 
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
@@ -236,6 +241,15 @@ pub struct NetworkInfo {
     pub port: u16,
     pub local_ips: Vec<String>,
     pub wan_ip: String,
+}
+
+// A pickable local interface/address for Settings > Network interface -
+// distinct from NetworkInfo above, which is about the re-stream feature's
+// LAN-facing address, not which local address outgoing requests bind to.
+#[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
+pub struct NetworkInterface {
+    pub name: String,
+    pub ip: String,
 }
 
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]

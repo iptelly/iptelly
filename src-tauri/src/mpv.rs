@@ -28,6 +28,8 @@ const ARG_HWDEC: &str = "--hwdec=auto";
 const ARG_GPU_NEXT: &str = "--vo=gpu-next";
 const ARG_GPU_PROFILE_HIGH_QUALITY: &str = "--profile=high-quality";
 const ARG_NO_RESUME_PLAYBACK: &str = "--no-resume-playback";
+const ARG_STREAM_LAVF_LOCAL_ADDR: &str = "--stream-lavf-o=local_addr=";
+const ARG_STREAM_LAVF_INTERFACE: &str = ",interface=";
 const MPV_BIN_NAME: &str = "mpv";
 const YTDLP_BIN_NAME: &str = "yt-dlp";
 const HTTP_ORIGIN: &str = "origin:";
@@ -104,6 +106,11 @@ fn get_play_args(
     if settings.enable_gpu.unwrap_or(false) {
         args.push(ARG_GPU_NEXT.to_string());
         args.push(ARG_GPU_PROFILE_HIGH_QUALITY.to_string());
+    }
+    if let Some(address) = settings.network_interface.as_ref() {
+        args.push(format!(
+            "{ARG_STREAM_LAVF_LOCAL_ADDR}{address}{ARG_STREAM_LAVF_INTERFACE}{address}"
+        ));
     }
     if record {
         let path = if let Some(p) = record_path {

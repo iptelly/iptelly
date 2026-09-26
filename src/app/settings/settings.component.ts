@@ -11,6 +11,7 @@ import { ConfirmDeleteModalComponent } from "../confirm-delete-modal/confirm-del
 import { SORT_TYPES, SortType, getSortTypeText } from "../models/sortType";
 import { RailItem } from "../models/railItem";
 import { ThemeService } from "../theme.service";
+import { NetworkInterface } from "../models/networkInterface";
 
 @Component({
   selector: "app-settings",
@@ -35,6 +36,7 @@ export class SettingsComponent {
   sources: Source[] = [];
   expiries: Record<number, number> = {};
   timezones: Record<number, string> = {};
+  networkInterfaces: NetworkInterface[] = [];
   sortTypes = SORT_TYPES;
   @ViewChild("mpvParams") mpvParams!: ElementRef;
   @ViewChild("vlcParams") vlcParams!: ElementRef;
@@ -86,10 +88,22 @@ export class SettingsComponent {
   ngOnInit(): void {
     this.getSettings();
     this.getSources();
+    this.getNetworkInterfaces();
     if (this.memory.XtreamSourceIds.size > 0) {
       this.getExpiries();
       this.getTimezones();
     }
+  }
+
+  getNetworkInterfaces() {
+    invoke("get_network_interfaces").then((x) => {
+      this.networkInterfaces = x as NetworkInterface[];
+    });
+  }
+
+  isSelectedInterfaceMissing(): boolean {
+    if (this.settings.network_interface == undefined) return false;
+    return !this.networkInterfaces.some((i) => i.ip === this.settings.network_interface);
   }
 
   getSettings() {

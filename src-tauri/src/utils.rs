@@ -1,4 +1,4 @@
-use crate::types::{AppState, Channel, ChannelPreserve};
+use crate::types::{AppState, Channel, ChannelPreserve, NetworkInterface};
 use crate::{
     log::log,
     m3u,
@@ -13,15 +13,18 @@ use directories::ProjectDirs;
 use indexmap::IndexMap;
 use regex::Regex;
 use reqwest::{
-    Client,
+    Client, ClientBuilder,
     header::{HeaderMap, HeaderValue},
 };
 use serde::Serialize;
 use std::{
+    collections::HashSet,
     env::{consts::OS, current_exe},
     fs::File,
+    net::IpAddr,
     path::{Path, PathBuf},
     sync::LazyLock,
+    time::Duration,
 };
 use tauri::{AppHandle, Emitter, State};
 use tokio::io::AsyncWriteExt;
@@ -148,7 +151,7 @@ pub async fn download(
         .map_err(|e| log(format!("{:?}", e)));
 
     let headers = sql::get_channel_headers_by_id(channel.id.context("no channel id?")?)?;
-    let mut client = Client::builder();
+    let mut client = new_http_client_builder()?;
     let mut headers_map = HeaderMap::new();
     if let Some(headers) = headers.as_ref() {
         if let Some(origin) = headers.http_origin.as_ref() {
@@ -388,6 +391,58 @@ pub fn find_macos_bin(bin: &str) -> String {
             log(format!("Could not find {} on MacOS host", bin));
             return bin.to_string();
         });
+}
+
+/// Lists network interfaces with their current IP, for display in Settings.
+/// One entry per interface name, preferring its IPv4 address when it has both.
+pub fn get_network_interfaces() -> Result<Vec<NetworkInterface>> {
+    let mut addrs = if_addrs::get_if_addrs()?;
+    addrs.retain(|i| !i.ip().is_loopback());
+    addrs.sort_by_key(|i| i.ip().is_ipv6());
+    let mut seen = HashSet::new();
+    let mut interfaces: Vec<NetworkInterface> = addrs
+        .into_iter()
+        .filter(|i| seen.insert(i.name.clone()))
+        .map(|i| {
+            let ip = i.ip().to_string();
+            NetworkInterface { name: i.name, ip }
+        })
+        .collect();
+    interfaces.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(interfaces)
+}
+
+/// Binds to a specific, literal IP address. Note this doesn't get re-resolved:
+/// if the address changes (e.g. a VPN reconnects with a new IP), requests will
+/// fail until the user re-selects the new address in Settings.
+fn bind_to_address(builder: ClientBuilder, address: &str) -> Result<ClientBuilder> {
+    let ip: IpAddr = address
+        .parse()
+        .with_context(|| format!("Invalid IP address '{address}' in Settings > Network interface"))?;
+    Ok(builder.local_address(ip))
+}
+
+/// Base builder for every outgoing HTTP client in the app. Binds to the
+/// user's configured IP address (Settings > Network interface), if any.
+///
+/// A short connect_timeout is set because a connection bound to an address
+/// without a working route to the destination (e.g. a split-tunnel VPN)
+/// doesn't fail fast on its own; the connection just hangs until the OS gives up.
+pub fn new_http_client_builder() -> Result<ClientBuilder> {
+    let mut builder = Client::builder().connect_timeout(Duration::from_secs(10));
+    if let Some(address) = get_settings()?.network_interface {
+        builder = bind_to_address(builder, &address)?;
+    }
+    Ok(builder)
+}
+
+// Every plain (no extra headers/SSL flags) outgoing client just sets a
+// user agent on top of new_http_client_builder() - this covers that common
+// case in one call. download() still builds on new_http_client_builder()
+// directly since it also conditionally sets default_headers/
+// danger_accept_invalid_certs and its user agent is optional.
+pub fn new_http_client(user_agent: &str) -> Result<Client> {
+    Ok(new_http_client_builder()?.user_agent(user_agent).build()?)
 }
 
 pub fn serialize_to_file<T: Serialize>(obj: T, path: String) -> Result<()> {

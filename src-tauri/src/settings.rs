@@ -21,6 +21,7 @@ pub const ENABLE_GPU: &str = "enableGPU";
 pub const THEME: &str = "theme";
 pub const PLAYER: &str = "player";
 pub const VLC_PARAMS: &str = "vlcParams";
+pub const NETWORK_INTERFACE: &str = "networkInterface";
 
 pub fn get_settings() -> Result<Settings> {
     let map = sql::get_settings()?;
@@ -45,6 +46,7 @@ pub fn get_settings() -> Result<Settings> {
         theme: map.get(THEME).map(|s| s.to_string()),
         player: map.get(PLAYER).map(|s| s.to_string()),
         vlc_params: map.get(VLC_PARAMS).map(|s| s.to_string()),
+        network_interface: map.get(NETWORK_INTERFACE).map(|s| s.to_string()),
     };
     Ok(settings)
 }
@@ -99,6 +101,7 @@ pub fn update_settings(settings: Settings) -> Result<()> {
     map.insert(THEME.to_string(), settings.theme);
     map.insert(PLAYER.to_string(), settings.player);
     map.insert(VLC_PARAMS.to_string(), settings.vlc_params);
+    map.insert(NETWORK_INTERFACE.to_string(), settings.network_interface);
     sql::update_settings(map)?;
     Ok(())
 }

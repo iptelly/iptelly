@@ -44,7 +44,7 @@ pub async fn refresh_epg_from_url(source: Source, url: String) -> Result<()> {
     let refresh_start = std::time::Instant::now();
     let source_id = source.id.context("no source id")?;
     let user_agent = get_user_agent_from_source(&source)?;
-    let client = reqwest::Client::builder().user_agent(user_agent).build()?;
+    let client = crate::utils::new_http_client(&user_agent)?;
     let fetch_start = std::time::Instant::now();
     let mut response = client.get(&url).send().await?;
     if !response.status().is_success() {

@@ -14,7 +14,6 @@ use anyhow::{Context, Result};
 use chrono::TimeZone;
 use chrono::Utc;
 use futures::future::join_all;
-use reqwest::Client;
 use rusqlite::Transaction;
 use serde::Deserialize;
 use serde::Serialize;
@@ -239,7 +238,7 @@ async fn get_xtream_http_data<T>(mut url: Url, action: &str, user_agent: &String
 where
     T: serde::de::DeserializeOwned,
 {
-    let client = Client::builder().user_agent(user_agent).build()?;
+    let client = crate::utils::new_http_client(user_agent)?;
     url.query_pairs_mut().append_pair("action", action);
     let data = client.get(url).send().await?.json::<T>().await?;
     Ok(data)
@@ -650,7 +649,7 @@ pub async fn get_timeshift_url_for_epg(
 async fn get_status(source: &mut Source) -> Result<(i64, XtreamStatus)> {
     let url = build_xtream_url(source)?;
     let user_agent = get_user_agent_from_source(&source)?;
-    let client = Client::builder().user_agent(user_agent).build()?;
+    let client = crate::utils::new_http_client(&user_agent)?;
     let data = client.get(url).send().await?.json::<XtreamStatus>().await?;
     Ok((source.id.context("no id")?, data))
 }

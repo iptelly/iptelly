@@ -116,6 +116,7 @@ pub fn run() {
             stop_restream,
             watch_self,
             get_network_info,
+            get_network_interfaces,
             share_restream,
             add_last_watched,
             backup_favs,
@@ -688,6 +689,11 @@ async fn watch_self(port: u16, state: State<'_, Mutex<AppState>>) -> Result<(), 
 #[tauri::command]
 async fn get_network_info() -> Result<NetworkInfo, String> {
     restream::get_network_info().await.map_err(map_err_frontend)
+}
+
+#[tauri::command(async)]
+fn get_network_interfaces() -> Result<Vec<types::NetworkInterface>, String> {
+    utils::get_network_interfaces().map_err(map_err_frontend)
 }
 
 #[tauri::command(async)]

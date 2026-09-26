@@ -172,7 +172,7 @@ fn commit_channel(
 
 pub async fn get_m3u8_from_link(source: Source, wipe: bool) -> Result<()> {
     let user_agent = get_user_agent_from_source(&source)?;
-    let client = reqwest::Client::builder().user_agent(user_agent).build()?;
+    let client = crate::utils::new_http_client(&user_agent)?;
     let url = source.url.clone().context("Invalid source")?;
     let mut response = client.get(&url).send().await?;
     if !response.status().is_success() {

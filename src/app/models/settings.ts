@@ -15,4 +15,5 @@ export class Settings {
   theme?: string;
   player?: string;
   vlc_params?: string;
+  network_interface?: string;
 }
