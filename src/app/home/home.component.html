@@ -109,6 +109,9 @@
           [viewMode]="viewType"></app-channel-tile>
       </div>
     </cdk-virtual-scroll-viewport>
+    <div class="empty-state" *ngIf="showEmptyState()" @fadeInOut>
+      <span>{{ emptyStateMessage() }}</span>
+    </div>
   </div>
 </div>
 

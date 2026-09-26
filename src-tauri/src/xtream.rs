@@ -51,8 +51,40 @@ struct XtreamStream {
 }
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct XtreamSeries {
+    #[serde(default, deserialize_with = "deserialize_seasons")]
     seasons: Vec<XtreamSeason>,
+    #[serde(default, deserialize_with = "deserialize_episodes")]
     episodes: HashMap<String, Vec<XtreamEpisode>>,
+}
+
+// Some Xtream panels return an empty array `[]` instead of an empty object
+// `{}` (and vice versa) for these fields when a series has no
+// seasons/episodes yet - a long-standing quirk of PHP's json_encode() on an
+// empty associative array, which can't be told apart from an empty list.
+// Treat "wrong but empty-shaped" as empty instead of failing to parse the
+// whole series (see the "invalid type: sequence, expected a map" report).
+fn deserialize_seasons<'de, D>(deserializer: D) -> std::result::Result<Vec<XtreamSeason>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    match value {
+        serde_json::Value::Array(_) => serde_json::from_value(value).map_err(serde::de::Error::custom),
+        _ => Ok(Vec::new()),
+    }
+}
+
+fn deserialize_episodes<'de, D>(
+    deserializer: D,
+) -> std::result::Result<HashMap<String, Vec<XtreamEpisode>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    match value {
+        serde_json::Value::Object(_) => serde_json::from_value(value).map_err(serde::de::Error::custom),
+        _ => Ok(HashMap::new()),
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

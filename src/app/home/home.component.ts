@@ -724,6 +724,26 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     );
   }
 
+  // Shown in place of the (otherwise silently empty) grid/list once a load
+  // has actually finished with zero rows - loading/channelsVisible guards
+  // keep this from flashing during the brief window before the first
+  // response of a fresh load() comes back.
+  showEmptyState(): boolean {
+    return (
+      !this.loading &&
+      this.channelsVisible &&
+      this.channels.length === 0 &&
+      !this.showFavMediaSection()
+    );
+  }
+
+  emptyStateMessage(): string {
+    if (this.filters?.season) return "This season has no episodes.";
+    if (this.filters?.series_id) return "No seasons found for this series.";
+    if (this.filters?.query) return "No results found.";
+    return "Nothing to show here.";
+  }
+
   filtersVisible() {
     return (
       !this.filters?.series_id &&
