@@ -17,6 +17,7 @@ export class NavRailComponent {
     { item: RailItem.Movies, label: "Movies" },
     { item: RailItem.Series, label: "Series" },
     { item: RailItem.History, label: "History" },
+    { item: RailItem.Downloads, label: "Downloads" },
     { item: RailItem.ManageCategories, label: "Manage Categories" },
   ];
 

@@ -446,28 +446,6 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
     return await invoke<string>("get_download_base_path");
   }
 
-  // Downloads a list of episodes into <base>/<show name>/<season name>/
-  // <episode>.<ext>, one at a time (not in parallel) - sources default to
-  // max_streams=1, and starting a second concurrent stream/download on the
-  // same source cancels the oldest one (see handle_max_streams), so
-  // sequential is both simpler and avoids the batch cancelling itself.
-  private async downloadEpisodeList(
-    baseFolder: string,
-    showName: string,
-    episodes: { channel: Channel; seasonName: string }[],
-  ) {
-    const showFolder = sanitizeFileName(showName);
-    for (const episode of episodes) {
-      const seasonFolder = sanitizeFileName(episode.seasonName);
-      const fileName = `${sanitizeFileName(episode.channel.name!)}.${getExtension(episode.channel.url!)}`;
-      const path = `${baseFolder}/${showFolder}/${seasonFolder}/${fileName}`;
-      const id = episode.channel.id!.toString();
-      const download = await this.download.addDownload(id, episode.channel);
-      this.downloadSubscribe(download);
-      await this.download.download(id, path);
-    }
-  }
-
   async downloadSeries() {
     const baseFolder = await this.pickOrGetBaseFolder("Select where to download the series");
     if (!baseFolder) return;
@@ -480,7 +458,7 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
     }
     this.downloadingSeries = true;
     this.cdr.markForCheck();
-    await this.downloadEpisodeList(
+    await this.download.enqueueSeries(
       baseFolder,
       this.channel?.name!,
       episodes.map((e) => ({ channel: e.channel, seasonName: e.season_name })),
@@ -501,7 +479,7 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
     }
     this.downloadingSeries = true;
     this.cdr.markForCheck();
-    await this.downloadEpisodeList(
+    await this.download.enqueueSeries(
       baseFolder,
       info.series_name,
       info.episodes.map((channel) => ({ channel, seasonName: this.channel?.name! })),

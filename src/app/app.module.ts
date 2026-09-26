@@ -37,6 +37,7 @@ import { TimeAgoPipe } from "./pipes/time-ago.pipe";
 import { TimeUntilPipe } from './pipes/time-until.pipe';
 import { NavRailComponent } from './home/nav-rail/nav-rail.component';
 import { PlaylistSidebarComponent } from './home/playlist-sidebar/playlist-sidebar.component';
+import { DownloadSidebarComponent } from './home/download-sidebar/download-sidebar.component';
 import { EpgTimelineComponent } from './channel-tile/epg-timeline/epg-timeline.component';
 import { EpgTimelineHeaderComponent } from './home/epg-timeline-header/epg-timeline-header.component';
 import { ManageCategoriesComponent } from './manage-categories/manage-categories.component';
@@ -70,6 +71,7 @@ import { ManageCategoriesComponent } from './manage-categories/manage-categories
     DownloadManagerComponent,
     NavRailComponent,
     PlaylistSidebarComponent,
+    DownloadSidebarComponent,
     EpgTimelineComponent,
     EpgTimelineHeaderComponent,
     ManageCategoriesComponent,

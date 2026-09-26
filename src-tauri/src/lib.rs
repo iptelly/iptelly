@@ -19,6 +19,7 @@ use {
 };
 
 pub mod bulk_action_type;
+pub mod downloads;
 pub mod epg;
 pub mod external_player;
 pub mod log;
@@ -108,6 +109,18 @@ pub fn run() {
             get_epg,
             get_epg_schedule,
             download,
+            resume_download,
+            queue_download,
+            play_download,
+            is_already_downloaded,
+            pause_download,
+            pause_all_downloads,
+            cancel_all_downloads,
+            get_download_history,
+            delete_download_history_item,
+            delete_downloaded_file,
+            clear_cancelled_downloads,
+            get_channel_by_id,
             add_epg,
             remove_epg,
             get_epg_ids,
@@ -140,6 +153,13 @@ pub fn run() {
             app.manage(Mutex::new(AppState {
                 ..Default::default()
             }));
+            // Cleans up any download left stuck 'downloading'/'queued' by
+            // the app closing (or crashing) mid-transfer last time - see
+            // reconcile_interrupted_downloads's own comment for why this is
+            // the only way those two statuses can ever be found at startup.
+            if let Err(e) = sql::reconcile_interrupted_downloads() {
+                log::log(format!("{:?}", e));
+            }
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             if *ENABLE_TRAY_ICON {
                 let _ = build_tray_icon(app);
@@ -607,7 +627,36 @@ async fn download(
     download_id: String,
     path: Option<String>,
 ) -> Result<(), String> {
-    utils::download(state.clone(), app, channel, &download_id, path)
+    downloads::download(state, app, channel, &download_id, path)
+        .await
+        .map_err(map_err_frontend)
+}
+
+#[tauri::command]
+async fn resume_download(
+    state: State<'_, Mutex<AppState>>,
+    app: AppHandle,
+    download_id: String,
+    channel: Channel,
+) -> Result<(), String> {
+    downloads::resume(state, app, download_id, channel)
+        .await
+        .map_err(map_err_frontend)
+}
+
+#[tauri::command(async)]
+fn queue_download(download_id: String, channel: Channel, path: String) -> Result<(), String> {
+    downloads::enqueue(&download_id, &channel, &path).map_err(map_err_frontend)
+}
+
+#[tauri::command]
+async fn play_download(path: String) -> Result<(), String> {
+    downloads::play_file(path).await.map_err(map_err_frontend)
+}
+
+#[tauri::command]
+async fn is_already_downloaded(channel: Channel, path: String) -> Result<bool, String> {
+    downloads::is_already_downloaded(&channel, &path)
         .await
         .map_err(map_err_frontend)
 }
@@ -615,12 +664,61 @@ async fn download(
 #[tauri::command]
 async fn abort_download(
     state: State<'_, Mutex<AppState>>,
-    source_id: i64,
     download_id: String,
 ) -> Result<(), String> {
-    mpv::cancel_play(source_id, download_id, state)
+    downloads::cancel(state, &download_id)
         .await
         .map_err(map_err_frontend)
+}
+
+#[tauri::command]
+async fn pause_download(
+    state: State<'_, Mutex<AppState>>,
+    download_id: String,
+) -> Result<(), String> {
+    downloads::pause(state, &download_id)
+        .await
+        .map_err(map_err_frontend)
+}
+
+#[tauri::command]
+async fn pause_all_downloads(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
+    downloads::pause_all(state).await.map_err(map_err_frontend)
+}
+
+#[tauri::command]
+async fn cancel_all_downloads(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
+    downloads::cancel_all(state).await.map_err(map_err_frontend)
+}
+
+#[tauri::command(async)]
+fn get_download_history() -> Result<Vec<types::DownloadHistoryItem>, String> {
+    downloads::get_history().map_err(map_err_frontend)
+}
+
+#[tauri::command(async)]
+fn delete_download_history_item(download_id: String) -> Result<(), String> {
+    sql::delete_download_row(&download_id).map_err(map_err_frontend)
+}
+
+#[tauri::command]
+async fn delete_downloaded_file(download_id: String) -> Result<(), String> {
+    downloads::delete_completed_download(&download_id)
+        .await
+        .map_err(map_err_frontend)
+}
+
+#[tauri::command(async)]
+fn clear_cancelled_downloads() -> Result<(), String> {
+    // 'paused' included since the Cancelled view now shows those too (see
+    // reconcile_interrupted_downloads) - "Clear all" there should clear
+    // everything actually visible in that list.
+    sql::clear_download_history_by_status(&["cancelled", "failed", "paused"]).map_err(map_err_frontend)
+}
+
+#[tauri::command(async)]
+fn get_channel_by_id(id: i64) -> Result<Channel, String> {
+    sql::get_channel_by_id(id).map_err(map_err_frontend)
 }
 
 #[tauri::command]

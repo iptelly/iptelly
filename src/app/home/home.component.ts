@@ -796,6 +796,12 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
       this.router.navigateByUrl("manage-categories");
       return;
     }
+    if (item == RailItem.Downloads) {
+      this.currentRailItem = item;
+      this.clearSearch();
+      this.nodeStack.clear();
+      return;
+    }
     this.currentRailItem = item;
     this.filters!.series_id = undefined;
     this.filters!.group_id = undefined;
@@ -851,8 +857,12 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
 
   readonly navRailWidthPx = 60;
   sidebarWidthPx = 216;
+  readonly downloadSidebarWidthPx = 216;
 
   mainContentMarginPx(): number {
+    if (this.currentRailItem === RailItem.Downloads) {
+      return this.navRailWidthPx + this.downloadSidebarWidthPx;
+    }
     return this.navRailWidthPx + (this.sidebarVisible() ? this.sidebarWidthPx : 0);
   }
 

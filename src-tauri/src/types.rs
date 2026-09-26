@@ -234,6 +234,42 @@ pub struct AppState {
     pub restream_stop_signal: Arc<AtomicBool>,
 
     pub play_stop: HashMap<i64, IndexMap<String, CancellationToken>>,
+    // Explicit user pause/cancel for downloads, separate from play_stop
+    // above (which still handles eviction by handle_max_streams's
+    // per-source connection cap, unchanged) - keyed by download_id, one
+    // entry per currently-running download.
+    pub download_controls: HashMap<String, tokio::sync::watch::Sender<DownloadControl>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DownloadControl {
+    Running,
+    Pause,
+    Cancel,
+}
+
+#[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
+pub struct DownloadHistoryItem {
+    pub id: String,
+    pub channel_id: Option<i64>,
+    pub source_id: Option<i64>,
+    pub name: String,
+    pub path: String,
+    pub status: String,
+    pub downloaded_bytes: i64,
+    pub total_bytes: Option<i64>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+// Emitted on the "progress-{download_id}" event - byte counts included
+// alongside the percentage so the UI can show a "123 MB / 1.2 GB" style
+// readout, not just a bare percentage.
+#[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
+pub struct DownloadProgress {
+    pub progress: f64,
+    pub downloaded_bytes: i64,
+    pub total_bytes: i64,
 }
 
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]

@@ -1,4 +1,4 @@
-use crate::types::{AppState, Channel, ChannelPreserve, NetworkInterface};
+use crate::types::{AppState, ChannelPreserve, NetworkInterface};
 use crate::{
     log::log,
     m3u,
@@ -7,15 +7,12 @@ use crate::{
     types::Source,
     xmltv, xtream,
 };
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow};
 use chrono::{DateTime, Local, Utc};
 use directories::ProjectDirs;
 use indexmap::IndexMap;
 use regex::Regex;
-use reqwest::{
-    Client, ClientBuilder,
-    header::{HeaderMap, HeaderValue},
-};
+use reqwest::{Client, ClientBuilder};
 use serde::Serialize;
 use std::{
     collections::HashSet,
@@ -26,8 +23,7 @@ use std::{
     sync::LazyLock,
     time::Duration,
 };
-use tauri::{AppHandle, Emitter, State};
-use tokio::io::AsyncWriteExt;
+use tauri::State;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use which::which;
@@ -130,132 +126,6 @@ pub fn get_local_time(timestamp: i64) -> Result<DateTime<Local>> {
     Ok(DateTime::<Local>::from(datetime))
 }
 
-pub async fn download(
-    state: State<'_, Mutex<AppState>>,
-    app: AppHandle,
-    channel: Channel,
-    download_id: &str,
-    path: Option<String>,
-) -> Result<()> {
-    let source_id = channel.source_id.context("no source id provided")?;
-    let source = sql::get_source_from_id(source_id)
-        .with_context(|| format!("failed to fetch source with id {}", source_id))?;
-
-    _ = handle_max_streams(&source, &state)
-        .await
-        .map_err(|e| log(format!("{:?}", e)));
-
-    let token = CancellationToken::new();
-    _ = insert_play_token(source_id, download_id.to_string(), token.clone(), &state)
-        .await
-        .map_err(|e| log(format!("{:?}", e)));
-
-    let headers = sql::get_channel_headers_by_id(channel.id.context("no channel id?")?)?;
-    let mut client = new_http_client_builder()?;
-    let mut headers_map = HeaderMap::new();
-    if let Some(headers) = headers.as_ref() {
-        if let Some(origin) = headers.http_origin.as_ref() {
-            headers_map.insert("Origin", HeaderValue::from_str(origin)?);
-        }
-        if let Some(referrer) = headers.referrer.as_ref() {
-            headers_map.insert("Referer", HeaderValue::from_str(referrer)?);
-        }
-        if let Some(ignore_ssl) = headers.ignore_ssl {
-            if ignore_ssl {
-                client = client.danger_accept_invalid_certs(true);
-            }
-        }
-    }
-    // Unlike get_user_agent_from_source() (used for Xtream API calls), this
-    // deliberately does NOT fall back to DEFAULT_USER_AGENT ("Fred TV") -
-    // mpv playback (see mpv.rs's set_headers) only sends --user-agent when
-    // one is explicitly configured, otherwise sending nothing and letting
-    // mpv/ffmpeg use its own default, so downloads match that "send
-    // nothing unless configured" behavior instead of always sending
-    // something a provider might not recognize.
-    let user_agent = headers.and_then(|f| f.user_agent).or(source.stream_user_agent);
-    let mut client = client;
-    if let Some(user_agent) = user_agent {
-        client = client.user_agent(user_agent);
-    }
-    let client = client.default_headers(headers_map).build()?;
-    let url = channel.url.clone().context("no url provided")?;
-    let name = channel.name.clone();
-    let mut response = client.get(&url).send().await?;
-    let total_size = response.content_length().unwrap_or(0);
-    let mut downloaded = 0;
-    let path = match path {
-        Some(p) => p,
-        None => {
-            let filename = get_filename(name, url)?;
-            // Only when nothing explicit was passed (an "always ask" save
-            // dialog pick is respected as-is, same as before) - if this
-            // channel is an episode (its own row links to a season/series),
-            // it goes in the same <show>/<season>/ structure "Download
-            // Series"/"Download Season" use, instead of dumping episodes
-            // flat into the base folder alongside movies.
-            match sql::get_episode_folder_names(channel.id.context("no channel id?")?)? {
-                Some((series_name, season_name)) => {
-                    get_series_download_path(&series_name, &season_name, &filename)?
-                }
-                None => get_download_path(filename)?,
-            }
-        }
-    };
-    // "Download Series"/"Download Season" (and now single-episode downloads
-    // above) pass nested show/season folder paths that may not exist yet -
-    // File::create doesn't create parent directories itself.
-    if let Some(parent) = Path::new(&path).parent() {
-        tokio::fs::create_dir_all(parent).await?;
-    }
-    let mut file = tokio::fs::File::create(&path).await?;
-    let mut send_threshold: f64 = 0.1;
-    if !response.status().is_success() {
-        let error = response.status();
-        bail!("Failed to download movie: HTTP {error}")
-    }
-
-    let result: Result<()> = loop {
-        tokio::select! {
-          chunk = response.chunk() => {
-               match chunk {
-                   Ok(Some(chunk)) => {
-                       if let Err(e) = file.write(&chunk).await {
-                           break Err(e.into());
-                       }
-                       downloaded += chunk.len() as u64;
-                       if total_size > 0 {
-                           let progress: f64 = (downloaded as f64 / total_size as f64) * 100.0;
-                           let progress = (progress * 10.0).trunc() / 10.0;
-                           if progress > send_threshold {
-                               let _ = app.emit(&format!("progress-{}", download_id), progress);
-                               send_threshold = progress + 0.1 as f64;
-                           }
-                       }
-                   }
-                   Ok(None) => break Ok(()),
-                   Err(e) => break Err(e.into()),
-               }
-          }
-          _ = token.cancelled() => {
-               break Err(anyhow!("download aborted"));
-          }
-        }
-    };
-
-    _ = remove_from_play_stop(state, &source_id, &download_id.to_string())
-        .await
-        .map_err(|e| log(format!("{:?}", e)));
-
-    if let Err(e) = &result {
-        if e.to_string() == "download aborted" {
-            drop(file);
-            let _ = tokio::fs::remove_file(path).await;
-            bail!("download aborted");
-        }
-    }
-    result
-}
 
 pub async fn remove_from_play_stop(
     state: State<'_, Mutex<AppState>>,
@@ -310,7 +180,7 @@ pub async fn insert_play_token(
     Ok(())
 }
 
-fn get_filename(channel_name: String, url: String) -> Result<String> {
+pub(crate) fn get_filename(channel_name: String, url: String) -> Result<String> {
     let extension = get_extension(url);
     let channel_name = sanitize(channel_name);
     let filename = format!("{channel_name}.{extension}").to_string();
@@ -341,7 +211,7 @@ pub fn get_download_base_path() -> Result<String> {
     }
 }
 
-fn get_download_path(file_name: String) -> Result<String> {
+pub(crate) fn get_download_path(file_name: String) -> Result<String> {
     let mut path = Path::new(&get_download_base_path()?).to_path_buf();
     path.push(file_name);
     Ok(path.to_string_lossy().to_string())
@@ -352,7 +222,7 @@ fn get_download_path(file_name: String) -> Result<String> {
 // Season" loops, which build this same structure client-side per episode
 // (see channel-tile.component.ts) since get_download_base_path() is
 // exposed to them for exactly that.
-fn get_series_download_path(series_name: &str, season_name: &str, file_name: &str) -> Result<String> {
+pub(crate) fn get_series_download_path(series_name: &str, season_name: &str, file_name: &str) -> Result<String> {
     let mut path = Path::new(&get_download_base_path()?).to_path_buf();
     path.push(sanitize(series_name.to_string()));
     path.push(sanitize(season_name.to_string()));

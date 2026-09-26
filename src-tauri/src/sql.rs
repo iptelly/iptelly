@@ -4,8 +4,8 @@ use std::{collections::HashMap, sync::LazyLock};
 use crate::log::log;
 use crate::sort_type;
 use crate::types::{
-    ChannelPreserve, CustomChannel, CustomChannelExtraData, EPG, EPGNotify, ExportedGroup, Group,
-    IdName, Season, SeriesEpisode,
+    ChannelPreserve, CustomChannel, CustomChannelExtraData, DownloadHistoryItem, EPG, EPGNotify,
+    ExportedGroup, Group, IdName, Season, SeriesEpisode,
 };
 use crate::{
     media_type, source_type,
@@ -304,6 +304,22 @@ fn apply_migrations() -> Result<()> {
         M::up(
             r#"
               ALTER TABLE sources ADD COLUMN epg_retention_days INTEGER;
+            "#,
+        ),
+        M::up(
+            r#"
+              CREATE TABLE IF NOT EXISTS downloads (
+                id TEXT PRIMARY KEY,
+                channel_id INTEGER,
+                source_id INTEGER,
+                name TEXT NOT NULL,
+                path TEXT NOT NULL,
+                status TEXT NOT NULL,
+                downloaded_bytes INTEGER NOT NULL DEFAULT 0,
+                total_bytes INTEGER,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+              );
             "#,
         ),
     ]);
@@ -646,6 +662,127 @@ fn row_to_channel_headers(row: &Row) -> Result<ChannelHttpHeaders, rusqlite::Err
     })
 }
 
+// One row per download attempt, keyed by the same download_id used at
+// runtime (a channel's own id, as a string) - upsert covers both the
+// initial "downloading" insert and every later status/byte-count update
+// (paused/completed/cancelled/failed) with a single statement.
+pub fn upsert_download_row(item: &DownloadHistoryItem) -> Result<()> {
+    let sql = get_conn()?;
+    sql.execute(
+        r#"
+        INSERT INTO downloads (id, channel_id, source_id, name, path, status, downloaded_bytes, total_bytes, created_at, updated_at)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)
+        ON CONFLICT(id) DO UPDATE SET
+            status = ?6,
+            downloaded_bytes = ?7,
+            total_bytes = ?8,
+            updated_at = ?9
+        "#,
+        params![
+            item.id,
+            item.channel_id,
+            item.source_id,
+            item.name,
+            item.path,
+            item.status,
+            item.downloaded_bytes,
+            item.total_bytes,
+            item.updated_at,
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn get_download_row(id: &str) -> Result<Option<DownloadHistoryItem>> {
+    let sql = get_conn()?;
+    sql.query_row(
+        "SELECT * FROM downloads WHERE id = ?",
+        params![id],
+        row_to_download_history_item,
+    )
+    .optional()
+    .map_err(Into::into)
+}
+
+// Only terminal statuses - a large active batch's queued/downloading/paused
+// rows all share a very recent updated_at, so without this filter they'd
+// dominate the ORDER BY ... LIMIT window and push genuinely-historical rows
+// out of it entirely (the frontend then has nothing left to show once it
+// excludes whatever's still active from this same list).
+// 'paused' included alongside the plainly-terminal statuses: a download the
+// user explicitly paused is meant to stay visible/resumable indefinitely,
+// including across a restart (its historyRow already has a Resume button
+// wired up for this status) - it's not "in progress" the way 'downloading'/
+// 'queued' are, which is exactly why those two are deliberately left out
+// (see list_download_history's own note on that further down, and
+// reconcile_interrupted_downloads below for what happens to them).
+pub fn list_download_history(limit: u32) -> Result<Vec<DownloadHistoryItem>> {
+    let sql = get_conn()?;
+    let items = sql
+        .prepare(
+            "SELECT * FROM downloads WHERE status IN ('completed', 'cancelled', 'failed', 'paused') ORDER BY updated_at DESC LIMIT ?",
+        )?
+        .query_map(params![limit], row_to_download_history_item)?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(items)
+}
+
+// Run once at startup. A row can only be left at 'downloading' or 'queued'
+// if the app (or its whole machine) was closed/killed while that download
+// was in flight - nothing else ever leaves it in either state, since every
+// normal exit path (complete/pause/cancel/fail) always updates it to a
+// resolved status. Without this, that row stays invisible forever: it's
+// excluded from history (not a terminal status) and the in-memory active
+// list doesn't survive a restart either, so the download just vanishes.
+// Reconciled to 'paused' (resumable, since we still have its byte
+// progress) when something was actually downloaded, or 'cancelled' (never
+// really started - e.g. still queued) otherwise.
+pub fn reconcile_interrupted_downloads() -> Result<()> {
+    let sql = get_conn()?;
+    sql.execute(
+        r#"
+        UPDATE downloads
+        SET status = CASE WHEN downloaded_bytes > 0 THEN 'paused' ELSE 'cancelled' END,
+            updated_at = ?1
+        WHERE status IN ('downloading', 'queued')
+        "#,
+        params![chrono::Utc::now().timestamp()],
+    )?;
+    Ok(())
+}
+
+pub fn delete_download_row(id: &str) -> Result<()> {
+    let sql = get_conn()?;
+    sql.execute("DELETE FROM downloads WHERE id = ?", params![id])?;
+    Ok(())
+}
+
+pub fn clear_download_history_by_status(statuses: &[&str]) -> Result<()> {
+    let sql = get_conn()?;
+    let placeholders = generate_placeholders(statuses.len());
+    sql.execute(
+        &format!("DELETE FROM downloads WHERE status IN ({placeholders})"),
+        params_from_iter(statuses),
+    )?;
+    Ok(())
+}
+
+fn row_to_download_history_item(row: &Row) -> std::result::Result<DownloadHistoryItem, rusqlite::Error> {
+    Ok(DownloadHistoryItem {
+        id: row.get("id")?,
+        channel_id: row.get("channel_id")?,
+        source_id: row.get("source_id")?,
+        name: row.get("name")?,
+        path: row.get("path")?,
+        status: row.get("status")?,
+        downloaded_bytes: row.get("downloaded_bytes")?,
+        total_bytes: row.get("total_bytes")?,
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
+    })
+}
+
 pub fn get_settings() -> Result<HashMap<String, String>> {
     let sql = get_conn()?;
     let map = sql
@@ -823,7 +960,7 @@ fn season_row_to_channel(row: &Row) -> std::result::Result<Channel, rusqlite::Er
         name: row.get("name")?,
         series_id: row.get("series_id")?,
         season_id: None,
-        source_id: None,
+        source_id: row.get("source_id")?,
         stream_id: None,
         tv_archive: None,
         tvg_id: None,
@@ -1336,6 +1473,15 @@ fn row_to_channel(row: &Row) -> std::result::Result<Channel, rusqlite::Error> {
         hidden: row.get("hidden")?,
     };
     Ok(channel)
+}
+
+// For resuming a download that's only in history (e.g. after an app
+// restart) - the frontend no longer has the full Channel by then, only the
+// history row's channel_id.
+pub fn get_channel_by_id(id: i64) -> Result<Channel> {
+    let sql = get_conn()?;
+    sql.query_row("SELECT * FROM channels WHERE id = ?", params![id], row_to_channel)
+        .map_err(Into::into)
 }
 
 pub fn delete_channels_by_source(tx: &Transaction, source_id: i64) -> Result<()> {

@@ -1,38 +1,122 @@
-.download-box {
-  width: 320px;
-  background-color: var(--surface-2);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-md);
-  overflow: hidden;
-}
-
-.download-header {
-  background-color: var(--surface-1);
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-button.btn-outline-light {
-  border-color: var(--border-subtle);
-  color: var(--text-secondary);
-}
-
-button.btn-outline-light:hover {
-  background-color: var(--surface-3);
-  border-color: var(--text-secondary);
+/* Without this, the host custom element defaults to display:inline with no
+   height of its own - .embedded-downloads's height:100% below then has
+   nothing meaningful to fill, so content just grows past the page with no
+   scrollbar (main-content clips it via overflow:hidden instead). */
+:host {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 .progress {
   background-color: var(--surface-1);
 }
 
-.stop {
+.action {
   width: 1.5rem;
   height: 1.5rem;
   cursor: pointer;
   transition: transform 0.3s ease;
 }
 
-.stop:hover {
+.action:hover {
   transform: scale(125%);
+}
+
+.embedded-downloads {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Default/overlay scrollbars are easy to miss on a page that otherwise
+   doesn't scroll - a persistent, visible one makes it obvious there's more
+   below the fold (same treatment as Favourites' channel list). */
+.embedded-downloads::-webkit-scrollbar {
+  width: 10px;
+}
+
+.embedded-downloads::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.embedded-downloads::-webkit-scrollbar-thumb {
+  background-color: var(--surface-3);
+  border-radius: var(--radius-sm);
+}
+
+.embedded-downloads::-webkit-scrollbar-thumb:hover {
+  background-color: var(--accent);
+}
+
+.embedded-list {
+  max-width: 40rem;
+}
+
+.embedded-item {
+  background-color: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1rem;
+}
+
+.history-item-info {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.history-item-name {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-item-actions {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  margin-left: 0.75rem;
+}
+
+.embedded-downloads .empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  padding: 3rem 0;
+}
+
+.history-item {
+  padding: 0.5rem 1rem;
+}
+
+.status-badge {
+  font-size: 0.75rem;
+  text-transform: capitalize;
+  padding: 0.1rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-3);
+  color: var(--text-secondary);
+}
+
+.size-label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.status-completed {
+  color: #4caf50;
+}
+
+.status-failed {
+  color: #f44336;
+}
+
+.status-paused {
+  color: #ffb300;
 }

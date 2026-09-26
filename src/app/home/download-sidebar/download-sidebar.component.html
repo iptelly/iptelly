@@ -1,0 +1,10 @@
+<div class="download-sidebar">
+  <div class="sidebar-header">
+    <span>Downloads</span>
+  </div>
+  <div *ngFor="let category of categories" class="sidebar-item"
+    [class.active]="downloadService.SelectedCategory === category.value" (click)="select(category.value)">
+    <span class="item-name">{{ category.label }}</span>
+    <span class="item-count">{{ count(category.value) }}</span>
+  </div>
+</div>

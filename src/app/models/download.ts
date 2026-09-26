@@ -9,4 +9,7 @@ export class Download {
   channel!: Channel;
   unlisten?: UnlistenFn;
   progressUpdate!: Subject<number>;
+  status: "queued" | "downloading" | "paused" = "downloading";
+  downloadedBytes: number = 0;
+  totalBytes: number = 0;
 }

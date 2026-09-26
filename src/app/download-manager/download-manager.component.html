@@ -1,40 +1,109 @@
-<div class="position-fixed bottom-0 end-0 m-3 shadow-sm rounded download-box" [class.collapsed]="isMinimized">
-  <div class="d-flex justify-content-between align-items-center px-3 py-2 download-header">
-    <strong class="text-light">Downloads</strong>
-    <button class="btn btn-sm btn-outline-light" (click)="toggleMinimize()">
-      <span *ngIf="isMinimized">
-        <svg fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16">
-          <title>chevron-up</title>
-          <path d="M5.84,15.41L11.5,9.75L17.16,15.41L16.45,16.11L11.5,11.16L6.55,16.11L5.84,15.41Z" />
-        </svg>
+<ng-template #downloadRow let-download>
+  <div class="d-flex justify-content-between small mb-1">
+    <span>{{ download.channel.name }}</span>
+    <span *ngIf="download.status === 'queued'">Queued</span>
+    <span *ngIf="download.status !== 'queued'">
+      {{ download.status === "paused" ? "Paused - " : "" }}{{ download.progress }}%
+      <span class="size-label" *ngIf="download.totalBytes">
+        ({{ formatBytes(download.downloadedBytes) }} / {{ formatBytes(download.totalBytes) }})
       </span>
-      <span *ngIf="!isMinimized">
-        <svg fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16">
-          <title>close</title>
-          <path
-            d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" />
-        </svg>
-      </span>
-    </button>
+    </span>
   </div>
+  <div class="d-flex align-items-center">
+    <div class="progress" style="height: 6px; width: 80%">
+      <div class="progress-bar" [class.bg-success]="download.status === 'downloading'"
+        [class.bg-warning]="download.status === 'paused'" [class.bg-secondary]="download.status === 'queued'"
+        role="progressbar" [style.width.%]="download.progress" [attr.aria-valuenow]="download.progress"
+        aria-valuemin="0" aria-valuemax="100"></div>
+    </div>
+    <svg *ngIf="download.status === 'downloading'" fill="currentColor" (click)="pauseDownload(download.id)"
+      class="action ms-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+      <title>Pause</title>
+      <path d="M14,19H18V5H14M6,19H10V5H6V19Z" />
+    </svg>
+    <svg *ngIf="download.status === 'paused'" fill="currentColor" (click)="resumeDownload(download)"
+      class="action ms-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+      <title>Resume</title>
+      <path d="M8,5.14V19.14L19,12.14L8,5.14Z" />
+    </svg>
+    <svg fill="red" (click)="cancelDownload(download.id)" class="action stop ms-2" xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24">
+      <title>Cancel</title>
+      <path
+        d="M13.46,12L19,17.54V19H17.54L12,13.46L6.46,19H5V17.54L10.54,12L5,6.46V5H6.46L12,10.54L17.54,5H19V6.46L13.46,12Z" />
+    </svg>
+  </div>
+</ng-template>
 
-  <div *ngIf="!isMinimized" class="p-3 d-grid gap-3">
-    <div *ngFor="let download of getDownloads()">
-      <div class="d-flex justify-content-between text-light small mb-1">
-        <span>{{ download.channel.name }}</span>
-        <span>{{ download.progress }}%</span>
-      </div>
-      <div class="d-flex align-items-center">
-        <div class="progress" style="height: 6px; width: 90%">
-          <div class="progress-bar bg-success" role="progressbar" [style.width.%]="download.progress"
-            [attr.aria-valuenow]="download.progress" aria-valuemin="0" aria-valuemax="100"></div>
-        </div>
-        <svg fill="red" (click)="cancelDownload(download.id)" class="stop ms-3" xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 24 24">
-          <path
-            d="M13.46,12L19,17.54V19H17.54L12,13.46L6.46,19H5V17.54L10.54,12L5,6.46V5H6.46L12,10.54L17.54,5H19V6.46L13.46,12Z" />
-        </svg>
-      </div>
+<ng-template #historyRow let-item>
+  <div class="d-flex justify-content-between align-items-center">
+    <div class="history-item-info">
+      <span class="history-item-name" [title]="item.name">{{ item.name }}</span>
+      <span class="status-badge ms-2 flex-shrink-0" [ngClass]="'status-' + item.status">{{ item.status }}</span>
+      <span class="size-label ms-2 flex-shrink-0" *ngIf="item.total_bytes || item.downloaded_bytes">
+        {{ formatBytes(item.total_bytes || item.downloaded_bytes) }}
+      </span>
+    </div>
+    <div class="history-item-actions">
+      <button *ngIf="item.status === 'completed'" class="btn btn-sm btn-secondary"
+        (click)="playHistoryItem(item)">Play</button>
+      <button *ngIf="item.status === 'completed'" class="btn btn-sm btn-outline-danger ms-1"
+        (click)="deleteDownloadedFile(item)">Delete</button>
+      <button *ngIf="item.status === 'paused'" class="btn btn-sm btn-secondary"
+        (click)="resumeHistoryItem(item)">Resume</button>
+      <button *ngIf="item.status === 'cancelled' || item.status === 'failed'"
+        class="btn btn-sm btn-secondary" (click)="resumeHistoryItem(item)">Restart</button>
+      <button *ngIf="item.status === 'cancelled' || item.status === 'failed'"
+        class="btn btn-sm btn-outline-danger ms-1" (click)="deleteHistoryItem(item)">Delete</button>
     </div>
   </div>
+</ng-template>
+
+<div class="embedded-downloads">
+  <div class="d-flex justify-content-between align-items-center mt-4 mb-4">
+    <h2 class="mb-0">
+      {{ selectedCategory === "queued" ? "Queued" : selectedCategory === "completed" ? "Downloaded" : "Cancelled" }}
+    </h2>
+    <div *ngIf="selectedCategory === 'queued' && hasActive()">
+      <button class="btn btn-secondary btn-sm me-2" (click)="pauseAll()">Pause all</button>
+      <button class="btn btn-danger btn-sm" (click)="cancelAll()">Cancel all</button>
+    </div>
+    <div *ngIf="selectedCategory === 'cancelled' && getCancelled().length > 0">
+      <button class="btn btn-secondary btn-sm me-2" (click)="restartAllCancelled()">Restart all</button>
+      <button class="btn btn-outline-danger btn-sm" (click)="clearCancelled()">Clear all</button>
+    </div>
+  </div>
+
+  <ng-container *ngIf="selectedCategory === 'queued'">
+    <div *ngIf="getDownloads().length === 0" class="empty-state">
+      <span>No active downloads.</span>
+    </div>
+    <div class="mx-auto embedded-list d-grid gap-3">
+      <div *ngFor="let download of getDownloads()" class="embedded-item">
+        <ng-container *ngTemplateOutlet="downloadRow; context: { $implicit: download }"></ng-container>
+      </div>
+    </div>
+  </ng-container>
+
+  <ng-container *ngIf="selectedCategory === 'completed'">
+    <div *ngIf="getCompleted().length === 0" class="empty-state">
+      <span>Nothing downloaded yet.</span>
+    </div>
+    <div class="mx-auto embedded-list d-grid gap-2">
+      <div *ngFor="let item of getCompleted()" class="embedded-item history-item">
+        <ng-container *ngTemplateOutlet="historyRow; context: { $implicit: item }"></ng-container>
+      </div>
+    </div>
+  </ng-container>
+
+  <ng-container *ngIf="selectedCategory === 'cancelled'">
+    <div *ngIf="getCancelled().length === 0" class="empty-state">
+      <span>Nothing cancelled, failed, or paused.</span>
+    </div>
+    <div class="mx-auto embedded-list d-grid gap-2">
+      <div *ngFor="let item of getCancelled()" class="embedded-item history-item">
+        <ng-container *ngTemplateOutlet="historyRow; context: { $implicit: item }"></ng-container>
+      </div>
+    </div>
+  </ng-container>
 </div>

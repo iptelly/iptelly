@@ -1,6 +1,5 @@
 import { Component, HostListener, OnInit } from "@angular/core";
 import { invoke } from "@tauri-apps/api/core";
-import { DownloadService } from "./download.service";
 import { ThemeService } from "./theme.service";
 import { Settings } from "./models/settings";
 
@@ -12,10 +11,7 @@ import { Settings } from "./models/settings";
 export class AppComponent implements OnInit {
   title = "open-tv";
 
-  constructor(
-    private download: DownloadService,
-    private theme: ThemeService,
-  ) {}
+  constructor(private theme: ThemeService) {}
 
   ngOnInit(): void {
     // Applied here (the true root, mounted before any routed page) rather
@@ -37,9 +33,5 @@ export class AppComponent implements OnInit {
 
   private isInsideMenuTrigger(element: HTMLElement): boolean {
     return !!element.closest("[mat-menu-trigger-for], [matMenuTriggerFor]");
-  }
-
-  showDownloadManager() {
-    return this.download.Downloads.size > 0;
   }
 }

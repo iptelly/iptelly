@@ -5,7 +5,12 @@
   <app-playlist-sidebar *ngIf="sidebarVisible()" [mediaType]="sidebarMediaType()"
     [selectedSourceIds]="filters?.source_ids" [selectedGroupId]="filters?.group_id"
     (sourceSelect)="onSourceSelect($event)" (widthChange)="sidebarWidthPx = $event"></app-playlist-sidebar>
+  <app-download-sidebar *ngIf="currentRailItem === railItemEnum.Downloads"></app-download-sidebar>
   <div class="main-content" [style.margin-left.px]="mainContentMarginPx()">
+    <div class="downloads-page" *ngIf="currentRailItem === railItemEnum.Downloads">
+      <app-download-manager></app-download-manager>
+    </div>
+    <ng-container *ngIf="currentRailItem !== railItemEnum.Downloads">
     <div class="main-toolbar">
     <div class="row mb-3">
       <div class="mx-auto col-md-8 col-12">
@@ -112,6 +117,7 @@
     <div class="empty-state" *ngIf="showEmptyState()" @fadeInOut>
       <span>{{ emptyStateMessage() }}</span>
     </div>
+    </ng-container>
   </div>
 </div>
 
