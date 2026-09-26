@@ -36,15 +36,40 @@
     </div>
   </div>
 
+  <div class="row mt-3 align-items-center">
+    <div class="col-4">
+      <span [ngbTooltip]="
+          'Launch parameters applied when the Player setting is VLC. Leave as-is if you don\'t know what this is'
+        ">Global VLC Parameters</span>
+    </div>
+    <div class="col">
+      <textarea #vlcParams id="vlcParams" [(ngModel)]="settings.vlc_params"
+        placeholder="vlc params like: --avcodec-hw=any. Don't touch this unless you know what you're doing!"
+        class="form-control"></textarea>
+    </div>
+  </div>
+
 
   <div class="row mt-3 align-items-center">
     <div class="col-4">
       <span [ngbTooltip]="'Modern is the current default look; Classic restores the flat, pre-redesign palette'">Theme</span>
     </div>
     <div class="col">
-      <select (ngModelChange)="onThemeChange()" [(ngModel)]="settings.theme" class="form-control">
+      <select [(ngModel)]="settings.theme" (ngModelChange)="onThemeChange()" class="form-control">
         <option [ngValue]="'modern'">Modern</option>
         <option [ngValue]="'classic'">Classic</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="row mt-3 align-items-center">
+    <div class="col-4">
+      <span [ngbTooltip]="'Which app plays your streams. Recording always uses MPV regardless of this setting'">Player</span>
+    </div>
+    <div class="col">
+      <select [(ngModel)]="settings.player" (ngModelChange)="updateSettings()" class="form-control">
+        <option [ngValue]="'mpv'">MPV</option>
+        <option [ngValue]="'vlc'">VLC</option>
       </select>
     </div>
   </div>
@@ -58,7 +83,7 @@
            logic), not the old top-button ViewMode system this dropdown
            originally belonged to - that could only distinguish Favorites/
            History and left Movies/Series indistinguishable from Channels. -->
-      <select (ngModelChange)="updateSettings()" [(ngModel)]="settings.default_view" class="form-control">
+      <select [(ngModel)]="settings.default_view" (ngModelChange)="updateSettings()" class="form-control">
         <option [ngValue]="railItemEnum.Favourites">Favourites</option>
         <option [ngValue]="railItemEnum.Channels">Channels</option>
         <option [ngValue]="railItemEnum.Movies">Movies</option>
@@ -73,7 +98,7 @@
       <span>Default sort</span>
     </div>
     <div class="col">
-      <select (ngModelChange)="updateSettings()" [(ngModel)]="settings.default_sort" class="form-control">
+      <select [(ngModel)]="settings.default_sort" (ngModelChange)="updateSettings()" class="form-control">
         <ng-container *ngFor="let sort of sortTypes">
           <option [ngValue]="sort">{{ _getSortTypeText(sort) }}</option>
         </ng-container>

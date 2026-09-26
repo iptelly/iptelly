@@ -791,6 +791,14 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     this.nodeStack.clear();
     await this.load();
     await this.reloadFavMediaIfActive();
+    // Leaving/entering Favourites toggles the primary viewport's CSS class
+    // (fav-channels-viewport caps it to 40vh so the movies/series section
+    // below has room) - the viewport element itself often persists across
+    // this navigation, but CDK only measures its size on scroll/init, not on
+    // arbitrary CSS/flex changes, so without an explicit recheck here it
+    // keeps rendering as if still capped at the old (smaller) height even
+    // after the container has actually grown back to full size.
+    setTimeout(() => this.viewport?.checkViewportSize(), 0);
   }
 
   sidebarVisible(): boolean {

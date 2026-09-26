@@ -13,4 +13,6 @@ export class Settings {
   always_ask_save?: boolean;
   enable_gpu?: boolean;
   theme?: string;
+  player?: string;
+  vlc_params?: string;
 }

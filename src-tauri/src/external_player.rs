@@ -1,0 +1,86 @@
+use crate::types::{AppState, Source};
+use crate::{log, types::Channel};
+use anyhow::{Context, Result};
+
+use std::process::Stdio;
+use tauri::State;
+use tokio::sync::Mutex;
+use tokio::{
+    io::{AsyncBufReadExt, BufReader},
+    process::Command,
+};
+use tokio_util::sync::CancellationToken;
+
+// Generic spawn/wait/cancel/play_stop-token bookkeeping shared by every
+// external player (mpv, vlc, ...) - only the binary path and CLI args
+// differ between players, this part is identical for all of them.
+pub async fn run(
+    bin_path: &str,
+    args: Vec<String>,
+    channel: &Channel,
+    source: &Option<Source>,
+    state: &State<'_, Mutex<AppState>>,
+) -> Result<()> {
+    eprintln!("Running {bin_path} with args: {:?}", args);
+
+    if let Some(source) = source.as_ref() {
+        _ = crate::utils::handle_max_streams(source, state)
+            .await
+            .map_err(|e| log::log(format!("{:?}", e)));
+    }
+
+    let mut cmd = Command::new(bin_path)
+        .args(args)
+        .stdout(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()?;
+    let token = CancellationToken::new();
+    let channel_id = channel.id.context("no channel id")?;
+    if let Some(source_id) = source.as_ref().and_then(|s| s.id) {
+        _ = crate::utils::insert_play_token(source_id, channel_id.to_string(), token.clone(), state)
+            .await
+            .map_err(|e| log::log(format!("{:?}", e)));
+    }
+    let result: Result<()> = tokio::select! {
+        status = cmd.wait() => {
+            let status = status?;
+            if status.success() {
+                Ok(())
+            } else {
+                let stdout = cmd.stdout.take();
+                if stdout.is_none() {
+                     Ok(())
+                } else {
+                    let stdout = stdout.context("no stdout")?;
+                    let mut error: String = String::new();
+                    let mut lines = BufReader::new(stdout).lines();
+                    let mut first = true;
+                    while let Some(line) = lines.next_line().await? {
+                        error += &line;
+                        if !first {
+                            error += "\n";
+                        } else {
+                            first = false;
+                        }
+                    }
+                    if error != "" {
+                        Err(anyhow::anyhow!(error))
+                    } else {
+                        Err(anyhow::anyhow!("Player encountered an unknown error"))
+                    }
+                }
+            }
+        },
+        _ = token.cancelled() => {
+            cmd.kill().await?;
+            Ok(())
+        }
+    };
+
+    if let Some(source_id) = source.as_ref().and_then(|s| s.id) {
+        _ = crate::utils::remove_from_play_stop(state.clone(), &source_id, &channel_id.to_string())
+            .await
+            .map_err(|e| log::log(format!("{:?}", e)));
+    }
+    result
+}

@@ -123,6 +123,10 @@ pub struct Settings {
     // "modern" (default, unset) or "classic" - toggles which CSS custom
     // property values apply, see styles.css's :root[data-theme="classic"].
     pub theme: Option<String>,
+    // "mpv" (default, unset) or "vlc" - which player handles playback.
+    // Recording always uses mpv regardless of this.
+    pub player: Option<String>,
+    pub vlc_params: Option<String>,
 }
 
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]

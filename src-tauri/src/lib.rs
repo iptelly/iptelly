@@ -20,6 +20,7 @@ use {
 
 pub mod bulk_action_type;
 pub mod epg;
+pub mod external_player;
 pub mod log;
 pub mod m3u;
 pub mod media_type;
@@ -33,6 +34,7 @@ pub mod sql;
 pub mod types;
 pub mod utils;
 pub mod view_type;
+pub mod vlc;
 pub mod xmltv;
 pub mod xtream;
 
@@ -45,13 +47,15 @@ static ENABLE_TRAY_ICON: LazyLock<bool> = LazyLock::new(|| {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _, _| {
-            let window = app.get_webview_window("main").expect("no main window");
-            let _ = window.unminimize();
-            let _ = window.show();
-            let _ = window.set_focus();
-        }))
+    let builder = tauri::Builder::default();
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _, _| {
+        let window = app.get_webview_window("main").expect("no main window");
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }));
+    builder
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -233,9 +237,21 @@ async fn play(
     record_path: Option<String>,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
-    mpv::play(channel, record, record_path, state)
-        .await
-        .map_err(map_err_frontend)
+    let player = settings::get_settings()
+        .map_err(map_err_frontend)?
+        .player
+        .unwrap_or_else(|| "mpv".to_string());
+    // Recording always goes through mpv regardless of the chosen player -
+    // it's the only one with a working --stream-record equivalent. Builtin
+    // never reaches this command at all (the frontend opens the in-app
+    // video player directly for that case instead of calling "play").
+    if record || player != "vlc" {
+        mpv::play(channel, record, record_path, state)
+            .await
+            .map_err(map_err_frontend)
+    } else {
+        vlc::play(channel, state).await.map_err(map_err_frontend)
+    }
 }
 
 #[tauri::command(async)]

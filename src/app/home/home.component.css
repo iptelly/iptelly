@@ -35,6 +35,32 @@
   margin-top: 1rem;
 }
 
+/* These two boxes are small, nested scroll regions on an otherwise
+   non-scrolling page - the default (often overlay/auto-hiding) scrollbar
+   is too easy to miss, making additional favourites look like they're
+   simply not there. A persistent, visible scrollbar makes it obvious
+   there's more to scroll. */
+.fav-channels-viewport::-webkit-scrollbar,
+.fav-media-viewport::-webkit-scrollbar {
+  width: 10px;
+}
+
+.fav-channels-viewport::-webkit-scrollbar-track,
+.fav-media-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.fav-channels-viewport::-webkit-scrollbar-thumb,
+.fav-media-viewport::-webkit-scrollbar-thumb {
+  background-color: var(--surface-3);
+  border-radius: var(--radius-sm);
+}
+
+.fav-channels-viewport::-webkit-scrollbar-thumb:hover,
+.fav-media-viewport::-webkit-scrollbar-thumb:hover {
+  background-color: var(--accent);
+}
+
 .channel-list-row {
   display: block;
   margin-bottom: 0.5rem;

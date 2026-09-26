@@ -1,20 +1,15 @@
 use crate::settings::get_default_record_path;
 use crate::types::{AppState, ChannelHttpHeaders, Source};
 use crate::utils::{find_macos_bin, get_bin};
-use crate::{log, sql};
+use crate::{external_player, log, sql};
 use crate::{media_type, settings::get_settings, types::Channel};
 use anyhow::{Context, Result};
 use chrono::Local;
 
 use std::sync::LazyLock;
-use std::{env::consts::OS, path::Path, process::Stdio};
+use std::{env::consts::OS, path::Path};
 use tauri::State;
 use tokio::sync::Mutex;
-use tokio::{
-    io::{AsyncBufReadExt, BufReader},
-    process::Command,
-};
-use tokio_util::sync::CancellationToken;
 
 const ARG_SAVE_POSITION_ON_QUIT: &str = "--save-position-on-quit";
 const ARG_CACHE: &str = "--cache=";
@@ -59,73 +54,7 @@ pub async fn play(
         })
         .or(None);
     let args = get_play_args(&channel, record, record_path, &source)?;
-    eprintln!("with args: {:?}", args);
-
-    if let Some(source) = source.as_ref() {
-        _ = crate::utils::handle_max_streams(source, &state)
-            .await
-            .map_err(|e| log::log(format!("{:?}", e)));
-    }
-
-    let mut cmd = Command::new(MPV_PATH.clone())
-        .args(args)
-        .stdout(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()?;
-    let token = CancellationToken::new();
-    let channel_id = channel.id.context("no channel id")?;
-    if let Some(source_id) = source.as_ref().and_then(|s| s.id) {
-        _ = crate::utils::insert_play_token(
-            source_id,
-            channel_id.to_string(),
-            token.clone(),
-            &state,
-        )
-        .await
-        .map_err(|e| log::log(format!("{:?}", e)));
-    }
-    let result: Result<()> = tokio::select! {
-        status = cmd.wait() => {
-            let status = status?;
-            if status.success() {
-                Ok(())
-            } else {
-                let stdout = cmd.stdout.take();
-                if stdout.is_none() {
-                     Ok(())
-                } else {
-                    let stdout = stdout.context("no stdout")?;
-                    let mut error: String = String::new();
-                    let mut lines = BufReader::new(stdout).lines();
-                    let mut first = true;
-                    while let Some(line) = lines.next_line().await? {
-                        error += &line;
-                        if !first {
-                            error += "\n";
-                        } else {
-                            first = false;
-                        }
-                    }
-                    if error != "" {
-                        Err(anyhow::anyhow!(error))
-                    } else {
-                        Err(anyhow::anyhow!("Mpv encountered an unknown error"))
-                    }
-                }
-            }
-        },
-        _ = token.cancelled() => {
-            cmd.kill().await?;
-            Ok(())
-        }
-    };
-
-    if let Some(source_id) = source.as_ref().and_then(|s| s.id) {
-        _ = crate::utils::remove_from_play_stop(state, &source_id, &channel_id.to_string())
-            .await
-            .map_err(|e| log::log(format!("{:?}", e)));
-    }
-    result
+    external_player::run(&MPV_PATH, args, &channel, &source, &state).await
 }
 
 pub async fn cancel_play(
@@ -149,11 +78,7 @@ fn get_play_args(
     let mut args = Vec::new();
     let settings = get_settings()?;
     let headers = sql::get_channel_headers_by_id(channel.id.context("no channel id?")?)?;
-    args.push(channel.url.clone().context("no url")?);
     if channel.episode_num.is_some() {
-        for url in sql::find_all_episodes_after(channel)? {
-            args.push(url);
-        }
         args.push(ARG_NO_RESUME_PLAYBACK.to_string());
     }
     if channel.media_type != media_type::LIVESTREAM {
@@ -211,6 +136,18 @@ fn get_play_args(
         #[cfg(target_os = "windows")]
         let mut params = winsplit::split(&mpv_params);
         args.append(&mut params);
+    }
+    // Everything after this point is treated as a filename/URL, never an
+    // option - protects against a malicious playlist/provider crafting a
+    // channel URL that looks like an mpv flag (e.g. --script=... or
+    // --input-ipc-server=...), which mpv would otherwise happily parse as
+    // one regardless of its position in argv.
+    args.push("--".to_string());
+    args.push(channel.url.clone().context("no url")?);
+    if channel.episode_num.is_some() {
+        for url in sql::find_all_episodes_after(channel)? {
+            args.push(url);
+        }
     }
     Ok(args)
 }
