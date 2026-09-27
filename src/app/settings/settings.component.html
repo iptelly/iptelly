@@ -242,6 +242,20 @@
     </div>
   </div>
 
+  <div class="row mt-3 align-items-center">
+    <div class="col-4">
+      <span [ngbTooltip]="
+          'Skips loading poster images and EPG data for channels, movies, and series - useful on slow connections.'
+        ">Lightweight mode</span>
+    </div>
+    <div class="col">
+      <div class="form-check form-switch">
+        <input [(ngModel)]="settings.lightweight_mode" (ngModelChange)="onLightweightModeChange()"
+          class="form-check-input" type="checkbox" />
+      </div>
+    </div>
+  </div>
+
   <h2 class="mt-4 mb-4 text-center">Sources</h2>
   <ng-container *ngFor="let source of sources; let i = index">
     <div [ngClass]="{ 'mt-3': i != 0 }">

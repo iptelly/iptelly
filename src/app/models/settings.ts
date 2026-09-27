@@ -16,4 +16,5 @@ export class Settings {
   player?: string;
   vlc_params?: string;
   network_interface?: string;
+  lightweight_mode?: boolean;
 }

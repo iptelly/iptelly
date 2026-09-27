@@ -22,6 +22,7 @@ pub const THEME: &str = "theme";
 pub const PLAYER: &str = "player";
 pub const VLC_PARAMS: &str = "vlcParams";
 pub const NETWORK_INTERFACE: &str = "networkInterface";
+pub const LIGHTWEIGHT_MODE: &str = "lightweightMode";
 
 pub fn get_settings() -> Result<Settings> {
     let map = sql::get_settings()?;
@@ -47,6 +48,7 @@ pub fn get_settings() -> Result<Settings> {
         player: map.get(PLAYER).map(|s| s.to_string()),
         vlc_params: map.get(VLC_PARAMS).map(|s| s.to_string()),
         network_interface: map.get(NETWORK_INTERFACE).map(|s| s.to_string()),
+        lightweight_mode: map.get(LIGHTWEIGHT_MODE).and_then(|s| s.parse().ok()),
     };
     Ok(settings)
 }
@@ -102,6 +104,12 @@ pub fn update_settings(settings: Settings) -> Result<()> {
     map.insert(PLAYER.to_string(), settings.player);
     map.insert(VLC_PARAMS.to_string(), settings.vlc_params);
     map.insert(NETWORK_INTERFACE.to_string(), settings.network_interface);
+    if let Some(lightweight_mode) = settings.lightweight_mode {
+        map.insert(
+            LIGHTWEIGHT_MODE.to_string(),
+            Some(lightweight_mode.to_string()),
+        );
+    }
     sql::update_settings(map)?;
     Ok(())
 }

@@ -132,6 +132,8 @@ pub struct Settings {
     // utils::new_http_client_builder(). mpv also gets told to use it for
     // stream traffic itself (see mpv.rs).
     pub network_interface: Option<String>,
+    // Skips loading channel/movie/series poster images and EPG data.
+    pub lightweight_mode: Option<bool>,
 }
 
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]

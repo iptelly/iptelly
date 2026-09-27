@@ -282,7 +282,7 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
     // not just Xtream), and the timeline itself already shows "No EPG
     // data" gracefully when there's nothing to display - so this just
     // needs to be a livestream, not gated by source type or tvg_id.
-    return this.channel?.media_type == MediaType.livestream;
+    return !this.memory.LightweightMode && this.channel?.media_type == MediaType.livestream;
   }
 
   edit() {

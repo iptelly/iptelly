@@ -87,7 +87,7 @@
         </svg>
       </button>
     </div>
-    <app-epg-timeline-header *ngIf="isChannelListView()"></app-epg-timeline-header>
+    <app-epg-timeline-header *ngIf="isChannelListView() && !memory.LightweightMode"></app-epg-timeline-header>
     </div>
 
     <cdk-virtual-scroll-viewport *ngIf="isChannelListView()" #virtualViewport [itemSize]="rowItemSizePx()"

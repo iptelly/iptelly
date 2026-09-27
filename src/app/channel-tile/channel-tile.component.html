@@ -5,8 +5,9 @@
 }" [ngbTooltip]="epgHovering ? '' : channel?.name" triggers="hover" (click)="click()"
   class="channel d-inline-flex p-2 align-items-center" (contextmenu)="onRightClick($event)">
   <div class="image-container me-2">
-    <img (error)="showImage = false" class="channel-image" *ngIf="channel?.image && showImage"
-      src="{{ channel?.image }}" loading="lazy" decoding="async" width="50" height="72" />
+    <img (error)="showImage = false" class="channel-image"
+      *ngIf="channel?.image && showImage && !memory.LightweightMode" src="{{ channel?.image }}" loading="lazy"
+      decoding="async" width="50" height="72" />
   </div>
   <div class="channel-title-container d-flex flex-column justify-content-center">
     <div class="channel-title">{{ channel?.name }}</div>

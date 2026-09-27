@@ -56,6 +56,14 @@ export class SettingsComponent {
     this.updateSettings();
   }
 
+  // Applies immediately (no reload needed) in addition to persisting -
+  // channel-tile/home only read memory.LightweightMode, populated once at
+  // startup, so changing it from here must also update memory directly.
+  onLightweightModeChange() {
+    this.memory.LightweightMode = this.settings.lightweight_mode ?? false;
+    this.updateSettings();
+  }
+
   _getSortTypeText(sortType: SortType) {
     return getSortTypeText(sortType);
   }
@@ -121,6 +129,7 @@ export class SettingsComponent {
       if (this.settings.enable_gpu == undefined) this.settings.enable_gpu = false;
       if (this.settings.theme == undefined) this.settings.theme = "modern";
       if (this.settings.player == undefined) this.settings.player = "mpv";
+      if (this.settings.lightweight_mode == undefined) this.settings.lightweight_mode = false;
     });
   }
 
