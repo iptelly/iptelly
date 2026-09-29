@@ -28,7 +28,12 @@ pub fn get_conn() -> Result<PooledConnection<SqliteConnectionManager>> {
 }
 
 fn create_connection_pool() -> Pool<SqliteConnectionManager> {
-    let manager = SqliteConnectionManager::file(get_and_create_sqlite_db_path());
+    // SQLite disables foreign key enforcement by default on every new
+    // connection, for backwards compatibility - the FOREIGN KEY/ON DELETE
+    // CASCADE clauses already declared throughout this schema do nothing
+    // unless this is turned on for each connection the pool hands out.
+    let manager = SqliteConnectionManager::file(get_and_create_sqlite_db_path())
+        .with_init(|c| c.execute_batch("PRAGMA foreign_keys = ON;"));
     r2d2::Pool::builder().max_size(20).build(manager).unwrap()
 }
 
@@ -1576,6 +1581,17 @@ pub fn delete_source(id: i64) -> Result<()> {
     sql.execute(
         r#"
         DELETE FROM seasons
+        WHERE source_id = ?;
+    "#,
+        params![id],
+    )?;
+    // epg_programmes.source_id has no ON DELETE CASCADE, so this needs its
+    // own explicit delete - without it, deleting a source with any cached
+    // EPG data would fail once foreign key enforcement is actually turned
+    // on (see create_connection_pool's PRAGMA foreign_keys).
+    sql.execute(
+        r#"
+        DELETE FROM epg_programmes
         WHERE source_id = ?;
     "#,
         params![id],
