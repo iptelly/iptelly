@@ -84,6 +84,9 @@ docker run --rm -it \
   ghcr.io/fredolx/open-tv:latest
 ```
 
+## Development
+Want to build Fred TV from source or contribute code? See [DEVELOPMENT.md](DEVELOPMENT.md)
+for how to check out the source, run it in dev mode, and build it locally.
 
 ## Feedback
 Feel free to submit any kind of feedback by creating a new issue.
