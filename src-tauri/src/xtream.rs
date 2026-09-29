@@ -278,8 +278,45 @@ where
 {
     let client = crate::utils::new_http_client(user_agent)?;
     url.query_pairs_mut().append_pair("action", action);
-    let data = client.get(url).send().await?.json::<T>().await?;
-    Ok(data)
+    let response = client.get(url).send().await?;
+    parse_xtream_json(response, &format!("action '{action}'")).await
+}
+
+// A panel returning a non-2xx status, an empty body, or an HTML error page
+// (rather than JSON) all used to surface as the same unhelpful
+// `expected value at line 1 column 1` from .json() - this instead reports
+// which of those actually happened, with a preview of what came back.
+async fn parse_xtream_json<T>(response: reqwest::Response, context_label: &str) -> Result<T>
+where
+    T: serde::de::DeserializeOwned,
+{
+    let status = response.status();
+    let text = response.text().await?;
+    if !status.is_success() {
+        return Err(anyhow!(
+            "Xtream API returned HTTP {} for {context_label}. Body preview: {}",
+            status.as_u16(),
+            truncate_for_preview(&text)
+        ));
+    }
+    if text.is_empty() {
+        return Err(anyhow!("Xtream API returned an empty body for {context_label}."));
+    }
+    serde_json::from_str(&text).map_err(|e| {
+        anyhow!(
+            "Failed to parse JSON from Xtream API for {context_label}: {e}. Body preview: {}",
+            truncate_for_preview(&text)
+        )
+    })
+}
+
+// Truncates on a char boundary rather than a raw byte index - the bodies
+// this wraps (HTML error pages, panel-specific error messages) can contain
+// multi-byte UTF-8 characters, and slicing by byte index panics if it lands
+// mid-character.
+fn truncate_for_preview(text: &str) -> String {
+    const PREVIEW_LEN: usize = 200;
+    text.chars().take(PREVIEW_LEN).collect()
 }
 
 fn process_xtream(
@@ -701,7 +738,8 @@ async fn get_status(source: &mut Source) -> Result<(i64, XtreamStatus)> {
     let url = build_xtream_url(source)?;
     let user_agent = get_user_agent_from_source(&source)?;
     let client = crate::utils::new_http_client(&user_agent)?;
-    let data = client.get(url).send().await?.json::<XtreamStatus>().await?;
+    let response = client.get(url).send().await?;
+    let data: XtreamStatus = parse_xtream_json(response, "get_status").await?;
     Ok((source.id.context("no id")?, data))
 }
 
