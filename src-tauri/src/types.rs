@@ -303,4 +303,11 @@ pub struct ChannelPreserve {
     pub hidden: Option<bool>,
     #[serde(default)]
     pub is_group: bool,
+    // Refreshing a source deletes and re-inserts all of its channels with
+    // new ids (see sql::wipe/restore_preserve) - without carrying custom
+    // headers across that too, any per-channel User-Agent/Referrer/Origin/
+    // ignore_ssl override was silently lost on every refresh, since
+    // channel_http_headers is keyed by the now-deleted old channel id.
+    #[serde(default)]
+    pub headers: Option<ChannelHttpHeaders>,
 }

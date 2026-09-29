@@ -2204,6 +2204,17 @@ pub fn wipe(tx: &Transaction, id: i64) -> Result<()> {
     delete_seasons_by_source(tx, id)?;
     delete_channels_by_source(tx, id)?;
     delete_groups_by_source(tx, id)?;
+    // channel_http_headers isn't cleaned up by the delete above (its
+    // ON DELETE CASCADE FK is never actually enforced - SQLite has FK
+    // enforcement off by default and this connection never turns it on),
+    // so every past refresh has left the old, now-deleted channel's header
+    // row behind as dead weight. restore_preserve() re-attaches the
+    // relevant header values to the new channel row right after this, so
+    // this only needs to sweep out rows nothing points to any more.
+    tx.execute(
+        "DELETE FROM channel_http_headers WHERE channel_id NOT IN (SELECT id FROM channels)",
+        [],
+    )?;
     Ok(())
 }
 
@@ -2266,11 +2277,13 @@ pub fn get_preserve(tx: &Transaction, source_id: i64) -> Result<Vec<ChannelPrese
     let mut channels: Vec<ChannelPreserve> = tx
         .prepare(
             r#"
-              SELECT name, favorite, last_watched, hidden
-              FROM channels
-              WHERE (favorite = 1 OR last_watched IS NOT NULL OR hidden = 1)
-              AND series_id IS NULL
-              AND source_id = ?
+              SELECT c.name, c.favorite, c.last_watched, c.hidden,
+                     h.referrer, h.user_agent, h.http_origin, h.ignore_ssl
+              FROM channels c
+              LEFT JOIN channel_http_headers h ON h.channel_id = c.id
+              WHERE (c.favorite = 1 OR c.last_watched IS NOT NULL OR c.hidden = 1 OR h.channel_id IS NOT NULL)
+              AND c.series_id IS NULL
+              AND c.source_id = ?
             "#,
         )?
         .query_map(params![source_id], row_to_channel_preserve)?
@@ -2295,12 +2308,29 @@ pub fn get_preserve(tx: &Transaction, source_id: i64) -> Result<Vec<ChannelPrese
 }
 
 fn row_to_channel_preserve(row: &Row) -> Result<ChannelPreserve, rusqlite::Error> {
+    let referrer: Option<String> = row.get("referrer")?;
+    let user_agent: Option<String> = row.get("user_agent")?;
+    let http_origin: Option<String> = row.get("http_origin")?;
+    let ignore_ssl: Option<bool> = row.get("ignore_ssl")?;
+    let headers = if referrer.is_none() && user_agent.is_none() && http_origin.is_none() && ignore_ssl.is_none() {
+        None
+    } else {
+        Some(ChannelHttpHeaders {
+            id: None,
+            channel_id: None,
+            referrer,
+            user_agent,
+            http_origin,
+            ignore_ssl,
+        })
+    };
     Ok(ChannelPreserve {
         name: row.get("name")?,
         favorite: row.get("favorite")?,
         last_watched: row.get("last_watched")?,
         hidden: row.get("hidden")?,
         is_group: false,
+        headers,
     })
 }
 
@@ -2311,6 +2341,7 @@ fn row_to_group_preserve(row: &Row) -> Result<ChannelPreserve, rusqlite::Error> 
         favorite: false,
         last_watched: None,
         is_group: true,
+        headers: None,
     })
 }
 
@@ -2346,6 +2377,31 @@ pub fn restore_preserve(
                     source_id
                 ],
             )?;
+            // Refreshing deletes and re-inserts channels with new ids, so
+            // any header row from before the refresh is now orphaned under
+            // the old id - re-attach it to whichever channel now has this
+            // name/source_id instead of just leaving it dangling.
+            if let Some(headers) = item.headers {
+                tx.execute(
+                    r#"
+                      INSERT INTO channel_http_headers (channel_id, referrer, user_agent, http_origin, ignore_ssl)
+                      SELECT id, ?1, ?2, ?3, ?4 FROM channels WHERE name = ?5 AND source_id = ?6
+                      ON CONFLICT(channel_id) DO UPDATE SET
+                          referrer = ?1,
+                          user_agent = ?2,
+                          http_origin = ?3,
+                          ignore_ssl = ?4
+                    "#,
+                    params![
+                        headers.referrer,
+                        headers.user_agent,
+                        headers.http_origin,
+                        headers.ignore_ssl,
+                        item.name,
+                        source_id
+                    ],
+                )?;
+            }
         }
     }
     Ok(())
