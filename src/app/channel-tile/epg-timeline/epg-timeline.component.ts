@@ -18,6 +18,7 @@ import {
   epgTimelinePercentFor,
   EPG_FETCH_LOOKAHEAD_SECONDS,
   EPG_FETCH_LOOKBACK_SECONDS,
+  EPG_PAN_STEP_SECONDS,
 } from "../../models/epgTimelineWindow";
 import { MemoryService } from "../../memory.service";
 import { EpgModalComponent } from "../../epg-modal/epg-modal.component";
@@ -33,6 +34,25 @@ export class EpgTimelineComponent implements AfterViewInit, OnChanges, OnDestroy
 
   epgs: EPG[] = [];
   fetched = false;
+  // Which block is under the keyboard "guide cursor" - null when the
+  // guide isn't active. Kept as component state rather than moving real
+  // DOM focus into a block, since virtual-scroll recycling would make
+  // tracking/restoring real focus across row recycles far more fragile
+  // than just letting ChannelTileComponent keep DOM focus on the tile.
+  //
+  // Tracked by start_timestamp (unique per programme on a given channel)
+  // rather than a raw array index - moving the guide cursor off the edge
+  // of the currently visible window pans the shared timeline to follow
+  // it (see move()/ensureFocusedVisible()), which re-fetches epgs for the
+  // new window and replaces this array entirely, so a plain index would
+  // silently point at the wrong programme (or nothing) once that lands.
+  private focusedStartTimestamp: number | null = null;
+
+  get focusedIndex(): number | null {
+    if (this.focusedStartTimestamp == null) return null;
+    const index = this.epgs.findIndex((e) => e.start_timestamp === this.focusedStartTimestamp);
+    return index == -1 ? null : index;
+  }
   // The window all blocks/the now-line position against - real time plus
   // the shared pan offset, so every row moves together when you page
   // forward/backward via the timeline header.
@@ -187,13 +207,67 @@ export class EpgTimelineComponent implements AfterViewInit, OnChanges, OnDestroy
     return `${epg.title} (${epg.start_time} - ${epg.end_time})`;
   }
 
+  // Entering with no data yet (row not fetched, or a genuinely empty
+  // schedule) is a no-op rather than focusing a nonexistent block -
+  // ChannelTileComponent checks this return value to decide whether it
+  // actually entered guide mode.
+  enterGuide(): boolean {
+    if (!this.fetched || this.epgs.length === 0) return false;
+    const nowEpg = this.epgs.find((e) => this.isNowPlaying(e));
+    this.focusedStartTimestamp = (nowEpg ?? this.epgs[0]).start_timestamp;
+    this.cdr.markForCheck();
+    return true;
+  }
+
+  exitGuide() {
+    this.focusedStartTimestamp = null;
+    this.cdr.markForCheck();
+  }
+
+  move(delta: number) {
+    const index = this.focusedIndex;
+    if (index == null || this.epgs.length === 0) return;
+    const nextIndex = Math.max(0, Math.min(this.epgs.length - 1, index + delta));
+    this.focusedStartTimestamp = this.epgs[nextIndex].start_timestamp;
+    this.ensureFocusedVisible();
+    this.cdr.markForCheck();
+  }
+
+  // The 48h-wide fetch (see EPG_FETCH_LOOKBACK/LOOKAHEAD_SECONDS) covers
+  // far more than the 4h actually rendered on screen (EPG_TIMELINE_
+  // DURATION_SECONDS) - without this, moving the guide cursor past
+  // whatever's currently in view just silently focused an off-screen
+  // block with nothing visibly changing. Pans the shared timeline (every
+  // row moves together, same as the header's own pan buttons) by whole
+  // steps until the focused programme is back in view.
+  private ensureFocusedVisible() {
+    if (this.focusedStartTimestamp == null) return;
+    const epg = this.epgs[this.focusedIndex!];
+    let offset = this.offsetSeconds;
+    const guardLimit = (EPG_FETCH_LOOKBACK_SECONDS + EPG_FETCH_LOOKAHEAD_SECONDS) / EPG_PAN_STEP_SECONDS + 1;
+    for (let i = 0; i < guardLimit && epgTimelinePercentFor(epg.end_timestamp, this.trueNow + offset) <= 0; i++) {
+      offset -= EPG_PAN_STEP_SECONDS;
+    }
+    for (let i = 0; i < guardLimit && epgTimelinePercentFor(epg.start_timestamp, this.trueNow + offset) >= 100; i++) {
+      offset += EPG_PAN_STEP_SECONDS;
+    }
+    if (offset != this.offsetSeconds) this.memory.EpgTimelineOffsetSeconds.next(offset);
+  }
+
+  selectFocused() {
+    const index = this.focusedIndex;
+    if (index == null) return;
+    const epg = this.epgs[index];
+    if (epg) this.onProgrammeClick(epg);
+  }
+
   // Normal EPG display comes from bulk-fetched data, which never carries
   // catch-up info - checking it is on-demand, per programme, handled by
   // EpgModalComponent itself (so it applies whichever programme is
   // currently shown as you browse via prev/next, not just the one clicked
   // to open this modal).
-  onProgrammeClick(epg: EPG, event: MouseEvent) {
-    event.stopPropagation();
+  onProgrammeClick(epg: EPG, event?: MouseEvent) {
+    event?.stopPropagation();
     this.memory.ModalRef = this.modal.open(EpgModalComponent, {
       backdrop: "static",
       size: "xl",

@@ -5,7 +5,8 @@
 
   <div class="row mb-3 align-items-center">
     <div class="col-md-4 col-12">
-      <select class="form-select" [(ngModel)]="selectedSourceId" (ngModelChange)="onSourceChange()">
+      <select id="playlist-select" class="form-select" [class.editing]="selectEditing" [(ngModel)]="selectedSourceId"
+        (ngModelChange)="onSourceChange()">
         <option *ngFor="let source of sources" [ngValue]="source.id">{{ source.name }}</option>
       </select>
     </div>
@@ -29,7 +30,9 @@
 
   <div *ngIf="!loading" class="category-list">
     <div *ngFor="let section of sections" class="type-section">
-      <div class="type-header" (click)="toggleType(section.mediaType)">
+      <div class="type-header" tabindex="0" role="button" (click)="toggleType(section.mediaType)"
+        (keydown.enter)="onHeaderKeydown(section.mediaType, $event)"
+        (keydown.space)="onHeaderKeydown(section.mediaType, $event)">
         <svg fill="currentColor" viewBox="0 0 24 24" class="chevron" [ngClass]="{ open: isExpanded(section.mediaType) }">
           <path d="M8.59,16.59L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.59Z" />
         </svg>
@@ -47,7 +50,9 @@
     </div>
 
     <div class="type-section">
-      <div class="type-header" (click)="toggleType(individualChannelsSection)">
+      <div class="type-header" tabindex="0" role="button" (click)="toggleType(individualChannelsSection)"
+        (keydown.enter)="onHeaderKeydown(individualChannelsSection, $event)"
+        (keydown.space)="onHeaderKeydown(individualChannelsSection, $event)">
         <svg fill="currentColor" viewBox="0 0 24 24" class="chevron"
           [ngClass]="{ open: isExpanded(individualChannelsSection) }">
           <path d="M8.59,16.59L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.59Z" />

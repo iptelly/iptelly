@@ -1,7 +1,7 @@
 <div class="epg-timeline">
   <ng-container *ngIf="fetched && epgs.length > 0">
-    <div class="epg-block" *ngFor="let epg of epgs" [ngbTooltip]="tooltip(epg)" container="body"
-      [ngClass]="{ 'now-playing': isNowPlaying(epg) }" [style.left.%]="leftPercent(epg)"
+    <div class="epg-block" *ngFor="let epg of epgs; let i = index" [ngbTooltip]="tooltip(epg)" container="body"
+      [ngClass]="{ 'now-playing': isNowPlaying(epg), focused: i === focusedIndex }" [style.left.%]="leftPercent(epg)"
       [style.width.%]="widthPercent(epg)" (click)="onProgrammeClick(epg, $event)">
       <span class="epg-title">{{ epg.title }}</span>
     </div>

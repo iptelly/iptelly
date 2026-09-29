@@ -1,4 +1,4 @@
-import { Component, OnInit } from "@angular/core";
+import { Component, ElementRef, HostListener, OnInit } from "@angular/core";
 import { DownloadService } from "../download.service";
 import { Download } from "../models/download";
 import { DownloadHistoryItem } from "../models/downloadHistoryItem";
@@ -16,10 +16,39 @@ export class DownloadManagerComponent implements OnInit {
   constructor(
     public downloadService: DownloadService,
     private error: ErrorService,
+    private el: ElementRef,
   ) {}
 
   ngOnInit(): void {
     this.downloadService.refreshHistory();
+  }
+
+  // Self-contained keyboard navigation, mirroring PlaylistSidebarComponent/
+  // DownloadSidebarComponent - HomeComponent only needs to know how to
+  // enter (focusFirstRow) this region. Only handles Up/Down (a flat walk
+  // over every focusable action in the list, bulk buttons included) -
+  // deliberately does NOT handle Enter here: the row buttons are a mix of
+  // real <button> elements (already natively Enter/Space-activatable) and
+  // custom SVG icons (which get their own explicit keydown.enter/space
+  // handlers in the template, same fix as the EPG modal's buttons) - a
+  // generic "call click() on whatever's focused" handler here would
+  // double-fire the real buttons' native activation, same bug as before.
+  @HostListener("keydown", ["$event"])
+  onKeyDown(event: KeyboardEvent) {
+    if (event.key != "ArrowUp" && event.key != "ArrowDown") return;
+    event.preventDefault();
+    const rows = this.focusableRows();
+    const current = rows.indexOf(document.activeElement as HTMLElement);
+    const next = Math.max(0, Math.min(rows.length - 1, current + (event.key == "ArrowDown" ? 1 : -1)));
+    rows[next]?.focus();
+  }
+
+  private focusableRows(): HTMLElement[] {
+    return Array.from(this.el.nativeElement.querySelectorAll('[tabindex="0"]'));
+  }
+
+  focusFirstRow() {
+    this.focusableRows()[0]?.focus();
   }
 
   get selectedCategory() {

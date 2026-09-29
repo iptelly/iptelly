@@ -4,11 +4,13 @@ import {
   ChangeDetectorRef,
   Component,
   ElementRef,
+  HostListener,
   Input,
   OnDestroy,
   Renderer2,
   ViewChild,
 } from "@angular/core";
+import { EpgTimelineComponent } from "./epg-timeline/epg-timeline.component";
 import { MatMenuTrigger } from "@angular/material/menu";
 import { Channel } from "../models/channel";
 import { MemoryService } from "../memory.service";
@@ -73,6 +75,11 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
     return this._channel;
   }
   @Input() id!: number;
+  // Lets a second, independent grid on the same page (the Favourites page's
+  // movies/series section) give its tiles DOM ids that don't collide with
+  // the primary grid's tile-N ids, so HomeComponent's keyboard navigation
+  // can address either grid unambiguously.
+  @Input() idPrefix: string = "tile-";
   @Input() viewMode: number = 0;
   @Input() layout: "grid" | "list" = "grid";
   @ViewChild(MatMenuTrigger, { static: true }) matMenuTrigger!: MatMenuTrigger;
@@ -89,9 +96,85 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
   subscriptions: Subscription[] = [];
   fade = false;
   epgHovering = false;
+  // Whether the keyboard "guide cursor" is currently inside this tile's
+  // EPG strip - DOM focus stays on the tile itself the whole time (see
+  // EpgTimelineComponent.focusedIndex's own comment for why), this just
+  // tracks which mode this tile's own keydown handling is in.
+  epgGuideActive = false;
+  @ViewChild(EpgTimelineComponent) epgTimeline?: EpgTimelineComponent;
 
   ngAfterViewInit(): void {
     this.getExistingDownload();
+  }
+
+  // Guards against stale guide state if focus leaves the tile some way
+  // other than the Up/Down/Escape handling above - Tab (deliberately left
+  // to bubble through to HomeComponent's cycleFocusArea rather than being
+  // intercepted here) being the main one.
+  @HostListener("blur")
+  onBlur() {
+    // If focus leaves mid-keypress (e.g. this same Enter opened the EPG
+    // modal), no keyup will ever arrive here for it - clearing this now
+    // stops a later, unrelated keyup from being wrongly treated as valid.
+    this.enterKeyDownSeen = false;
+    if (this.epgGuideActive) {
+      this.epgGuideActive = false;
+      this.epgTimeline?.exitGuide();
+    }
+  }
+
+  // Real <button> elements (e.g. the EPG modal's close button) activate on
+  // Enter via keyDOWN, not keyUp - so pressing Enter on one of those
+  // closes the modal and synchronously restores focus to this tile, and
+  // the SAME physical key's keyUp then fires here (since this tile now has
+  // focus), even though the user never intended to press Enter on the
+  // tile at all. Only acting on keyup when a keydown was also seen here
+  // first - i.e. Enter was pressed and released while this tile actually
+  // had focus throughout - filters out that "ghost" keyup.
+  private enterKeyDownSeen = false;
+
+  // Split out from the (keyup.enter) binding so guide-mode Enter (select
+  // the focused programme) and normal Enter (play the channel) don't both
+  // fire for the same keypress - HomeComponent's document-level nav()
+  // guards against duplicate handling by checking this same guide state
+  // via the tile's own data-epg-guide attribute (see epgGuideFocused()).
+  onEnterKey() {
+    const keyDownSeenHere = this.enterKeyDownSeen;
+    this.enterKeyDownSeen = false;
+    if (!keyDownSeenHere) return;
+    if (this.epgGuideActive) {
+      this.epgTimeline?.selectFocused();
+      return;
+    }
+    this.click();
+  }
+
+  // Right (not yet in the guide) enters it; while active, Left/Right move
+  // between programmes and Up/Down/Escape exit back to normal tile/grid
+  // navigation. stopPropagation() keeps HomeComponent's document-level key
+  // handling (nav()'s grid movement, the global Escape/Backspace handler)
+  // from also reacting to the same keypress.
+  @HostListener("keydown", ["$event"])
+  onKeyDown(event: KeyboardEvent) {
+    if (event.key == "Enter") this.enterKeyDownSeen = true;
+    if (this.layout != "list" || !this.showEPG()) return;
+    if (!this.epgGuideActive) {
+      if (event.key != "ArrowRight") return;
+      if (!this.epgTimeline?.enterGuide()) return;
+      event.preventDefault();
+      event.stopPropagation();
+      this.epgGuideActive = true;
+      return;
+    }
+    event.stopPropagation();
+    if (event.key == "ArrowLeft" || event.key == "ArrowRight") {
+      event.preventDefault();
+      this.epgTimeline?.move(event.key == "ArrowRight" ? 1 : -1);
+    } else if (event.key == "ArrowUp" || event.key == "ArrowDown" || event.key == "Escape") {
+      event.preventDefault();
+      this.epgGuideActive = false;
+      this.epgTimeline?.exitGuide();
+    }
   }
 
   setDownloadGradient(progress: number) {

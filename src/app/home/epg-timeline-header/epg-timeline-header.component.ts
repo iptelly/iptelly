@@ -1,6 +1,7 @@
 import { Component, OnDestroy, OnInit } from "@angular/core";
 import { Subscription, interval } from "rxjs";
 import {
+  EPG_PAN_STEP_SECONDS,
   EPG_TIMELINE_DURATION_SECONDS,
   epgTimelinePercentFor,
   epgTimelineWindowStart,
@@ -8,10 +9,6 @@ import {
 import { MemoryService } from "../../memory.service";
 
 const TICK_INTERVAL_SECONDS = 30 * 60;
-// Slight overlap with the previous window (window is 4h wide) so paging
-// through the day keeps some context instead of jumping to a totally
-// disconnected span.
-const PAN_STEP_SECONDS = 3 * 60 * 60;
 
 @Component({
   selector: "app-epg-timeline-header",
@@ -52,11 +49,11 @@ export class EpgTimelineHeaderComponent implements OnInit, OnDestroy {
   }
 
   panBack(): void {
-    this.memory.EpgTimelineOffsetSeconds.next(this.offsetSeconds - PAN_STEP_SECONDS);
+    this.memory.EpgTimelineOffsetSeconds.next(this.offsetSeconds - EPG_PAN_STEP_SECONDS);
   }
 
   panForward(): void {
-    this.memory.EpgTimelineOffsetSeconds.next(this.offsetSeconds + PAN_STEP_SECONDS);
+    this.memory.EpgTimelineOffsetSeconds.next(this.offsetSeconds + EPG_PAN_STEP_SECONDS);
   }
 
   resetToNow(): void {

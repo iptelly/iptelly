@@ -17,7 +17,11 @@ import { ErrorService } from '../error.service';
 })
 export class EditChannelModalComponent implements OnInit {
   channel: CustomChannel = {
-    data: {},
+    // is_adult has no corresponding form field (never user-set for a
+    // custom channel) so nothing else ever populates it before submit -
+    // unlike name/media_type/favorite, which the form's own bindings fill
+    // in as the user edits, this needs an explicit default from the start.
+    data: { is_adult: false },
     headers: {}
   }
   beforeEditChannel?: CustomChannel;

@@ -49,8 +49,8 @@
       </div>
     </div>
 
-    <div class="mx-auto text-center back-row" style="margin-bottom: 1rem" *ngIf="showBackButton()" @fadeInOut
-      (click)="goBack()">
+    <div id="back-button" tabindex="0" class="mx-auto text-center back-row" style="margin-bottom: 1rem"
+      *ngIf="showBackButton()" @fadeInOut (click)="goBack()" (keyup.enter)="goBack()">
       <svg class="back-arrow" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
         <title>Back</title>
         <path fill="currentColor"
@@ -78,7 +78,7 @@
     </div>
     <div class="mx-auto text-center" style="margin-bottom: 1rem" *ngIf="currentRailItem === railItemEnum.History"
       @fadeInOut>
-      <button [disabled]="memory.Loading" (click)="clearHistory()"
+      <button id="clear-history-button" [disabled]="memory.Loading" (click)="clearHistory()"
         class="btn btn-secondary d-inline-flex align-items-center">
         Clear history
         <svg class="history ms-1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
@@ -110,7 +110,8 @@
     <cdk-virtual-scroll-viewport *ngIf="showFavMediaSection()" #favMediaViewport [itemSize]="88"
       minBufferPx="600" maxBufferPx="900" class="virtual-viewport fav-media-viewport">
       <div class="grid-row" *cdkVirtualFor="let row of favMediaChannelRows(); let ri = index">
-        <app-channel-tile *ngFor="let channel of row; trackBy: trackByChannel" class="grid-tile" [channel]="channel"
+        <app-channel-tile *ngFor="let channel of row; let ci = index; trackBy: trackByChannel" class="grid-tile"
+          idPrefix="favtile-" [id]="ri * favTilesPerRow() + ci" [channel]="channel"
           [viewMode]="viewType"></app-channel-tile>
       </div>
     </cdk-virtual-scroll-viewport>

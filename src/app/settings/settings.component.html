@@ -281,7 +281,7 @@
   </div>
 
   <h2 class="mt-4 mb-4 text-center">Sources</h2>
-  <ng-container *ngFor="let source of sources; let i = index">
+  <ng-container *ngFor="let source of sources; let i = index; trackBy: trackSourceById">
     <div [ngClass]="{ 'mt-3': i != 0 }">
       <app-source-tile [source]="source"
         [expiry]="source.source_type == 2 ? expiries[source.id!] : undefined"

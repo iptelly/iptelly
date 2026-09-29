@@ -1,4 +1,4 @@
-import { Component, HostListener } from "@angular/core";
+import { Component, ElementRef, HostListener, ViewChild } from "@angular/core";
 import { Router } from "@angular/router";
 import { invoke } from "@tauri-apps/api/core";
 import { MemoryService } from "../memory.service";
@@ -8,6 +8,7 @@ import { Channel } from "../models/channel";
 import { MediaType } from "../models/mediaType";
 import { RailItem } from "../models/railItem";
 import { isInputFocused } from "../utils";
+import { NavRailComponent } from "../home/nav-rail/nav-rail.component";
 
 interface DisplayGroup {
   group: Group;
@@ -43,6 +44,7 @@ const INDIVIDUAL_CHANNELS_SECTION = -1;
 })
 export class ManageCategoriesComponent {
   readonly railItemEnum = RailItem;
+  @ViewChild(NavRailComponent) navRail?: NavRailComponent;
   loading = false;
   filterText = "";
   sources: Source[] = [];
@@ -60,9 +62,16 @@ export class ManageCategoriesComponent {
   private hiddenChannels: Channel[] = [];
   private lastClickedChannelIndex: number | null = null;
 
+  // The playlist <select> otherwise eats ArrowUp/Down natively to change its
+  // own value the instant it has focus, which would fight with using those
+  // same keys to walk between rows - true only between pressing Enter on it
+  // and leaving it, so arrows are unambiguous everywhere else on the page.
+  selectEditing = false;
+
   constructor(
     private router: Router,
     public memory: MemoryService,
+    private el: ElementRef,
   ) {}
 
   async ngOnInit() {
@@ -89,8 +98,50 @@ export class ManageCategoriesComponent {
       (event.key == "Backspace" && !isInputFocused())
     ) {
       event.preventDefault();
+      this.selectEditing = false;
       this.goBack();
+      return;
     }
+    // Tab still crosses the nav rail <-> page content boundary (mirroring
+    // HomeComponent's Tab-between-regions convention) - Up/Down (below) is
+    // what moves *within* the content region now, replacing reliance on the
+    // browser's native tab order for that.
+    if (event.key == "Tab") {
+      const inNavRail = document.activeElement?.closest(".nav-rail") != null;
+      const onPlaylistSelect = document.activeElement?.id == "playlist-select";
+      if (inNavRail && !event.shiftKey) {
+        event.preventDefault();
+        document.getElementById("playlist-select")?.focus();
+      } else if (onPlaylistSelect && event.shiftKey) {
+        event.preventDefault();
+        this.navRail?.focusFirstRow();
+      }
+      return;
+    }
+    if (document.activeElement?.closest(".nav-rail") != null) return; // NavRail owns its own Up/Down
+    const onPlaylistSelect = document.activeElement?.id == "playlist-select";
+    if (event.key == "Enter" && onPlaylistSelect) {
+      event.preventDefault();
+      this.selectEditing = !this.selectEditing;
+      return;
+    }
+    if (event.key != "ArrowUp" && event.key != "ArrowDown") return;
+    if (onPlaylistSelect && this.selectEditing) return; // let the native <select> change its value
+    event.preventDefault();
+    const rows = this.focusableRows();
+    const current = rows.indexOf(document.activeElement as HTMLElement);
+    const next = Math.max(0, Math.min(rows.length - 1, current + (event.key == "ArrowDown" ? 1 : -1)));
+    rows[next]?.focus();
+    if (rows[next]?.id != "playlist-select") this.selectEditing = false;
+  }
+
+  private focusableRows(): HTMLElement[] {
+    const root: HTMLElement | null = this.el.nativeElement.querySelector(".page-wrapper");
+    if (!root) return [];
+    const rows: HTMLElement[] = Array.from(
+      root.querySelectorAll('select, input, button, [tabindex="0"]'),
+    );
+    return rows.filter((el) => !(el as HTMLButtonElement).disabled);
   }
 
   goBack() {
@@ -148,6 +199,16 @@ export class ManageCategoriesComponent {
   toggleType(mediaType: number) {
     if (this.expandedTypes.has(mediaType)) this.expandedTypes.delete(mediaType);
     else this.expandedTypes.add(mediaType);
+  }
+
+  // The Individual Channels header also contains its own "Unhide selected"
+  // button - since (keydown.*) bubbles up from whatever's actually focused,
+  // ignore keydowns that didn't originate on the header div itself so
+  // activating that button doesn't also toggle the section.
+  onHeaderKeydown(mediaType: number, event: Event) {
+    if (event.target !== event.currentTarget) return;
+    event.preventDefault();
+    this.toggleType(mediaType);
   }
 
   private rebuildRows() {

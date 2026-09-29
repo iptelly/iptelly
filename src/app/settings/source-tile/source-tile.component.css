@@ -68,20 +68,43 @@ button:hover .trash-lid {
     transform: translateY(-50%);
 }
 
-.check {
+.check-btn {
+    /* Vertically centered via top/bottom auto-margins rather than
+       transform: translateY(-50%) - this is the only focusable control on
+       the page that's absolutely positioned, and combining that with a
+       persistent transform kept it unreachable via keyboard focus in
+       WebKitGTK even though the same element worked fine in Chromium. */
     position: absolute;
     height: 3rem;
     width: 3rem;
     right: 1rem;
-    top: 50%;
-    transform: translateY(-50%);
+    top: 0;
+    bottom: 0;
+    margin: auto 0;
     cursor: pointer;
     transition: transform 0.3s ease;
     color: white;
+    background: none;
+    border: none;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
-.check:hover {
-    transform: translateY(-50%) scale(125%)
+.check-btn:hover {
+    transform: scale(125%)
+}
+
+.check-btn:focus {
+    outline: none;
+    box-shadow: 0 0 0 0.2rem rgba(109, 106, 240, 0.45);
+    border-radius: var(--radius-sm);
+}
+
+.check {
+    height: 100%;
+    width: 100%;
 }
 
 button .pen {

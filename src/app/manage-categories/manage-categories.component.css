@@ -35,8 +35,24 @@
   font-size: 1.1rem;
 }
 
+/* Distinguishes "armed" (Enter pressed, Up/Down will now change the value)
+   from plain keyboard focus, since the same box-shadow focus ring can't
+   convey that on its own. */
+#playlist-select.editing {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 0.2rem rgba(109, 106, 240, 0.45);
+}
+
 .type-header:hover {
   color: var(--text-primary);
+}
+
+.type-header:focus {
+  outline: none;
+  color: var(--text-primary);
+  box-shadow: 0 0 0 0.2rem rgba(109, 106, 240, 0.45);
+  border-radius: var(--radius-sm);
 }
 
 .chevron {

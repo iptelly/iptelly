@@ -44,6 +44,10 @@ import { Node } from "../models/node";
 import { NodeType } from "../models/nodeType";
 import { Stack } from "../models/stack";
 import { RailItem } from "../models/railItem";
+import { NavRailComponent } from "./nav-rail/nav-rail.component";
+import { PlaylistSidebarComponent } from "./playlist-sidebar/playlist-sidebar.component";
+import { DownloadSidebarComponent } from "./download-sidebar/download-sidebar.component";
+import { DownloadManagerComponent } from "../download-manager/download-manager.component";
 
 import { BulkActionType } from '../models/bulkActionType';
 
@@ -88,9 +92,40 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   readonly railItemEnum = RailItem;
   currentRailItem = RailItem.Channels;
   @ViewChild("search") search!: ElementRef;
+  @ViewChild(NavRailComponent) navRail?: NavRailComponent;
+  @ViewChild(PlaylistSidebarComponent) playlistSidebar?: PlaylistSidebarComponent;
+  @ViewChild(DownloadSidebarComponent) downloadSidebar?: DownloadSidebarComponent;
+  @ViewChild(DownloadManagerComponent) downloadManager?: DownloadManagerComponent;
   shortcuts: ShortcutInput[] = [];
   focus: number = 0;
   focusArea = FocusArea.Tiles;
+  // Whether the keyboard cursor is currently in the Favourites page's
+  // second grid (movies/series, showFavMediaSection()) rather than the
+  // primary channels grid/list above it - both count as FocusArea.Tiles
+  // for Tab-cycling purposes, this just tracks which of the two `focus`
+  // is indexing into. Reset to false any time Tiles focus is freshly
+  // (re)entered from elsewhere, so a stale value never survives leaving
+  // Favourites or reloading.
+  inFavMedia = false;
+  // Index into preGridButtonIds() the keyboard cursor is currently on, or
+  // -1 when it's indexing into a tile instead - also FocusArea.Tiles for
+  // Tab-cycling purposes, and reset alongside inFavMedia for the same
+  // reason. A plain index (not e.g. a single onBackButton boolean) since
+  // more than one of these can be visible at once (e.g. History showing
+  // both "Clear history" and, once you've drilled into a favourited
+  // series from there, the back button too).
+  preGridFocusIndex = -1;
+
+  // Contextual buttons shown above the grid, in on-screen top-to-bottom
+  // order - kept in one place so nav()'s pre-grid Up/Down handling and
+  // focusPreGridOrTile()'s entry point never drift out of sync with
+  // what's actually rendered there.
+  preGridButtonIds(): string[] {
+    const ids: string[] = [];
+    if (this.showBackButton()) ids.push("back-button");
+    if (this.currentRailItem === RailItem.History) ids.push("clear-history-button");
+    return ids;
+  }
   viewType = ViewMode.All;
   currentWindowSize: number = window.innerWidth;
   subscriptions: Subscription[] = [];
@@ -806,6 +841,11 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
       return;
     }
     this.currentRailItem = item;
+    // Only meaningful on Favourites/mid-navigation respectively - stale
+    // otherwise, and would misapply the wrong tilesPerRow/bounds or focus
+    // a no-longer-relevant pre-grid button if left set from before.
+    this.inFavMedia = false;
+    this.preGridFocusIndex = -1;
     this.filters!.series_id = undefined;
     this.filters!.group_id = undefined;
     this.filters!.season = undefined;
@@ -887,6 +927,14 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     return this.isChannelListView() ? 1 : 3;
   }
 
+  // The Favourites page's second grid (movies/series) is always a 3-column
+  // grid regardless of the primary section's own list/grid mode above it
+  // (matching favMediaChannelRows()'s own chunking) - unlike tilesPerRow(),
+  // not affected by isChannelListView().
+  favTilesPerRow(): number {
+    return 3;
+  }
+
   // Stable identity for the channel grid/list so a fresh search or re-sort
   // (which always assigns a brand-new array of brand-new Channel objects,
   // even for logically-unchanged rows - see load()) reuses existing tile
@@ -937,8 +985,9 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
       return this.favMediaCachedRows;
     }
     const rows: Channel[][] = [];
-    for (let i = 0; i < this.favMediaChannels.length; i += 3) {
-      rows.push(this.favMediaChannels.slice(i, i + 3));
+    const size = this.favTilesPerRow();
+    for (let i = 0; i < this.favMediaChannels.length; i += size) {
+      rows.push(this.favMediaChannels.slice(i, i + size));
     }
     this.favMediaCachedRows = rows;
     this.favMediaCachedRowsFor = this.favMediaChannels;
@@ -1022,64 +1071,182 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     this.router.navigateByUrl("settings");
   }
 
+  // Tab/Shift+Tab (cycleFocusArea) is the only thing that moves *between*
+  // regions now - arrow keys here only ever move *within* whichever region
+  // currently has focus, clamped at its bounds (no more falling through to
+  // the next/previous region on overflow).
   async nav(key: string) {
-    if (this.searchFocused()) return;
+    if (this.searchFocused()) {
+      // Down from the search box drops straight into the channel grid,
+      // mirroring how a combobox's results list works - Tab still also
+      // gets you there, this is just the faster/more expected path. Lands
+      // on the first pre-grid button first when any are shown, same as
+      // entering Tiles any other way (see focusPreGridOrTile()).
+      if (key == "ArrowDown") {
+        this.focusArea = FocusArea.Tiles;
+        await this.focusPreGridOrTile(0);
+      }
+      return;
+    }
+    if (
+      this.navRailFocused() ||
+      this.playlistFocused() ||
+      this.epgGuideFocused() ||
+      this.downloadSidebarFocused() ||
+      this.downloadListFocused()
+    )
+      return;
     let lowSize = this.currentWindowSize < 768;
     if (this.memory.currentContextMenu?.menuOpen || this.memory.ModalRef) {
       return;
     }
+    // Pre-grid buttons (back/clear history/...) aren't indexed like tiles -
+    // handled separately here rather than folded into the tmpFocus math
+    // below. Down steps to the next one (or into the grid, past the last);
+    // Up steps to the previous one (or up to search, past the first).
+    if (this.focusArea == FocusArea.Tiles && this.preGridFocusIndex >= 0) {
+      if (key != "ArrowDown" && key != "ArrowUp") return;
+      const ids = this.preGridButtonIds();
+      const next = this.preGridFocusIndex + (key == "ArrowDown" ? 1 : -1);
+      if (next >= ids.length) {
+        this.preGridFocusIndex = -1;
+        this.focus = 0;
+        await this.focusTile(0);
+      } else if (next < 0) {
+        this.preGridFocusIndex = -1;
+        this.focusArea = FocusArea.Search;
+        this.focus = 0;
+        this.search.nativeElement.focus();
+      } else {
+        this.preGridFocusIndex = next;
+        document.getElementById(ids[next])?.focus();
+      }
+      return;
+    }
+    const inTiles = this.focusArea == FocusArea.Tiles;
+    const gridSize = inTiles ? (this.inFavMedia ? this.favTilesPerRow() : this.tilesPerRow()) : 1;
     let tmpFocus = 0;
     switch (key) {
       case "ArrowUp":
-        tmpFocus -= this.tilesPerRow();
+        tmpFocus -= gridSize;
         break;
       case "ArrowDown":
-        tmpFocus += this.tilesPerRow();
+        tmpFocus += gridSize;
         break;
-      case "ShiftTab":
       case "ArrowLeft":
         tmpFocus -= 1;
         break;
-      case "Tab":
       case "ArrowRight":
         tmpFocus += 1;
         break;
     }
-    let goOverSize = this.shortFiltersMode() ? 1 : 2;
-    if (lowSize && tmpFocus % 3 == 0 && this.focusArea == FocusArea.Tiles) tmpFocus / 3;
+    if (lowSize && tmpFocus % 3 == 0 && inTiles) tmpFocus / 3;
     tmpFocus += this.focus;
-    if (tmpFocus < 0) {
-      this.changeFocusArea(false);
-    } else if (tmpFocus > goOverSize && this.focusArea == FocusArea.Filters) {
-      this.changeFocusArea(true);
-    } else if (tmpFocus > 6 && this.focusArea == FocusArea.ViewMode) {
-      this.changeFocusArea(true);
-    } else if (
-      this.focusArea == FocusArea.Tiles &&
-      tmpFocus >= this.filters!.page * 36 &&
-      !this.reachedMax
-    )
-      await this.loadMore();
-    else {
-      if (tmpFocus >= this.channels.length && this.focusArea == FocusArea.Tiles)
-        tmpFocus = (this.channels.length == 0 ? 1 : this.channels.length) - 1;
-      this.focus = tmpFocus;
-      if (this.focusArea == FocusArea.Tiles) {
+    // Symmetric with the search->grid drop above - Up from the top row of
+    // whichever section is active goes back to search (from the primary
+    // section, via the last pre-grid button first if any are shown) or
+    // down into the primary section (from favMedia), instead of just
+    // clamping at the first tile.
+    if (inTiles && key == "ArrowUp" && tmpFocus < 0) {
+      if (this.inFavMedia) {
+        this.inFavMedia = false;
+        this.focus = Math.max(0, this.channels.length - 1);
         await this.focusTile(this.focus);
+      } else if (this.preGridButtonIds().length > 0) {
+        const ids = this.preGridButtonIds();
+        this.preGridFocusIndex = ids.length - 1;
+        setTimeout(() => document.getElementById(ids[ids.length - 1])?.focus(), 0);
       } else {
-        setTimeout(() => {
-          document.getElementById(`${FocusAreaPrefix[this.focusArea]}${this.focus}`)?.focus();
-        }, 0);
+        this.focusArea = FocusArea.Search;
+        this.focus = 0;
+        this.search.nativeElement.focus();
       }
+      return;
+    }
+    // Continues down into the Favourites page's second grid (movies/
+    // series) instead of clamping at the primary section's last tile -
+    // see showFavMediaSection()/ChannelTileComponent's idPrefix input.
+    if (
+      inTiles &&
+      !this.inFavMedia &&
+      key == "ArrowDown" &&
+      tmpFocus >= this.channels.length &&
+      this.showFavMediaSection() &&
+      this.favMediaChannels.length > 0
+    ) {
+      this.inFavMedia = true;
+      this.focus = 0;
+      await this.focusTile(0);
+      return;
+    }
+    tmpFocus = Math.max(0, tmpFocus);
+    const activeChannels = this.inFavMedia ? this.favMediaChannels : this.channels;
+    const activeReachedMax = this.inFavMedia ? this.favMediaReachedMax : this.reachedMax;
+    if (inTiles && tmpFocus >= this.filters!.page * 36 && !activeReachedMax) {
+      if (this.inFavMedia) await this.loadMoreFavMedia();
+      else await this.loadMore();
+    } else {
+      if (tmpFocus >= activeChannels.length)
+        tmpFocus = (activeChannels.length == 0 ? 1 : activeChannels.length) - 1;
+      this.focus = tmpFocus;
+      await this.focusTile(this.focus);
+    }
+  }
+
+  private navRailFocused(): boolean {
+    return document.activeElement?.closest(".nav-rail") != null;
+  }
+
+  private playlistFocused(): boolean {
+    return document.activeElement?.closest(".playlist-sidebar") != null;
+  }
+
+  private downloadSidebarFocused(): boolean {
+    return document.activeElement?.closest(".download-sidebar") != null;
+  }
+
+  private downloadListFocused(): boolean {
+    return document.activeElement?.closest("app-download-manager") != null;
+  }
+
+  // DOM focus stays on the tile itself while its EPG guide is active (see
+  // ChannelTileComponent.epgGuideActive) - this is how nav() knows to stay
+  // out of the way while Left/Right/Up/Down are being handled there
+  // instead, since a plain document.activeElement check can't tell that
+  // apart from normal grid focus otherwise.
+  private epgGuideFocused(): boolean {
+    return document.activeElement?.getAttribute("data-epg-guide") == "true";
+  }
+
+  // Entry point shared by every way of landing on Tiles fresh (Tab, the
+  // search->grid drop, clicking a category/series) - lands on the first
+  // pre-grid button first when any are shown, same as arrowing up out of
+  // the first tile would.
+  private async focusPreGridOrTile(index: number) {
+    this.inFavMedia = false;
+    const ids = this.preGridButtonIds();
+    if (ids.length > 0) {
+      this.preGridFocusIndex = 0;
+      this.focus = 0;
+      setTimeout(() => document.getElementById(ids[0])?.focus(), 0);
+    } else {
+      this.preGridFocusIndex = -1;
+      this.focus = index;
+      await this.focusTile(index);
     }
   }
 
   // Tiles are virtualized, so the target index may not have a DOM element
   // yet (it's off-screen and recycled) - scroll it into view first and wait
-  // for CDK to actually render it before trying to focus it.
+  // for CDK to actually render it before trying to focus it. Targets
+  // whichever of the two Favourites-page grids is currently active (see
+  // inFavMedia) - the primary grid/list and the movies/series grid below
+  // it have entirely separate viewports and DOM id prefixes.
   private async focusTile(index: number) {
-    const vp = this.viewport;
-    const rowIndex = Math.floor(index / this.tilesPerRow());
+    const vp = this.inFavMedia ? this.favMediaViewport : this.viewport;
+    const rowSize = this.inFavMedia ? this.favTilesPerRow() : this.tilesPerRow();
+    const idPrefix = this.inFavMedia ? "favtile-" : FocusAreaPrefix[FocusArea.Tiles];
+    const rowIndex = Math.floor(index / rowSize);
     if (vp) {
       const range = vp.getRenderedRange();
       if (rowIndex < range.start || rowIndex >= range.end) {
@@ -1099,36 +1266,55 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
       }
     }
     setTimeout(() => {
-      document.getElementById(`${FocusAreaPrefix[this.focusArea]}${this.focus}`)?.focus();
+      document.getElementById(`${idPrefix}${this.focus}`)?.focus();
     }, 0);
-  }
-
-  shortFiltersMode() {
-    return this.filters?.source_ids.findIndex((x) => this.memory.XtreamSourceIds.has(x)) == -1;
   }
 
   anyXtream() {
     return Array.from(this.memory.Sources.values()).findIndex((x) => x.source_type == SourceType.Xtream) != -1;
   }
 
-  changeFocusArea(down: boolean) {
-    let increment = down ? 1 : -1;
-    this.focusArea += increment;
-    if (this.focusArea == FocusArea.Filters && !this.filtersVisible()) this.focusArea += increment;
-    if (this.focusArea < 0) this.focusArea = 0;
-    this.applyFocusArea(down);
+  // The Tab-stops, in order - Playlist is skipped when the sidebar isn't
+  // currently shown. The Downloads rail item replaces the entire main
+  // content area with <app-download-manager> - no search box or channel
+  // grid exists there at all - so it gets its own short cycle instead of
+  // filtering the normal one down to just NavRail. This is the only thing
+  // that moves focus *between* regions; nav() (arrow keys) only ever moves
+  // within one.
+  private focusOrder(): FocusArea[] {
+    if (this.currentRailItem === RailItem.Downloads) {
+      return [FocusArea.NavRail, FocusArea.DownloadSidebar, FocusArea.DownloadList];
+    }
+    const order = [FocusArea.NavRail, FocusArea.Playlist, FocusArea.Search, FocusArea.Tiles];
+    return this.sidebarVisible() ? order : order.filter((a) => a !== FocusArea.Playlist);
   }
 
-  applyFocusArea(down: boolean) {
-    this.focus = down
-      ? 0
-      : this.focusArea == FocusArea.Filters
-        ? this.shortFiltersMode()
-          ? 1
-          : 2
-        : 6;
-    let id = FocusAreaPrefix[this.focusArea] + this.focus;
-    document.getElementById(id)?.focus();
+  cycleFocusArea(forward: boolean) {
+    const order = this.focusOrder();
+    const from = order.indexOf(this.focusArea);
+    const next = order[((from == -1 ? 0 : from) + (forward ? 1 : -1) + order.length) % order.length];
+    this.focusArea = next;
+    this.focus = 0;
+    switch (next) {
+      case FocusArea.NavRail:
+        this.navRail?.focusFirstRow();
+        break;
+      case FocusArea.Playlist:
+        this.playlistSidebar?.focusFirstRow();
+        break;
+      case FocusArea.Search:
+        this.search?.nativeElement.focus();
+        break;
+      case FocusArea.Tiles:
+        this.focusPreGridOrTile(0);
+        break;
+      case FocusArea.DownloadSidebar:
+        this.downloadSidebar?.focusFirstRow();
+        break;
+      case FocusArea.DownloadList:
+        this.downloadManager?.focusFirstRow();
+        break;
+    }
   }
 
   //Temporary solution because the ng-keyboard-shortcuts library doesn't seem to support ESC
@@ -1144,15 +1330,17 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     }
     if (event.key == "Tab" && !this.memory.ModalRef) {
       event.preventDefault();
-      this.nav(event.shiftKey ? "ShiftTab" : "Tab");
+      this.cycleFocusArea(!event.shiftKey);
     }
-    if (event.key == "Enter" && this.focusArea == FocusArea.Filters)
+    if (event.key == "Enter" && document.activeElement?.id?.startsWith("filter-"))
       (document.activeElement as any).click();
   }
 
   selectFirstChannel() {
     this.focusArea = FocusArea.Tiles;
     this.focus = 0;
+    this.inFavMedia = false;
+    this.preGridFocusIndex = -1;
     this.viewport?.scrollToIndex(0, "auto");
     setTimeout(() => {
       (document.getElementById("first")?.firstChild as HTMLElement)?.focus();

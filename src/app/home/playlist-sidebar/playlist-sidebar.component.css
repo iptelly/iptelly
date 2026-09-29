@@ -151,3 +151,10 @@
   background-color: transparent;
   color: var(--text-secondary);
 }
+
+.playlist-item:focus,
+.category-item:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 0.2rem rgba(109, 106, 240, 0.45);
+}

@@ -24,6 +24,12 @@
   transform: scale(125%);
 }
 
+.action:focus {
+  outline: none;
+  box-shadow: 0 0 0 0.2rem rgba(109, 106, 240, 0.45);
+  border-radius: var(--radius-sm);
+}
+
 .embedded-downloads {
   flex: 1;
   min-height: 0;

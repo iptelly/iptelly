@@ -40,6 +40,11 @@
   color: var(--accent-hover);
 }
 
+.sidebar-item:focus {
+  outline: none;
+  box-shadow: 0 0 0 0.2rem rgba(109, 106, 240, 0.45);
+}
+
 .item-count {
   color: var(--text-secondary);
   font-size: 0.85rem;

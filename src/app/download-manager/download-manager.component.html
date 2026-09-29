@@ -17,17 +17,22 @@
         aria-valuemin="0" aria-valuemax="100"></div>
     </div>
     <svg *ngIf="download.status === 'downloading'" fill="currentColor" (click)="pauseDownload(download.id)"
-      class="action ms-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+      (keydown.enter)="pauseDownload(download.id); $event.preventDefault()"
+      (keydown.space)="pauseDownload(download.id); $event.preventDefault()" tabindex="0" role="button"
+      ngbTooltip="Pause" class="action ms-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
       <title>Pause</title>
       <path d="M14,19H18V5H14M6,19H10V5H6V19Z" />
     </svg>
     <svg *ngIf="download.status === 'paused'" fill="currentColor" (click)="resumeDownload(download)"
-      class="action ms-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+      (keydown.enter)="resumeDownload(download); $event.preventDefault()"
+      (keydown.space)="resumeDownload(download); $event.preventDefault()" tabindex="0" role="button"
+      ngbTooltip="Resume" class="action ms-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
       <title>Resume</title>
       <path d="M8,5.14V19.14L19,12.14L8,5.14Z" />
     </svg>
-    <svg fill="red" (click)="cancelDownload(download.id)" class="action stop ms-2" xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24">
+    <svg fill="red" (click)="cancelDownload(download.id)" (keydown.enter)="cancelDownload(download.id); $event.preventDefault()"
+      (keydown.space)="cancelDownload(download.id); $event.preventDefault()" tabindex="0" role="button"
+      ngbTooltip="Cancel" class="action stop ms-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
       <title>Cancel</title>
       <path
         d="M13.46,12L19,17.54V19H17.54L12,13.46L6.46,19H5V17.54L10.54,12L5,6.46V5H6.46L12,10.54L17.54,5H19V6.46L13.46,12Z" />
@@ -45,15 +50,15 @@
       </span>
     </div>
     <div class="history-item-actions">
-      <button *ngIf="item.status === 'completed'" class="btn btn-sm btn-secondary"
+      <button *ngIf="item.status === 'completed'" tabindex="0" class="btn btn-sm btn-secondary"
         (click)="playHistoryItem(item)">Play</button>
-      <button *ngIf="item.status === 'completed'" class="btn btn-sm btn-outline-danger ms-1"
+      <button *ngIf="item.status === 'completed'" tabindex="0" class="btn btn-sm btn-outline-danger ms-1"
         (click)="deleteDownloadedFile(item)">Delete</button>
-      <button *ngIf="item.status === 'paused'" class="btn btn-sm btn-secondary"
+      <button *ngIf="item.status === 'paused'" tabindex="0" class="btn btn-sm btn-secondary"
         (click)="resumeHistoryItem(item)">Resume</button>
-      <button *ngIf="item.status === 'cancelled' || item.status === 'failed'"
+      <button *ngIf="item.status === 'cancelled' || item.status === 'failed'" tabindex="0"
         class="btn btn-sm btn-secondary" (click)="resumeHistoryItem(item)">Restart</button>
-      <button *ngIf="item.status === 'cancelled' || item.status === 'failed'"
+      <button *ngIf="item.status === 'cancelled' || item.status === 'failed'" tabindex="0"
         class="btn btn-sm btn-outline-danger ms-1" (click)="deleteHistoryItem(item)">Delete</button>
     </div>
   </div>
@@ -65,12 +70,12 @@
       {{ selectedCategory === "queued" ? "Queued" : selectedCategory === "completed" ? "Downloaded" : "Cancelled" }}
     </h2>
     <div *ngIf="selectedCategory === 'queued' && hasActive()">
-      <button class="btn btn-secondary btn-sm me-2" (click)="pauseAll()">Pause all</button>
-      <button class="btn btn-danger btn-sm" (click)="cancelAll()">Cancel all</button>
+      <button tabindex="0" class="btn btn-secondary btn-sm me-2" (click)="pauseAll()">Pause all</button>
+      <button tabindex="0" class="btn btn-danger btn-sm" (click)="cancelAll()">Cancel all</button>
     </div>
     <div *ngIf="selectedCategory === 'cancelled' && getCancelled().length > 0">
-      <button class="btn btn-secondary btn-sm me-2" (click)="restartAllCancelled()">Restart all</button>
-      <button class="btn btn-outline-danger btn-sm" (click)="clearCancelled()">Clear all</button>
+      <button tabindex="0" class="btn btn-secondary btn-sm me-2" (click)="restartAllCancelled()">Restart all</button>
+      <button tabindex="0" class="btn btn-outline-danger btn-sm" (click)="clearCancelled()">Clear all</button>
     </div>
   </div>
 

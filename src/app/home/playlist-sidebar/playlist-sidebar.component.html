@@ -10,14 +10,15 @@
   </div>
 
   <ng-container *ngIf="!collapsed">
-    <div class="playlist-item all-playlists" [ngClass]="{ active: isAllSourcesSelected() }"
+    <div class="playlist-item all-playlists" tabindex="0" [ngClass]="{ active: isAllSourcesSelected() }"
       (click)="selectAllSources()">
       All playlists
     </div>
 
     <div class="playlist-group" *ngFor="let source of sources">
-      <div class="playlist-item" [ngClass]="{ active: isSourceSelected(source) }" (click)="selectSource(source)"
-        [ngbTooltip]="source.name" placement="right" container="body">
+      <div class="playlist-item" tabindex="0" [attr.data-source-id]="source.id"
+        [ngClass]="{ active: isSourceSelected(source) }" (click)="selectSource(source)" [ngbTooltip]="source.name"
+        placement="right" container="body">
         <svg (click)="toggleExpand(source, $event)" fill="currentColor" viewBox="0 0 24 24" class="chevron"
           [ngClass]="{ open: expanded.has(source.id!) }">
           <path d="M8.59,16.59L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.59Z" />
@@ -27,7 +28,7 @@
 
       <div class="category-list" *ngIf="expanded.has(source.id!)">
         <div class="category-item loading" *ngIf="loadingSource.has(source.id!)">Loading...</div>
-        <div class="category-item" *ngFor="let group of categoriesBySource.get(source.id!)"
+        <div class="category-item" *ngFor="let group of categoriesBySource.get(source.id!)" tabindex="0"
           [ngClass]="{ active: isCategorySelected(group) }" (click)="selectCategory(group)"
           (contextmenu)="onCategoryRightClick($event, group)" [ngbTooltip]="group.name" placement="right"
           container="body">

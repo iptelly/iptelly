@@ -86,9 +86,9 @@ export class EpgModalItemComponent implements OnDestroy {
       url: this.epg?.timeshift_url,
       name: this.epg?.title,
       media_type: MediaType.movie,
-
       favorite: false,
       source_id: this.sourceId,
+      is_adult: false,
     };
     try {
       await invoke("play", {
@@ -131,6 +131,7 @@ export class EpgModalItemComponent implements OnDestroy {
       media_type: MediaType.movie,
       favorite: false,
       source_id: this.sourceId,
+      is_adult: false,
     };
     let download = await this.download.addDownload(
       this.getDownloadId(),

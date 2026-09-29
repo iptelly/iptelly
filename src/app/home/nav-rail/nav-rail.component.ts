@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, Output } from "@angular/core";
+import { Component, ElementRef, EventEmitter, HostListener, Input, Output } from "@angular/core";
 import { invoke } from "@tauri-apps/api/core";
 import { NgbModal } from "@ng-bootstrap/ng-bootstrap";
 import { RailItem } from "../../models/railItem";
@@ -16,6 +16,29 @@ export class NavRailComponent {
   @Input() active: RailItem = RailItem.Channels;
   @Output() select = new EventEmitter<RailItem>();
 
+  // Self-contained keyboard navigation, mirroring PlaylistSidebarComponent/
+  // DownloadSidebarComponent - this rail is embedded on several routed
+  // pages (Home, Settings, Manage Categories) that otherwise share nothing,
+  // so Up/Down has to work here rather than depending on HomeComponent's
+  // focusArea machinery, which only exists on the Home route.
+  @HostListener("keydown", ["$event"])
+  onKeyDown(event: KeyboardEvent) {
+    if (event.key != "ArrowUp" && event.key != "ArrowDown") return;
+    event.preventDefault();
+    const rows = this.focusableRows();
+    const current = rows.indexOf(document.activeElement as HTMLElement);
+    const next = Math.max(0, Math.min(rows.length - 1, current + (event.key == "ArrowDown" ? 1 : -1)));
+    rows[next]?.focus();
+  }
+
+  private focusableRows(): HTMLElement[] {
+    return Array.from(this.el.nativeElement.querySelectorAll(".rail-item"));
+  }
+
+  focusFirstRow() {
+    this.focusableRows()[0]?.focus();
+  }
+
   items = [
     { item: RailItem.Favourites, label: "Favourites" },
     { item: RailItem.Channels, label: "Channels" },
@@ -30,6 +53,7 @@ export class NavRailComponent {
     public memory: MemoryService,
     private modal: NgbModal,
     private error: ErrorService,
+    private el: ElementRef,
   ) {}
 
   click(item: RailItem) {

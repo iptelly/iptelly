@@ -15,6 +15,7 @@ import { NetworkInterface } from "../models/networkInterface";
 import { ErrorService } from "../error.service";
 import { ToastrService } from "ngx-toastr";
 import { AdultPinModalComponent } from "../adult-pin-modal/adult-pin-modal.component";
+import { NavRailComponent } from "../home/nav-rail/nav-rail.component";
 
 @Component({
   selector: "app-settings",
@@ -43,6 +44,7 @@ export class SettingsComponent {
   sortTypes = SORT_TYPES;
   @ViewChild("mpvParams") mpvParams!: ElementRef;
   @ViewChild("vlcParams") vlcParams!: ElementRef;
+  @ViewChild(NavRailComponent) navRail?: NavRailComponent;
 
   newAdultPin: string = "";
   confirmAdultPin: string = "";
@@ -56,6 +58,7 @@ export class SettingsComponent {
     private theme: ThemeService,
     private error: ErrorService,
     private toastr: ToastrService,
+    private el: ElementRef,
   ) { }
 
   // Applies immediately (no reload needed) in addition to persisting -
@@ -99,17 +102,69 @@ export class SettingsComponent {
         this.goBack();
       }
       event.preventDefault();
+      return;
     }
+    // Bail before touching the DOM at all for every key that isn't one of
+    // these - otherwise this handler was re-scanning the whole page on
+    // every keystroke, including normal typing into any of this page's many
+    // text fields.
+    if (event.key != "Tab" && event.key != "ArrowUp" && event.key != "ArrowDown") return;
+    if (this.memory.ModalRef) return; // let an open modal handle its own keyboard input
+    const inNavRail = document.activeElement?.closest(".nav-rail") != null;
+    // Tab still crosses the nav rail <-> page content boundary (mirroring
+    // ManageCategoriesComponent/HomeComponent's Tab-between-regions
+    // convention) - Up/Down (below) is what moves *within* the content
+    // region, which on this page is everything from "Recording path" down
+    // through every source tile's fields and buttons.
+    if (event.key == "Tab") {
+      const rows = this.focusableRows();
+      if (inNavRail && !event.shiftKey) {
+        event.preventDefault();
+        rows[0]?.focus();
+      } else if (!inNavRail && event.shiftKey && document.activeElement == rows[0]) {
+        event.preventDefault();
+        this.navRail?.focusFirstRow();
+      }
+      return;
+    }
+    if (inNavRail) return; // NavRail owns its own Up/Down
+    event.preventDefault();
+    const rows = this.focusableRows();
+    const current = rows.indexOf(document.activeElement as HTMLElement);
+    const next = Math.max(0, Math.min(rows.length - 1, current + (event.key == "ArrowDown" ? 1 : -1)));
+    rows[next]?.focus();
+  }
+
+  private focusableRows(): HTMLElement[] {
+    const root: HTMLElement | null = this.el.nativeElement.querySelector(".page-wrapper");
+    if (!root) return [];
+    const rows: HTMLElement[] = Array.from(
+      root.querySelectorAll('select, input, textarea, button, [tabindex="0"]'),
+    );
+    return rows.filter((el) => !(el as HTMLButtonElement).disabled);
   }
 
   ngOnInit(): void {
     this.getSettings();
     this.getSources();
     this.getNetworkInterfaces();
+    this.getHasAdultPin();
     if (this.memory.XtreamSourceIds.size > 0) {
       this.getExpiries();
       this.getTimezones();
     }
+  }
+
+  // memory.AdultPinSet is otherwise only ever populated by HomeComponent's
+  // own startup fetch - fine normally, since Settings is only ever reached
+  // by clicking through from Home, but a dev-mode full page reload (or any
+  // future direct navigation to this route) lands here with it still at its
+  // default `false`, incorrectly showing the "set a new PIN" form even when
+  // one is already set.
+  getHasAdultPin() {
+    invoke("has_adult_pin").then((x) => {
+      this.memory.AdultPinSet = x as boolean;
+    });
   }
 
   getNetworkInterfaces() {
@@ -150,6 +205,15 @@ export class SettingsComponent {
         this.nav.navigateByUrl("setup");
       }
     });
+  }
+
+  // Without this, every refresh (e.g. toggling a source's enabled state)
+  // replaces `sources` with all-new object references, and NgFor's default
+  // identity-based diffing then destroys and recreates every
+  // <app-source-tile> - silently dropping keyboard focus back to <body>
+  // even though the user never left the page.
+  trackSourceById(_index: number, source: Source): number | undefined {
+    return source.id;
   }
 
   getExpiries() {

@@ -1,4 +1,4 @@
-import { Component, Input } from "@angular/core";
+import { Component, ElementRef, Input } from "@angular/core";
 import { Source } from "../../models/source";
 import { SourceType } from "../../models/sourceType";
 import { invoke } from "@tauri-apps/api/core";
@@ -34,6 +34,7 @@ export class SourceTileComponent {
   constructor(
     public memory: MemoryService,
     private modal: NgbModal,
+    private el: ElementRef,
   ) { }
 
   get_source_type_name() {
@@ -96,6 +97,13 @@ export class SourceTileComponent {
       invoke("toggle_source", { value: !this.source?.enabled, sourceId: this.source?.id }),
     );
     this.memory.RefreshSources.next(true);
+    // The enabled/disabled variant is swapped via *ngIf, so the button just
+    // clicked/activated is always a new DOM node - re-focus its replacement
+    // so keyboard users land back where they were instead of losing focus.
+    setTimeout(() => {
+      const btn: HTMLButtonElement | null = this.el.nativeElement.querySelector(".check-btn");
+      btn?.focus();
+    });
   }
 
   async addCustomChannel() {
@@ -149,6 +157,20 @@ export class SourceTileComponent {
   edit() {
     this.editableSource = { ...this.source };
     this.editing = true;
+    // The url field only exists in the DOM once *ngIf picks up `editing` on
+    // the next change detection pass, hence the setTimeout - same pattern
+    // used for post-render focus elsewhere (e.g. home.component.ts).
+    setTimeout(() => {
+      const input: HTMLInputElement | null = this.el.nativeElement.querySelector('input[name="url"]');
+      if (input) {
+        input.focus();
+        return;
+      }
+      // M3U sources have no typeable url once editing - just the read-only
+      // path and a "Browse" button, which is the equivalent next action.
+      const browseBtn: HTMLButtonElement | null = this.el.nativeElement.querySelector(".browse-btn");
+      browseBtn?.focus();
+    });
   }
 
   async save() {

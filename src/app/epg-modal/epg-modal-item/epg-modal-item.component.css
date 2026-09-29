@@ -34,6 +34,13 @@
   cursor: default;
 }
 
+.bell:focus,
+.timeshift:focus {
+  outline: none;
+  box-shadow: 0 0 0 0.2rem rgba(109, 106, 240, 0.45);
+  border-radius: var(--radius-sm);
+}
+
 .live {
   height: 0.75rem;
   width: 0.75rem;

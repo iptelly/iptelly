@@ -1,4 +1,5 @@
-<div id="tile-{{ id }}" placement="top" tabindex="0" (keyup.enter)="click()" [ngClass]="{
+<div id="{{ idPrefix }}{{ id }}" placement="top" tabindex="0" (keyup.enter)="onEnterKey()"
+  [attr.data-epg-guide]="epgGuideActive ? 'true' : null" [ngClass]="{
     playing: starting,
     faded: fade,
     'list-layout': layout == 'list'

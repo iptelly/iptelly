@@ -13,6 +13,10 @@
   <div class="mb-2 d-flex align-items-center justify-content-center">
     <svg
       (click)="prev()"
+      (keydown.enter)="prev(); $event.preventDefault()"
+      (keydown.space)="prev(); $event.preventDefault()"
+      tabindex="0"
+      role="button"
       [ngClass]="{ disabled: !hasPrev() }"
       ngbTooltip="Previous programme"
       fill="#316cf4"
@@ -26,6 +30,10 @@
     <span class="date-text">{{ getFormattedDate() }}</span>
     <svg
       (click)="next()"
+      (keydown.enter)="next(); $event.preventDefault()"
+      (keydown.space)="next(); $event.preventDefault()"
+      tabindex="0"
+      role="button"
       [ngClass]="{ disabled: !hasNext() }"
       ngbTooltip="Next programme"
       fill="#316cf4"

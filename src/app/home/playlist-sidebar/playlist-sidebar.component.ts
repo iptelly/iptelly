@@ -3,6 +3,7 @@ import {
   Component,
   ElementRef,
   EventEmitter,
+  HostListener,
   Input,
   OnChanges,
   OnDestroy,
@@ -83,6 +84,46 @@ export class PlaylistSidebarComponent implements OnInit, OnChanges, AfterViewIni
     private el: ElementRef,
   ) { }
 
+  // Self-contained keyboard navigation for this sidebar - HomeComponent's
+  // Tab-cycling only needs to know how to enter (focusFirstRow) and leave
+  // (a native Tab keypress bubbles straight past this, unhandled) this
+  // region; movement within it is handled entirely here. Up/Down moves
+  // between whichever rows are focusable right now (respects expand/
+  // collapse state for free, since collapsed sources' categories simply
+  // aren't in the DOM), and Enter re-uses each row's own (click) handler
+  // instead of duplicating select/expand logic here.
+  @HostListener("keydown", ["$event"])
+  onKeyDown(event: KeyboardEvent) {
+    if (event.key == "Enter") {
+      (document.activeElement as HTMLElement)?.click();
+      return;
+    }
+    if (event.key == "ArrowLeft" || event.key == "ArrowRight") {
+      const sourceId = Number((document.activeElement as HTMLElement)?.dataset?.["sourceId"]);
+      const source = this.sources.find((s) => s.id === sourceId);
+      if (!source) return;
+      const expanded = this.expanded.has(source.id!);
+      if ((event.key == "ArrowRight" && expanded) || (event.key == "ArrowLeft" && !expanded)) return;
+      event.preventDefault();
+      this.toggleExpand(source);
+      return;
+    }
+    if (event.key != "ArrowUp" && event.key != "ArrowDown") return;
+    event.preventDefault();
+    const rows = this.focusableRows();
+    const current = rows.indexOf(document.activeElement as HTMLElement);
+    const next = Math.max(0, Math.min(rows.length - 1, current + (event.key == "ArrowDown" ? 1 : -1)));
+    rows[next]?.focus();
+  }
+
+  private focusableRows(): HTMLElement[] {
+    return Array.from(this.el.nativeElement.querySelectorAll('[tabindex="0"]'));
+  }
+
+  focusFirstRow() {
+    this.focusableRows()[0]?.focus();
+  }
+
   ngAfterViewInit(): void {
     const element = this.el.nativeElement.querySelector(".playlist-sidebar");
     this.resizeObserver = new ResizeObserver((entries) => {
@@ -137,8 +178,8 @@ export class PlaylistSidebarComponent implements OnInit, OnChanges, AfterViewIni
     this.sourceSelect.emit([source.id!]);
   }
 
-  async toggleExpand(source: Source, event: Event) {
-    event.stopPropagation();
+  async toggleExpand(source: Source, event?: Event) {
+    event?.stopPropagation();
     if (this.expanded.has(source.id!)) {
       this.expanded.delete(source.id!);
       return;

@@ -36,7 +36,7 @@
     <span class="rail-label">{{ entry.label }}</span>
   </button>
 
-  <button *ngIf="memory.AdultPinSet" type="button" class="rail-item"
+  <button *ngIf="memory.AdultPinSet" [id]="'viewMode-' + items.length" type="button" class="rail-item"
     [ngbTooltip]="memory.AdultContentUnlocked ? 'Lock adult content' : 'Unlock adult content'" placement="right"
     (click)="toggleAdultLock($event)">
     <svg *ngIf="!memory.AdultContentUnlocked" fill="currentColor" viewBox="0 0 24 24" class="rail-icon">
@@ -50,7 +50,8 @@
     <span class="rail-label">{{ memory.AdultContentUnlocked ? "Unlocked" : "Locked" }}</span>
   </button>
 
-  <button [id]="'viewMode-6'" type="button" class="rail-item settings-item" [ngbTooltip]="'Settings'"
+  <button [id]="'viewMode-' + (items.length + (memory.AdultPinSet ? 1 : 0))" type="button"
+    class="rail-item settings-item" [ngbTooltip]="'Settings'"
     placement="right" (click)="click(railItemEnum.Settings)">
     <svg fill="currentColor" viewBox="0 0 24 24" class="rail-icon">
       <path
