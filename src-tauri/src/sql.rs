@@ -332,8 +332,65 @@ fn apply_migrations() -> Result<()> {
               ALTER TABLE channels ADD COLUMN is_adult INTEGER NOT NULL DEFAULT 0;
             "#,
         ),
+        // season_id never had a real FK to seasons(id) (unlike series_id/
+        // stream_id, which are provider-scoped ids and genuinely can't be
+        // one) - SQLite can't add a constraint to an existing column via
+        // ALTER TABLE, only by recreating the whole table.
+        M::up(
+            r#"
+              CREATE TABLE "channels_new" (
+                "id" INTEGER PRIMARY KEY,
+                "name" varchar(100),
+                "image" varchar(500),
+                "url" varchar(500),
+                "media_type" integer,
+                "source_id" integer,
+                "favorite" integer,
+                "series_id" integer,
+                "group_id" integer,
+                stream_id integer,
+                last_watched integer,
+                tv_archive integer,
+                season_id INTEGER,
+                episode_num INTEGER,
+                hidden integer DEFAULT 0,
+                tvg_id varchar(255),
+                is_adult INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (source_id) REFERENCES sources(id),
+                FOREIGN KEY (group_id) REFERENCES groups(id),
+                FOREIGN KEY (season_id) REFERENCES seasons(id) ON DELETE CASCADE
+              );
+              INSERT INTO channels_new (id, name, image, url, media_type, source_id, favorite, series_id, group_id, stream_id, last_watched, tv_archive, season_id, episode_num, hidden, tvg_id, is_adult)
+              SELECT id, name, image, url, media_type, source_id, favorite, series_id, group_id, stream_id, last_watched, tv_archive, season_id, episode_num, hidden, tvg_id, is_adult FROM channels;
+              DROP TABLE channels;
+              ALTER TABLE channels_new RENAME TO channels;
+
+              CREATE INDEX index_channel_name ON channels(name);
+              CREATE INDEX index_channel_source_id ON channels(source_id);
+              CREATE INDEX index_channel_favorite ON channels(favorite);
+              CREATE INDEX index_channel_series_id ON channels(series_id);
+              CREATE INDEX index_channel_group_id ON channels(group_id);
+              CREATE INDEX index_channel_media_type ON channels(media_type);
+              CREATE INDEX index_channels_stream_id on channels(stream_id);
+              CREATE INDEX index_channels_last_watched on channels(last_watched);
+              CREATE INDEX index_channels_tv_archive on channels(tv_archive);
+              CREATE INDEX index_channels_season_id ON channels(season_id);
+              CREATE INDEX index_channels_episode_num on channels(episode_num);
+              CREATE UNIQUE INDEX channels_unique ON channels(name, source_id, url, series_id, season_id);
+              CREATE INDEX index_channels_hidden ON channels(hidden);
+              CREATE INDEX idx_channels_tvg_id ON channels(tvg_id);
+            "#,
+        )
+        .foreign_key_check(),
     ]);
-    migrations.to_latest(&mut sql)?;
+    // foreign_keys can't be toggled from inside a migration itself (each
+    // one already runs inside its own transaction, where SQLite silently
+    // ignores the pragma) - this is rusqlite_migration's own documented
+    // pattern for a migration that recreates a table, not just this one.
+    sql.pragma_update(None, "foreign_keys", "OFF")?;
+    let result = migrations.to_latest(&mut sql);
+    sql.pragma_update(None, "foreign_keys", "ON")?;
+    result?;
     Ok(())
 }
 
