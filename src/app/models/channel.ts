@@ -16,4 +16,5 @@ export class Channel {
   series_id?: number;
   season_id?: number;
   episode_num?: number;
+  is_adult?: boolean;
 }

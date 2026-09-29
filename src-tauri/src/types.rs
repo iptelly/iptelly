@@ -35,6 +35,7 @@ pub struct Channel {
     pub hidden: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tvg_id: Option<String>,
+    pub is_adult: bool,
 }
 
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize, Default)]
@@ -241,6 +242,10 @@ pub struct AppState {
     // per-source connection cap, unchanged) - keyed by download_id, one
     // entry per currently-running download.
     pub download_controls: HashMap<String, tokio::sync::watch::Sender<DownloadControl>>,
+    // Set for the remainder of this run once the correct adult PIN is
+    // entered (see settings::verify_adult_pin) - deliberately never
+    // persisted, so it always resets back to locked on app restart.
+    pub adult_unlocked: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

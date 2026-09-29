@@ -41,6 +41,7 @@ import { DownloadSidebarComponent } from './home/download-sidebar/download-sideb
 import { EpgTimelineComponent } from './channel-tile/epg-timeline/epg-timeline.component';
 import { EpgTimelineHeaderComponent } from './home/epg-timeline-header/epg-timeline-header.component';
 import { ManageCategoriesComponent } from './manage-categories/manage-categories.component';
+import { AdultPinModalComponent } from './adult-pin-modal/adult-pin-modal.component';
 
 @NgModule({
   declarations: [
@@ -63,6 +64,7 @@ import { ManageCategoriesComponent } from './manage-categories/manage-categories
     DeleteGroupModalComponent,
     ImportModalComponent,
     ConfirmDeleteModalComponent,
+    AdultPinModalComponent,
     EpgModalComponent,
     EpgModalItemComponent,
     RestreamModalComponent,

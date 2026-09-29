@@ -45,6 +45,9 @@ export class MemoryService {
   public IsContainer?: boolean;
   public AlwaysAskSave?: boolean;
   public LightweightMode: boolean = false;
+  public AdultPinSet: boolean = false;
+  // Deliberately never persisted - always resets to locked on app restart.
+  public AdultContentUnlocked: boolean = false;
   // Shared across the EPG timeline header and every channel row's timeline
   // strip so panning forward/backward moves them all together, instead of
   // each row being locked to its own independent real-time "now".

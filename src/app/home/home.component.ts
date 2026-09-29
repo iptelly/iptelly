@@ -210,7 +210,8 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   getSources() {
     let get_settings = invoke("get_settings");
     let get_sources = invoke("get_sources");
-    Promise.all([get_settings, get_sources])
+    let get_has_adult_pin = invoke("has_adult_pin");
+    Promise.all([get_settings, get_sources, get_has_adult_pin])
       .then((data) => {
         let settings = data[0] as Settings;
         let sources = data[1] as Source[];
@@ -218,6 +219,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
         this.memory.trayEnabled = settings.enable_tray_icon ?? true;
         this.memory.AlwaysAskSave = settings.always_ask_save ?? false;
         this.memory.LightweightMode = settings.lightweight_mode ?? false;
+        this.memory.AdultPinSet = data[2] as boolean;
         this.memory.Sources = new Map(sources.filter((x) => x.enabled).map(s => [s.id!, s]));
         if (sources.length == 0) this.reset();
         else {

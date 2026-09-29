@@ -176,6 +176,7 @@ pub async fn watch_self(port: u16, state: State<'_, Mutex<AppState>>) -> Result<
         season_id: None,
         episode_num: None,
         hidden: Some(false),
+        is_adult: false,
     };
     mpv::play(channel, false, None, state).await
 }
@@ -200,6 +201,7 @@ pub fn share_restream(address: String, channel: Channel, path: String) -> Result
             season_id: None,
             episode_num: None,
             hidden: Some(false),
+            is_adult: false,
         },
     };
     serialize_to_file(channel, path)

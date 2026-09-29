@@ -256,6 +256,30 @@
     </div>
   </div>
 
+  <div class="row mt-3 align-items-center">
+    <div class="col-4">
+      <span [ngbTooltip]="
+          'Once set, channels/movies/series a provider explicitly marks as adult content are hidden everywhere until this PIN is entered - unlocking lasts until the app is closed.'
+        ">Adult content PIN</span>
+    </div>
+    <div class="col" *ngIf="!memory.AdultPinSet">
+      <div class="d-flex flex-wrap gap-2 align-items-center">
+        <input [(ngModel)]="newAdultPin" type="password" inputmode="numeric" autocomplete="off"
+          placeholder="New PIN" class="form-control" style="max-width: 10rem" />
+        <input [(ngModel)]="confirmAdultPin" (keyup.enter)="setAdultPin()" type="password" inputmode="numeric"
+          autocomplete="off" placeholder="Confirm PIN" class="form-control" style="max-width: 10rem" />
+        <button (click)="setAdultPin()" class="btn btn-primary btn-sm">Set PIN</button>
+      </div>
+      <div class="text-danger mt-1" *ngIf="adultPinError">{{ adultPinError }}</div>
+    </div>
+    <div class="col" *ngIf="memory.AdultPinSet">
+      <div class="d-flex align-items-center gap-2">
+        <span>PIN is set</span>
+        <button (click)="removeAdultPin()" class="btn btn-outline-danger btn-sm">Remove PIN</button>
+      </div>
+    </div>
+  </div>
+
   <h2 class="mt-4 mb-4 text-center">Sources</h2>
   <ng-container *ngFor="let source of sources; let i = index">
     <div [ngClass]="{ 'mt-3': i != 0 }">

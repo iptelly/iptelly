@@ -2,6 +2,7 @@ use std::{collections::HashMap, env::consts::OS};
 
 use anyhow::{Context, Result};
 use directories::UserDirs;
+use sha2::{Digest, Sha256};
 
 use crate::{sql, types::Settings};
 
@@ -112,6 +113,44 @@ pub fn update_settings(settings: Settings) -> Result<()> {
     }
     sql::update_settings(map)?;
     Ok(())
+}
+
+pub const ADULT_PIN_HASH: &str = "adultPinHash";
+// A fixed app-specific pepper mixed into the hash - this is a casual
+// content-hiding PIN, not a real auth secret, so the point isn't to defeat a
+// targeted attacker (anyone with direct DB access has already bypassed the
+// whole point of this feature) - just to avoid a plain, precomputable
+// SHA-256 of a short numeric PIN sitting in the settings table as-is.
+const ADULT_PIN_PEPPER: &str = "open-tv-adult-pin";
+
+fn hash_adult_pin(pin: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(ADULT_PIN_PEPPER.as_bytes());
+    hasher.update(pin.as_bytes());
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect()
+}
+
+pub fn has_adult_pin() -> Result<bool> {
+    let map = sql::get_settings()?;
+    Ok(map.get(ADULT_PIN_HASH).is_some())
+}
+
+pub fn set_adult_pin(pin: Option<String>) -> Result<()> {
+    let mut map: HashMap<String, Option<String>> = HashMap::with_capacity(1);
+    map.insert(ADULT_PIN_HASH.to_string(), pin.map(|p| hash_adult_pin(&p)));
+    sql::update_settings(map)?;
+    Ok(())
+}
+
+pub fn verify_adult_pin(pin: &str) -> Result<bool> {
+    let map = sql::get_settings()?;
+    Ok(map
+        .get(ADULT_PIN_HASH)
+        .is_some_and(|stored_hash| *stored_hash == hash_adult_pin(pin)))
 }
 
 pub fn get_default_record_path() -> Result<String> {

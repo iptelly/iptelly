@@ -1,6 +1,6 @@
 {
   "productName": "Fred TV",
-  "version": "1.9.1",
+  "version": "2.0.0",
   "identifier": "dev.fredol.open-tv",
   "build": {
     "frontendDist": "../dist/open-tv/browser",
@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "Fred TV (v1.9.1)",
+        "title": "Fred TV (v2.0.0)",
         "width": 800,
         "height": 600,
         "resizable": true,
@@ -20,7 +20,8 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https: blob:; media-src 'self' https: blob:; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http: https:; connect-src 'self' https: blob:; media-src 'self' https: blob:; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+      "dangerousDisableAssetCspModification": ["style-src"]
     }
   },
   "bundle": {

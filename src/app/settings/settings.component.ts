@@ -12,6 +12,9 @@ import { SORT_TYPES, SortType, getSortTypeText } from "../models/sortType";
 import { RailItem } from "../models/railItem";
 import { ThemeService } from "../theme.service";
 import { NetworkInterface } from "../models/networkInterface";
+import { ErrorService } from "../error.service";
+import { ToastrService } from "ngx-toastr";
+import { AdultPinModalComponent } from "../adult-pin-modal/adult-pin-modal.component";
 
 @Component({
   selector: "app-settings",
@@ -41,12 +44,18 @@ export class SettingsComponent {
   @ViewChild("mpvParams") mpvParams!: ElementRef;
   @ViewChild("vlcParams") vlcParams!: ElementRef;
 
+  newAdultPin: string = "";
+  confirmAdultPin: string = "";
+  adultPinError: string = "";
+
   constructor(
     private router: Router,
     public memory: MemoryService,
     private nav: Router,
     private modal: NgbModal,
     private theme: ThemeService,
+    private error: ErrorService,
+    private toastr: ToastrService,
   ) { }
 
   // Applies immediately (no reload needed) in addition to persisting -
@@ -256,6 +265,47 @@ export class SettingsComponent {
     });
     this.memory.ModalRef.result.then((_) => (this.memory.ModalRef = undefined));
     this.memory.ModalRef.componentInstance.name = "ConfirmDeleteModal";
+  }
+
+  async setAdultPin() {
+    this.adultPinError = "";
+    if (this.newAdultPin.length < 4) {
+      this.adultPinError = "PIN must be at least 4 digits.";
+      return;
+    }
+    if (this.newAdultPin !== this.confirmAdultPin) {
+      this.adultPinError = "PINs don't match.";
+      return;
+    }
+    try {
+      await invoke("set_adult_pin", { pin: this.newAdultPin });
+      this.memory.AdultPinSet = true;
+      this.newAdultPin = "";
+      this.confirmAdultPin = "";
+      this.toastr.success("Adult content PIN set");
+    } catch (e) {
+      this.error.handleError(e, "Failed to set PIN");
+    }
+  }
+
+  // Requires re-entering the current PIN first - otherwise anyone at this
+  // page could remove the lock without ever knowing it, defeating the
+  // whole point of the feature.
+  async removeAdultPin() {
+    const modalRef = this.modal.open(AdultPinModalComponent, {
+      backdrop: "static",
+    });
+    const unlocked = await modalRef.result.catch(() => false);
+    if (!unlocked) return;
+    this.memory.AdultContentUnlocked = true;
+    try {
+      await invoke("set_adult_pin", { pin: null });
+      this.memory.AdultPinSet = false;
+      this.memory.Refresh.next(false);
+      this.toastr.success("Adult content PIN removed");
+    } catch (e) {
+      this.error.handleError(e, "Failed to remove PIN");
+    }
   }
 
   async clearHistory() {

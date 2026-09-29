@@ -48,6 +48,12 @@ struct XtreamStream {
     tv_archive: serde_json::Value,
     #[serde(default)]
     epg_channel_id: serde_json::Value,
+    // Not part of the official Xtream Codes spec, but many panels include
+    // it per live/VOD/series list item ("0"/"1", 0/1, or a real bool
+    // depending on the panel) - #[serde(default)] so it's simply absent
+    // (Value::Null) on panels that don't send it at all.
+    #[serde(default)]
+    is_adult: serde_json::Value,
 }
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct XtreamSeries {
@@ -359,6 +365,7 @@ fn convert_xtream_live_to_channel(
         season_id: None,
         episode_num: None,
         hidden: Some(false),
+        is_adult: get_serde_json_bool(&stream.is_adult).unwrap_or(false),
     })
 }
 
@@ -574,6 +581,14 @@ fn get_serde_json_i64(value: &serde_json::Value) -> Option<i64> {
         .or_else(|| value.as_i64())
 }
 
+// Panels are inconsistent about whether flags like is_adult are sent as a
+// real JSON bool, a "0"/"1" string, or a 0/1 number.
+fn get_serde_json_bool(value: &serde_json::Value) -> Option<bool> {
+    value
+        .as_bool()
+        .or_else(|| get_serde_json_u64(value).map(|v| v == 1))
+}
+
 fn xtream_season_to_season(season: XtreamSeason, source_id: i64, series_id: u64) -> Result<Season> {
     let season_number = get_serde_json_i64(&season.season_number).context("no season number")?;
     Ok(Season {
@@ -616,6 +631,10 @@ fn episode_to_channel(
         tv_archive: None,
         tvg_id: None,
         hidden: Some(false),
+        // Xtream's per-episode info blob doesn't carry its own is_adult -
+        // only the parent series' list entry does (already stored on that
+        // series' own Channel row).
+        is_adult: false,
     })
 }
 

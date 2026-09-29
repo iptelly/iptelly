@@ -286,6 +286,7 @@ fn get_channel_from_lines(
         season_id: None,
         episode_num: None,
         hidden: Some(false),
+        is_adult: false,
     };
     Ok(channel)
 }

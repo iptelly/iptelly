@@ -61,6 +61,15 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::SIZE
+                        | tauri_plugin_window_state::StateFlags::POSITION
+                        | tauri_plugin_window_state::StateFlags::MAXIMIZED,
+                )
+                .build(),
+        )
         .invoke_handler(tauri::generate_handler![
             get_m3u8,
             get_m3u8_from_link,
@@ -147,7 +156,11 @@ pub fn run() {
             get_all_groups,
             set_groups_hidden,
             get_hidden_channels,
-            set_channels_hidden
+            set_channels_hidden,
+            has_adult_pin,
+            set_adult_pin,
+            verify_adult_pin,
+            lock_adult_content
         ])
         .setup(|app| {
             app.manage(Mutex::new(AppState {
@@ -285,9 +298,42 @@ fn update_settings(settings: Settings) -> Result<(), String> {
     settings::update_settings(settings).map_err(map_err_frontend)
 }
 
+#[tauri::command]
+async fn search(
+    filters: Filters,
+    state: State<'_, Mutex<AppState>>,
+) -> Result<Vec<Channel>, String> {
+    let hide_adult = settings::has_adult_pin().map_err(map_err_frontend)?
+        && !state.lock().await.adult_unlocked;
+    sql::search(filters, hide_adult).map_err(map_err_frontend)
+}
+
 #[tauri::command(async)]
-fn search(filters: Filters) -> Result<Vec<Channel>, String> {
-    sql::search(filters).map_err(map_err_frontend)
+fn has_adult_pin() -> Result<bool, String> {
+    settings::has_adult_pin().map_err(map_err_frontend)
+}
+
+#[tauri::command(async)]
+fn set_adult_pin(pin: Option<String>) -> Result<(), String> {
+    settings::set_adult_pin(pin).map_err(map_err_frontend)
+}
+
+#[tauri::command]
+async fn verify_adult_pin(
+    pin: String,
+    state: State<'_, Mutex<AppState>>,
+) -> Result<bool, String> {
+    let correct = settings::verify_adult_pin(&pin).map_err(map_err_frontend)?;
+    if correct {
+        state.lock().await.adult_unlocked = true;
+    }
+    Ok(correct)
+}
+
+#[tauri::command]
+async fn lock_adult_content(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
+    state.lock().await.adult_unlocked = false;
+    Ok(())
 }
 
 #[tauri::command(async)]

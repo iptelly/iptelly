@@ -322,6 +322,11 @@ fn apply_migrations() -> Result<()> {
               );
             "#,
         ),
+        M::up(
+            r#"
+              ALTER TABLE channels ADD COLUMN is_adult INTEGER NOT NULL DEFAULT 0;
+            "#,
+        ),
     ]);
     migrations.to_latest(&mut sql)?;
     Ok(())
@@ -392,8 +397,8 @@ pub fn insert_channel(tx: &Transaction, channel: Channel) -> Result<()> {
     // call with the same SQL text.
     tx.prepare_cached(
         r#"
-INSERT INTO channels (name, group_id, image, url, source_id, media_type, series_id, favorite, stream_id, tv_archive, tvg_id, season_id, episode_num)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO channels (name, group_id, image, url, source_id, media_type, series_id, favorite, stream_id, tv_archive, tvg_id, season_id, episode_num, is_adult)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (name, source_id, url, series_id, season_id)
 DO UPDATE SET
     url = excluded.url,
@@ -403,7 +408,8 @@ DO UPDATE SET
     series_id = excluded.series_id,
     tv_archive = excluded.tv_archive,
     tvg_id = excluded.tvg_id,
-    season_id = excluded.season_id;
+    season_id = excluded.season_id,
+    is_adult = excluded.is_adult;
 "#,
     )?
     .execute(params![
@@ -419,7 +425,8 @@ DO UPDATE SET
         channel.tv_archive,
         channel.tvg_id,
         channel.season_id,
-        channel.episode_num
+        channel.episode_num,
+        channel.is_adult
     ])?;
     Ok(())
 }
@@ -435,10 +442,10 @@ const CHANNEL_INSERT_BATCH_SIZE: usize = 500;
 
 pub(crate) fn insert_channels_batch(tx: &Transaction, channels: &[Channel]) -> Result<()> {
     for chunk in channels.chunks(CHANNEL_INSERT_BATCH_SIZE) {
-        let placeholders = vec!["(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"; chunk.len()].join(", ");
+        let placeholders = vec!["(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"; chunk.len()].join(", ");
         let sql = format!(
             r#"
-INSERT INTO channels (name, group_id, image, url, source_id, media_type, series_id, favorite, stream_id, tv_archive, tvg_id, season_id, episode_num)
+INSERT INTO channels (name, group_id, image, url, source_id, media_type, series_id, favorite, stream_id, tv_archive, tvg_id, season_id, episode_num, is_adult)
 VALUES {placeholders}
 ON CONFLICT (name, source_id, url, series_id, season_id)
 DO UPDATE SET
@@ -449,10 +456,11 @@ DO UPDATE SET
     series_id = excluded.series_id,
     tv_archive = excluded.tv_archive,
     tvg_id = excluded.tvg_id,
-    season_id = excluded.season_id;
+    season_id = excluded.season_id,
+    is_adult = excluded.is_adult;
 "#
         );
-        let mut params: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(chunk.len() * 13);
+        let mut params: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(chunk.len() * 14);
         for channel in chunk {
             params.push(&channel.name);
             params.push(&channel.group_id);
@@ -467,6 +475,7 @@ DO UPDATE SET
             params.push(&channel.tvg_id);
             params.push(&channel.season_id);
             params.push(&channel.episode_num);
+            params.push(&channel.is_adult);
         }
         tx.prepare_cached(&sql)?
             .execute(params_from_iter(params))?;
@@ -814,7 +823,7 @@ pub fn update_settings(map: HashMap<String, Option<String>>) -> Result<()> {
     Ok(())
 }
 
-pub fn search(filters: Filters) -> Result<Vec<Channel>> {
+pub fn search(filters: Filters, hide_adult: bool) -> Result<Vec<Channel>> {
     if filters.view_type == view_type::CATEGORIES
         && filters.group_id.is_none()
         && filters.series_id.is_none()
@@ -822,7 +831,7 @@ pub fn search(filters: Filters) -> Result<Vec<Channel>> {
         return search_group(filters);
     }
     if filters.view_type == view_type::HIDDEN {
-        return search_hidden(filters);
+        return search_hidden(filters, hide_adult);
     }
     if filters.series_id.is_some() && filters.season.is_none() {
         return search_series(filters);
@@ -855,6 +864,9 @@ pub fn search(filters: Filters) -> Result<Vec<Channel>> {
         generate_placeholders(filters.source_ids.len()),
     );
     let mut baked_params = 2;
+    if hide_adult {
+        sql_query += "\nAND is_adult = 0";
+    }
     if filters.view_type == view_type::FAVORITES && filters.series_id.is_none() {
         sql_query += "\nAND favorite = 1";
     }
@@ -967,6 +979,7 @@ fn season_row_to_channel(row: &Row) -> std::result::Result<Channel, rusqlite::Er
         url: None,
         episode_num: None,
         hidden: Some(false),
+        is_adult: false,
     })
 }
 
@@ -1271,7 +1284,7 @@ fn apply_bulk_channels(
     Ok(())
 }
 
-fn search_hidden(filters: Filters) -> Result<Vec<Channel>> {
+fn search_hidden(filters: Filters, hide_adult: bool) -> Result<Vec<Channel>> {
     let sql = get_conn()?;
     let offset: u16 = filters.page as u16 * PAGE_SIZE as u16 - PAGE_SIZE as u16;
 
@@ -1292,17 +1305,22 @@ fn search_hidden(filters: Filters) -> Result<Vec<Channel>> {
     let keywords_sql = get_keywords_sql(keywords.len());
     let media_placeholders = generate_placeholders(media_types.len());
     let source_placeholders = generate_placeholders(filters.source_ids.len());
+    // Groups have no is_adult column of their own to filter (never any 0
+    // as is_adult below is always 0 regardless), so this only needs adding
+    // to the channels branch.
+    let adult_filter = if hide_adult { "AND is_adult = 0" } else { "" };
 
     let sql_query = format!(
         r#"
-        SELECT id, image, name, series_id, source_id, stream_id, tv_archive, url, episode_num, hidden, media_type, NULL as group_id, NULL as season_id, favorite
+        SELECT id, image, name, series_id, source_id, stream_id, tv_archive, url, episode_num, hidden, media_type, NULL as group_id, NULL as season_id, favorite, is_adult
         FROM channels
         WHERE ({})
         AND media_type IN ({})
         AND source_id IN ({})
         AND hidden = 1
+        {adult_filter}
         UNION ALL
-        SELECT id, image, name, NULL as series_id, source_id, NULL as stream_id, NULL as tv_archive, NULL as url, NULL as episode_num, hidden, 3 as media_type, NULL as group_id, NULL as season_id, 0 as favorite
+        SELECT id, image, name, NULL as series_id, source_id, NULL as stream_id, NULL as tv_archive, NULL as url, NULL as episode_num, hidden, 3 as media_type, NULL as group_id, NULL as season_id, 0 as favorite, 0 as is_adult
         FROM groups
         WHERE ({})
         AND source_id IN ({})
@@ -1449,6 +1467,7 @@ fn row_to_group(row: &Row) -> std::result::Result<Channel, rusqlite::Error> {
         season_id: None,
         episode_num: None,
         hidden: row.get("hidden")?,
+        is_adult: false,
     };
     Ok(channel)
 }
@@ -1471,6 +1490,7 @@ fn row_to_channel(row: &Row) -> std::result::Result<Channel, rusqlite::Error> {
         tvg_id: row.get("tvg_id")?,
         season_id: row.get("season_id")?,
         hidden: row.get("hidden")?,
+        is_adult: row.get("is_adult")?,
     };
     Ok(channel)
 }
@@ -2098,6 +2118,7 @@ fn row_to_custom_channel(row: &Row) -> Result<CustomChannel, rusqlite::Error> {
             season_id: None,
             episode_num: None,
             hidden: Some(false),
+            is_adult: false,
         },
         headers: Some(ChannelHttpHeaders {
             http_origin: row.get("http_origin")?,
