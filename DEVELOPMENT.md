@@ -114,8 +114,8 @@ Windows via WiX, `.dmg`/`.app` on macOS) the same way.
 
 ## Verifying before committing
 
-There's a small backend test suite (`src-tauri/src/**/test_*` modules), plus these
-practical checks:
+There's a small backend test suite (`src-tauri/src/**/test_*` modules, plus
+`src-tauri/tests/`), and these practical checks:
 
 ```
 cd src-tauri && cargo check --no-default-features    # backend compiles
@@ -131,3 +131,31 @@ which a plain `cargo check`/`cargo build` never compiles at all.
 
 These are quick and catch the vast majority of mistakes before you get to a full
 `tauri build`, which is much slower.
+
+### `src-tauri/tests/` - parser integration tests
+
+`tests/m3u_parser_test.rs` runs the real m3u parser (`m3u::read_m3u8`) end-to-end against a
+real, messy, third-party-generated playlist (`tests/fixtures/samsung_tvplus_playlist.m3u8`,
+2471 channels with no `tvg-name` attributes at all and several `group-title`s containing a
+literal comma - a good stress test for the name-parsing fallback) and asserts every channel
+the file contains ends up in the database by URL. It points the database at a throwaway
+temp file instead of your real one via the `OPEN_TV_DB_PATH` env var (`sql.rs` checks this
+before falling back to the normal app data directory) - each file under `tests/` is its own
+process, so this can't affect a real running app's database.
+
+Regenerate the fixtures with `samsung_tvplus_fetch.py` (ask Claude, or see its own `-h`) if
+you need a fresher/larger one.
+
+### `src-tauri/benches/` - parser benchmarks
+
+`cargo bench --no-default-features` runs `benches/m3u_parse.rs`, which benchmarks
+`m3u::get_channel_from_lines` against the same real 2471-channel fixture, plus a synthetic
+500,000-channel/20,000-category playlist for seeing how the parser scales well past
+anything a real fixture reaches - useful before/after a parsing change to see whether it
+actually helped. Needs `get_channel_from_lines` to be `pub` since benches compile as a
+separate crate, same as `tests/`.
+
+The synthetic playlist isn't checked in (~90MB) - the benchmark generates and caches it at
+`tests/fixtures/synthetic_large_playlist.m3u8` on first run (a few seconds), and reuses
+that file on every run after. Delete it to force a fresh one (e.g. after changing the
+generator in `benches/m3u_parse.rs`).

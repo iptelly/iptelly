@@ -46,6 +46,13 @@ fn create_connection_pool() -> Pool<SqliteConnectionManager> {
 // something that can degrade gracefully. Using .expect() with a message
 // instead of a bare .unwrap() at least makes the crash diagnosable.
 fn get_and_create_sqlite_db_path() -> String {
+    // Lets integration tests point this at a throwaway file instead of the
+    // real user database - CONN is a LazyLock, so this only needs to be set
+    // before the first sql:: call in the process (each file under tests/ is
+    // its own process, so this can't affect a real running app).
+    if let Ok(path) = std::env::var("OPEN_TV_DB_PATH") {
+        return path;
+    }
     let mut path = ProjectDirs::from("dev", "fredol", "open-tv")
         .expect("Could not determine the app data directory")
         .data_dir()
