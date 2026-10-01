@@ -21,8 +21,6 @@ use crate::{
 
 static NAME_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"tvg-name="(?P<name>[^"]*)""#).unwrap());
-static NAME_REGEX_ALT: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#",(?P<name>[^\n\r\t]*)"#).unwrap());
 static ID_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"tvg-id="(?P<id>[^"]*)""#).unwrap());
 static LOGO_REGEX: LazyLock<Regex> =
@@ -204,10 +202,13 @@ fn get_tmp_path() -> Result<String> {
     Ok(path.to_string_lossy().to_string())
 }
 
+// Trims before allocating, rather than after - every caller used to repeat
+// its own `.trim().to_string()` on top of this, re-copying a string that
+// was just copied here. Returns the already-trimmed value so none of them
+// need to anymore.
 fn extract_non_empty_capture(caps: Captures) -> Option<String> {
-    caps.get(1)
-        .map(|m| m.as_str().to_string())
-        .filter(|s| !s.trim().is_empty())
+    let value = caps.get(1)?.as_str().trim();
+    (!value.is_empty()).then(|| value.to_string())
 }
 
 fn set_http_headers(line: &str, headers: &mut ChannelHttpHeaders) -> bool {
@@ -233,7 +234,11 @@ fn set_http_headers(line: &str, headers: &mut ChannelHttpHeaders) -> bool {
     return false;
 }
 
-fn get_channel_from_lines(
+// pub so the integration test (proving every channel in a real playlist
+// ends up in the DB) and the parser benchmark can both call it directly -
+// neither lives inside this crate, so anything short of pub is invisible
+// to them.
+pub fn get_channel_from_lines(
     first: String,
     mut second: String,
     source_id: i64,
@@ -243,18 +248,24 @@ fn get_channel_from_lines(
     if second.is_empty() {
         bail!("second line is empty");
     }
-    let tvg_id = ID_REGEX
-        .captures(&first)
-        .and_then(extract_non_empty_capture)
-        .map(|x| x.trim().to_string());
+    let tvg_id = ID_REGEX.captures(&first).and_then(extract_non_empty_capture);
     let name = NAME_REGEX
         .captures(&first)
         .and_then(extract_non_empty_capture)
         .or_else(|| {
+            // The title is everything after the *last* comma on the line,
+            // not the first - several providers put an unescaped comma
+            // inside an earlier attribute (e.g. group-title="Sports,
+            // General"), and splitting there would wrongly cut the name
+            // right after it instead of at the real title separator. A
+            // plain rfind is also meaningfully cheaper than the regex this
+            // replaced, which had to scan the whole line through the regex
+            // engine just to find that same last comma.
             let name_alt = || {
-                NAME_REGEX_ALT
-                    .captures(&first)
-                    .and_then(extract_non_empty_capture)
+                first.rfind(',').and_then(|comma| {
+                    let value = first[comma + 1..].trim();
+                    (!value.is_empty()).then(|| value.to_string())
+                })
             };
             if let Some(true) = use_tvg_id {
                 return tvg_id.clone().or_else(name_alt);
@@ -271,9 +282,9 @@ fn get_channel_from_lines(
         .and_then(extract_non_empty_capture);
     let channel = Channel {
         id: None,
-        name: name.trim().to_string(),
-        group: group.map(|x| x.trim().to_string()),
-        image: image.map(|x| x.trim().to_string()),
+        name,
+        group,
+        image,
         url: Some(second.clone()),
         media_type: get_media_type(second),
         source_id: Some(source_id),
@@ -302,7 +313,7 @@ fn get_media_type(url: String) -> u8 {
 
 #[cfg(test)]
 mod test_m3u {
-    use crate::m3u::get_channel_from_lines;
+    use super::*;
 
     #[test]
     fn test_get_channel_from_lines() {
@@ -317,5 +328,105 @@ mod test_m3u {
         assert!(get_channel_from_lines(r#"#EXTINF:-1 tvg-id="Id Of Channel" tvg-name="Name Of Channel" tvg-logo="http://myurl.local/amazing/stuff.png" group-title="|EU| FRANCE HEVC",Alt Name Of Channel"#.to_string(), "http://myurl.local/1111/1111.ts".to_string(), 0, Some(true)).unwrap().name == "Name Of Channel");
         assert!(get_channel_from_lines(r#"#EXTINF:-1 tvg-id="Id Of Channel" tvg-name="" tvg-logo="http://myurl.local/amazing/stuff.png" group-title="|EU| FRANCE HEVC",Alt Name Of Channel"#.to_string(), "http://myurl.local/1111/1111.ts".to_string(), 0, Some(true)).unwrap().name == "Id Of Channel");
         assert!(get_channel_from_lines(r#"#EXTINF:-1 tvg-id="Id Of Channel" tvg-name="" tvg-logo="http://myurl.local/amazing/stuff.png" group-title="|EU| FRANCE HEVC",Alt Name Of Channel"#.to_string(), "http://myurl.local/1111/1111.ts".to_string(), 0, Some(false)).unwrap().name == "Alt Name Of Channel");
+    }
+
+    #[test]
+    fn test_get_channel_from_lines_use_tvg_id_none_defaults_like_false() {
+        // use_tvg_id: None should fall back to preferring the comma-
+        // separated display name over tvg-id, same as Some(false) - it's
+        // only Some(true) that flips the priority.
+        let channel = get_channel_from_lines(
+            r#"#EXTINF:-1 tvg-id="Id Of Channel" tvg-name="" tvg-logo="" group-title="News",Alt Name Of Channel"#.to_string(),
+            "http://myurl.local/1111/1111.ts".to_string(),
+            0,
+            None,
+        )
+        .unwrap();
+        assert_eq!(channel.name, "Alt Name Of Channel");
+    }
+
+    #[test]
+    fn test_get_channel_from_lines_populates_all_fields() {
+        let channel = get_channel_from_lines(
+            r#"#EXTINF:-1 tvg-id="chan.id" tvg-name="Channel Name" tvg-logo="http://myurl.local/logo.png" group-title="Sports""#
+                .to_string(),
+            "http://myurl.local/1234/1234/1234.ts".to_string(),
+            42,
+            Some(true),
+        )
+        .unwrap();
+        assert_eq!(channel.name, "Channel Name");
+        assert_eq!(channel.tvg_id, Some("chan.id".to_string()));
+        assert_eq!(channel.group, Some("Sports".to_string()));
+        assert_eq!(channel.image, Some("http://myurl.local/logo.png".to_string()));
+        assert_eq!(
+            channel.url,
+            Some("http://myurl.local/1234/1234/1234.ts".to_string())
+        );
+        assert_eq!(channel.source_id, Some(42));
+        assert_eq!(channel.media_type, media_type::LIVESTREAM);
+    }
+
+    #[test]
+    fn test_name_regex_alt_ignores_comma_inside_an_earlier_attribute() {
+        // group-title contains an unescaped comma - the real title
+        // separator is still the *last* comma on the line, not the first.
+        let channel = get_channel_from_lines(
+            r#"#EXTINF:-1 tvg-id="" tvg-name="" group-title="Sports, General",Real Channel Name"#
+                .to_string(),
+            "http://myurl.local/1111/1111.ts".to_string(),
+            0,
+            Some(false),
+        )
+        .unwrap();
+        assert_eq!(channel.name, "Real Channel Name");
+    }
+
+    #[test]
+    fn test_get_media_type() {
+        assert_eq!(get_media_type("http://x/movie.mp4".to_string()), media_type::MOVIE);
+        assert_eq!(get_media_type("http://x/movie.mkv".to_string()), media_type::MOVIE);
+        assert_eq!(
+            get_media_type("http://x/stream.ts".to_string()),
+            media_type::LIVESTREAM
+        );
+        assert_eq!(get_media_type("http://x/stream".to_string()), media_type::LIVESTREAM);
+    }
+
+    #[test]
+    fn test_set_http_headers() {
+        let mut headers = ChannelHttpHeaders::default();
+        assert!(set_http_headers(
+            "#EXTVLCOPT:http-origin=http://example.com",
+            &mut headers
+        ));
+        assert_eq!(headers.http_origin, Some("http://example.com".to_string()));
+
+        let mut headers = ChannelHttpHeaders::default();
+        assert!(set_http_headers(
+            "#EXTVLCOPT:http-referrer=http://example.com",
+            &mut headers
+        ));
+        assert_eq!(headers.referrer, Some("http://example.com".to_string()));
+
+        let mut headers = ChannelHttpHeaders::default();
+        assert!(set_http_headers(
+            "#EXTVLCOPT:http-user-agent=SomeAgent/1.0",
+            &mut headers
+        ));
+        assert_eq!(headers.user_agent, Some("SomeAgent/1.0".to_string()));
+
+        let mut headers = ChannelHttpHeaders::default();
+        assert!(!set_http_headers("#EXTVLCOPT:some-other-option=value", &mut headers));
+        assert_eq!(headers, ChannelHttpHeaders::default());
+    }
+
+    #[test]
+    fn test_extract_non_empty_capture_treats_whitespace_as_empty() {
+        let caps = ID_REGEX.captures(r#"tvg-id="   ""#).unwrap();
+        assert_eq!(extract_non_empty_capture(caps), None);
+
+        let caps = ID_REGEX.captures(r#"tvg-id="real-id""#).unwrap();
+        assert_eq!(extract_non_empty_capture(caps), Some("real-id".to_string()));
     }
 }

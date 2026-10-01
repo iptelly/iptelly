@@ -799,3 +799,259 @@ pub async fn get_all_timezones() -> Result<HashMap<i64, String>> {
         .collect();
     Ok(timezones)
 }
+
+#[cfg(test)]
+mod test_xtream {
+    use super::*;
+    use serde_json::json;
+
+    fn test_source() -> Source {
+        Source {
+            id: Some(1),
+            name: "Test Source".to_string(),
+            url: Some("http://panel.example/".to_string()),
+            url_origin: Some("http://panel.example".to_string()),
+            username: Some("user".to_string()),
+            password: Some("pass".to_string()),
+            source_type: source_type::XTREAM,
+            use_tvg_id: None,
+            enabled: true,
+            user_agent: None,
+            max_streams: None,
+            stream_user_agent: None,
+            last_updated: None,
+            epg_url: None,
+            timezone: None,
+            epg_retention_days: None,
+        }
+    }
+
+    #[test]
+    fn test_get_serde_json_string() {
+        assert_eq!(get_serde_json_string(&json!("hello")), Some("hello".to_string()));
+        assert_eq!(get_serde_json_string(&json!(" padded ")), Some("padded".to_string()));
+        // Panels are inconsistent about sending category/stream ids as a
+        // real JSON number instead of a string - both must resolve to the
+        // same thing.
+        assert_eq!(get_serde_json_string(&json!(42)), Some("42".to_string()));
+        assert_eq!(get_serde_json_string(&json!(null)), None);
+        assert_eq!(get_serde_json_string(&json!(true)), None);
+    }
+
+    #[test]
+    fn test_get_serde_json_u64() {
+        assert_eq!(get_serde_json_u64(&json!(42)), Some(42));
+        assert_eq!(get_serde_json_u64(&json!("42")), Some(42));
+        assert_eq!(get_serde_json_u64(&json!(" 42 ")), Some(42));
+        assert_eq!(get_serde_json_u64(&json!("not a number")), None);
+        assert_eq!(get_serde_json_u64(&json!(null)), None);
+    }
+
+    #[test]
+    fn test_get_serde_json_i64() {
+        assert_eq!(get_serde_json_i64(&json!(-5)), Some(-5));
+        assert_eq!(get_serde_json_i64(&json!("-5")), Some(-5));
+        assert_eq!(get_serde_json_i64(&json!(null)), None);
+    }
+
+    #[test]
+    fn test_get_serde_json_bool() {
+        // Panels send is_adult (and similar flags) as a real bool, a
+        // "0"/"1" string, or a 0/1 number, interchangeably.
+        assert_eq!(get_serde_json_bool(&json!(true)), Some(true));
+        assert_eq!(get_serde_json_bool(&json!(false)), Some(false));
+        assert_eq!(get_serde_json_bool(&json!(1)), Some(true));
+        assert_eq!(get_serde_json_bool(&json!(0)), Some(false));
+        assert_eq!(get_serde_json_bool(&json!("1")), Some(true));
+        assert_eq!(get_serde_json_bool(&json!("0")), Some(false));
+        assert_eq!(get_serde_json_bool(&json!(null)), None);
+    }
+
+    #[test]
+    fn test_deserialize_seasons_tolerates_wrong_empty_shape() {
+        let normal: XtreamSeries =
+            serde_json::from_value(json!({ "seasons": [{"season_number": 1}], "episodes": {} }))
+                .unwrap();
+        assert_eq!(normal.seasons.len(), 1);
+
+        // Some panels send `{}` instead of `[]` for an empty seasons list -
+        // a long-standing PHP json_encode() quirk (see the "invalid type:
+        // sequence, expected a map" report) - must not fail the whole series.
+        let wrong_shape: XtreamSeries =
+            serde_json::from_value(json!({ "seasons": {}, "episodes": [] })).unwrap();
+        assert_eq!(wrong_shape.seasons.len(), 0);
+    }
+
+    #[test]
+    fn test_deserialize_episodes_tolerates_wrong_empty_shape() {
+        let normal: XtreamSeries = serde_json::from_value(json!({
+            "seasons": [],
+            "episodes": {"1": [{"id": 1, "title": "Ep 1", "container_extension": "mp4"}]}
+        }))
+        .unwrap();
+        assert_eq!(normal.episodes.get("1").unwrap().len(), 1);
+
+        // The reverse of the seasons case - an empty array instead of `{}`.
+        let wrong_shape: XtreamSeries =
+            serde_json::from_value(json!({ "seasons": [], "episodes": [] })).unwrap();
+        assert_eq!(wrong_shape.episodes.len(), 0);
+    }
+
+    fn fake_response(status: u16, body: &str) -> reqwest::Response {
+        http::Response::builder()
+            .status(status)
+            .body(body.to_string())
+            .unwrap()
+            .into()
+    }
+
+    #[derive(serde::Deserialize, Debug)]
+    struct DummyPayload {
+        ok: bool,
+    }
+
+    #[tokio::test]
+    async fn test_parse_xtream_json_success() {
+        let data: DummyPayload = parse_xtream_json(fake_response(200, r#"{"ok": true}"#), "test")
+            .await
+            .unwrap();
+        assert!(data.ok);
+    }
+
+    #[tokio::test]
+    async fn test_parse_xtream_json_non_2xx_status() {
+        let err = parse_xtream_json::<DummyPayload>(fake_response(502, "Bad Gateway"), "test")
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("502"));
+    }
+
+    #[tokio::test]
+    async fn test_parse_xtream_json_empty_body() {
+        let err = parse_xtream_json::<DummyPayload>(fake_response(200, ""), "test")
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("empty body"));
+    }
+
+    #[tokio::test]
+    async fn test_parse_xtream_json_invalid_json_does_not_panic_on_multibyte_body() {
+        // A non-ASCII error page (e.g. a provider's own HTML error in a
+        // non-English language) must not panic truncate_for_preview, which
+        // is exactly the kind of body this error path exists to describe.
+        let body = "é".repeat(150);
+        let err = parse_xtream_json::<DummyPayload>(fake_response(200, &body), "test")
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("Failed to parse JSON"));
+    }
+
+    #[test]
+    fn test_get_media_type_string() {
+        assert_eq!(get_media_type_string(media_type::LIVESTREAM).unwrap(), "live");
+        assert_eq!(get_media_type_string(media_type::MOVIE).unwrap(), "movie");
+        assert_eq!(get_media_type_string(media_type::SERIE).unwrap(), "series");
+        assert!(get_media_type_string(media_type::GROUP).is_err());
+    }
+
+    #[test]
+    fn test_create_makeshift_season() {
+        let season = create_makeshift_season(3, 10, 1, None);
+        assert_eq!(season.name, "Season 3");
+        assert_eq!(season.series_id, 10);
+        assert_eq!(season.source_id, 1);
+
+        let uncategorized = create_makeshift_season(NO_SEASON_NUMBER, 10, 1, None);
+        assert_eq!(uncategorized.name, "Uncategorized");
+    }
+
+    #[test]
+    fn test_xtream_season_to_season() {
+        assert!(
+            xtream_season_to_season(
+                XtreamSeason {
+                    season_number: json!(null),
+                    overview: None,
+                    cover: None,
+                    cover_tmdb: None,
+                },
+                1,
+                10,
+            )
+            .is_err(),
+            "a season with no season_number at all should error, not panic"
+        );
+
+        let season = xtream_season_to_season(
+            XtreamSeason {
+                season_number: json!(2),
+                overview: Some("overview".to_string()),
+                cover: Some("cover".to_string()),
+                cover_tmdb: Some("cover_tmdb".to_string()),
+            },
+            1,
+            10,
+        )
+        .unwrap();
+        assert_eq!(season.name, "Season 2");
+        // cover_tmdb takes priority over cover, which takes priority over
+        // overview.
+        assert_eq!(season.image, Some("cover_tmdb".to_string()));
+    }
+
+    #[test]
+    fn test_get_cat_name() {
+        let mut cats = HashMap::new();
+        cats.insert("5".to_string(), "Sports".to_string());
+        assert_eq!(get_cat_name(&cats, Some("5".to_string())), Some("Sports".to_string()));
+        assert_eq!(get_cat_name(&cats, Some("missing".to_string())), None);
+        assert_eq!(get_cat_name(&cats, None), None);
+    }
+
+    #[test]
+    fn test_convert_xtream_live_to_channel_filters_zero_and_empty_tvg_id() {
+        let source = test_source();
+        // Many panels send epg_channel_id: "0" (or "") to mean "no EPG
+        // mapping" rather than omitting the field - both must become None,
+        // not a literal tvg_id of "0" that'd never match any real EPG entry.
+        let stream = XtreamStream {
+            stream_id: json!(100),
+            name: Some("Series Name".to_string()),
+            category_id: json!("5"),
+            stream_icon: None,
+            series_id: json!(100),
+            cover: None,
+            container_extension: None,
+            tv_archive: json!(null),
+            epg_channel_id: json!("0"),
+            is_adult: json!(null),
+        };
+        let channel = convert_xtream_live_to_channel(
+            stream,
+            &source,
+            media_type::SERIE,
+            Some("Drama".to_string()),
+        )
+        .unwrap();
+        assert_eq!(channel.tvg_id, None);
+        assert_eq!(channel.name, "Series Name");
+        assert_eq!(channel.group, Some("Drama".to_string()));
+
+        let stream_with_real_id = XtreamStream {
+            stream_id: json!(101),
+            name: Some("Other Series".to_string()),
+            category_id: json!("5"),
+            stream_icon: None,
+            series_id: json!(101),
+            cover: None,
+            container_extension: None,
+            tv_archive: json!(null),
+            epg_channel_id: json!("real.epg.id"),
+            is_adult: json!(null),
+        };
+        let channel =
+            convert_xtream_live_to_channel(stream_with_real_id, &source, media_type::SERIE, None)
+                .unwrap();
+        assert_eq!(channel.tvg_id, Some("real.epg.id".to_string()));
+    }
+}
