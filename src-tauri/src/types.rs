@@ -208,6 +208,34 @@ pub struct ExportedSource {
     pub channels: Vec<CustomChannel>,
 }
 
+// One entry per configured source in a whole-app export (Settings > Export
+// data) - unlike ExportedSource above (which captures a *custom* source's
+// own groups/channels, for sharing one playlist with someone else), this
+// just carries the source's own config plus whichever of its channels/
+// groups carry a favourite/history/hidden flag or custom headers, reusing
+// the exact same name-keyed preserve mechanism a refresh already uses to
+// survive its own delete-and-reinsert (see sql::get_preserve/
+// restore_preserve) - a fresh import has no matching ids yet either.
+#[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
+pub struct ExportedSourceData {
+    pub source: Source,
+    pub preserve: Vec<ChannelPreserve>,
+}
+
+// Whole-app backup produced by Settings > Export data: every configured
+// source (credentials included - see sql::import_source_full), their
+// favourites/history/hidden channels+categories, general settings, the
+// adult PIN (as its already-hashed form, never the plaintext PIN), and
+// download history (metadata only - never the downloaded files themselves).
+#[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
+pub struct AppDataExport {
+    pub version: u32,
+    pub settings: Settings,
+    pub adult_pin_hash: Option<String>,
+    pub sources: Vec<ExportedSourceData>,
+    pub downloads: Vec<DownloadHistoryItem>,
+}
+
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
 pub struct EPG {
     pub epg_id: String,

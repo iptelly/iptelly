@@ -18,6 +18,7 @@ use {
     },
 };
 
+pub mod app_data;
 pub mod bulk_action_type;
 pub mod downloads;
 pub mod epg;
@@ -160,7 +161,9 @@ pub fn run() {
             has_adult_pin,
             set_adult_pin,
             verify_adult_pin,
-            lock_adult_content
+            lock_adult_content,
+            export_app_data,
+            import_app_data
         ])
         .setup(|app| {
             app.manage(Mutex::new(AppState {
@@ -334,6 +337,16 @@ async fn verify_adult_pin(
 async fn lock_adult_content(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
     state.lock().await.adult_unlocked = false;
     Ok(())
+}
+
+#[tauri::command(async)]
+fn export_app_data(path: String) -> Result<(), String> {
+    app_data::export_app_data(path).map_err(map_err_frontend)
+}
+
+#[tauri::command(async)]
+fn import_app_data(path: String) -> Result<(), String> {
+    app_data::import_app_data(path).map_err(map_err_frontend)
 }
 
 #[tauri::command(async)]

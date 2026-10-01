@@ -6,6 +6,13 @@
     <ng-container *ngIf="!loading">
         <h2 class="text-center" *ngIf="!memory.AddingAdditionalSource">Let's add your first source</h2>
         <h2 class="text-center" *ngIf="memory.AddingAdditionalSource">Let's add another source</h2>
+        <div class="text-center mt-2" *ngIf="!memory.AddingAdditionalSource">
+            <button type="button" (click)="importBackup()" class="btn btn-outline-secondary btn-sm"
+                ngbTooltip="Restores sources, favourites, history, hidden categories, adult PIN, settings and download history from a previously exported data file"
+                triggers="hover">
+                Import backup
+            </button>
+        </div>
         <div class="btn-group mx-auto mb-4 mt-4" style="width: fit-content; display: block;">
             <button (click)="switchMode(sourceTypeEnum.M3U)" class="btn btn-secondary"
                 [ngbTooltip]="'Use this option if you only have an M3U file. If the file was obtained through an URL given to you by your IPTV provider, the M3U URL option is better'"

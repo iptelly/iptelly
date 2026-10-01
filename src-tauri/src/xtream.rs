@@ -198,6 +198,14 @@ pub async fn get_xtream(mut source: Source, wipe: bool) -> Result<()> {
     if wipe {
         channel_preserve =
             sql::get_preserve(&tx, source.id.context("no source id")?).unwrap_or_default();
+        // Picks up anything a whole-app data import staged for this source
+        // before its channels existed yet to restore_preserve against (see
+        // pending_preserve's migration comment in sql.rs) - a no-op for
+        // every ordinary refresh, which never stages anything here.
+        channel_preserve.extend(sql::consume_pending_preserve(
+            &tx,
+            source.id.context("no source id")?,
+        )?);
         sql::wipe(&tx, source.id.context("Source should have id")?)?;
     } else {
         source.id = Some(sql::create_or_find_source_by_name(&tx, &source)?);

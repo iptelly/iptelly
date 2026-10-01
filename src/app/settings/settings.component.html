@@ -321,6 +321,24 @@
           d="M13.5,8H12V13L16.28,15.54L17,14.33L13.5,12.25V8M13,3A9,9 0 0,0 4,12H1L4.89,15.89L4.96,16.03L9,12H6A7,7 0 0,1 13,5A7,7 0 0,1 20,12A7,7 0 0,1 13,19C11.07,19 9.32,18.21 8.06,16.94L6.64,18.36C8.27,20 10.5,21 13,21A9,9 0 0,0 22,12A9,9 0 0,0 13,3" />
       </svg>
     </button>
+    <button ngbTooltip="Saves your sources (including credentials), favourites, history, hidden categories, adult PIN, settings and download history to a file"
+      [disabled]="memory.Loading" (click)="exportAppData()"
+      class="btn btn-secondary d-inline-flex align-items-center">
+      Export data
+      <svg class="ms-1" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24">
+        <path fill="currentColor"
+          d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20M12,19L8,15H10.5V12H13.5V15H16L12,19Z" />
+      </svg>
+    </button>
+    <button ngbTooltip="Restores sources, favourites, history, hidden categories, adult PIN, settings and download history from a previously exported file"
+      [disabled]="memory.Loading" (click)="importAppData()"
+      class="btn btn-secondary d-inline-flex align-items-center">
+      Import data
+      <svg class="ms-1" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24">
+        <path fill="currentColor"
+          d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20M12,12L16,16H13.5V19H10.5V16H8L12,12Z" />
+      </svg>
+    </button>
     <button ngbTooltip="Use this if an upgrade didn't fix a bug you're experiencing"
       class="btn btn-danger d-inline-flex align-items-center" [disabled]="memory.Loading" (click)="nuke()">
       Delete everything

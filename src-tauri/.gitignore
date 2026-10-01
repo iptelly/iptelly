@@ -3,6 +3,10 @@
 /target/
 /gen/schemas
 
+# Local machine-specific cargo flags (e.g. AVX2) - never committed, since
+# CI and other contributors' machines may not support them.
+/.cargo/config.toml
+
 # Generated on first `cargo bench` run by benches/m3u_parse.rs (~90MB,
 # regenerated on demand - not worth committing, unlike the real fixtures).
 /tests/fixtures/synthetic_large_playlist.m3u8

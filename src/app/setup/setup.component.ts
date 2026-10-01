@@ -191,6 +191,38 @@ export class SetupComponent {
     this.loading = false;
   }
 
+  // Restores a whole-app backup (Settings > Export data) - unlike the other
+  // options above, this isn't adding one named source, it recreates every
+  // source the backup contains plus settings/favourites/history/hidden
+  // categories/adult PIN/download history, so it skips the form entirely.
+  // Navigates home first (this page has no guard that would otherwise
+  // leave a reload sitting right back on this same "add a source" screen,
+  // even once sources actually exist), then forces a full reload so every
+  // other piece of state (theme, adult PIN lock, etc.) re-syncs from the
+  // restored DB too - same reasoning as settings.component.ts's
+  // importAppData(), which doesn't need the navigate since it's already on
+  // a page that only ever renders once at least one source exists.
+  async importBackup() {
+    const file = await open({
+      multiple: false,
+      directory: false,
+      canCreateDirectories: false,
+      title: "Select an exported data file",
+      filters: [{ name: "extension", extensions: ["otva"] }],
+    });
+    if (file == null) return;
+    this.loading = true;
+    try {
+      await invoke("import_app_data", { path: file });
+      this.toastr.success("Backup imported successfully - reloading");
+      await this.nav.navigateByUrl("");
+      window.location.reload();
+    } catch (e) {
+      this.error.handleError(e, "Failed to import backup");
+      this.loading = false;
+    }
+  }
+
   async nuke() {
     const modalRef = this.modal.open(ConfirmDeleteModalComponent, {
       backdrop: "static",

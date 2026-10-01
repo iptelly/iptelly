@@ -407,6 +407,22 @@ fn apply_migrations() -> Result<()> {
             "#,
         )
         .foreign_key_check(),
+        // Backs a whole-app data import (app_data.rs) - importing a source
+        // whose channels haven't been fetched yet (a brand new source, or
+        // any source on a freshly restored/empty database) can't restore
+        // favourites/history/hidden state right away, since restore_preserve
+        // only UPDATEs channels that already exist by name. This stages
+        // that data so the *next* refresh of this source (m3u.rs/xtream.rs,
+        // via sql::consume_pending_preserve) can apply it once real channel
+        // rows exist to match against.
+        M::up(
+            r#"
+              CREATE TABLE IF NOT EXISTS pending_preserve (
+                source_id INTEGER PRIMARY KEY,
+                data TEXT NOT NULL
+              );
+            "#,
+        ),
     ]);
     // foreign_keys can't be toggled from inside a migration itself (each
     // one already runs inside its own transaction, where SQLite silently
@@ -441,6 +457,51 @@ pub fn create_or_find_source_by_name(tx: &Transaction, source: &Source) -> Resul
     tx.execute(
     "INSERT INTO sources (name, source_type, url, username, password, use_tvg_id, user_agent, max_streams, last_updated, epg_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     params![source.name, source.source_type.clone() as u8, source.url, source.username, source.password, source.use_tvg_id, source.user_agent, source.max_streams, chrono::Utc::now().timestamp(), source.epg_url],
+    )?;
+    Ok(tx.last_insert_rowid())
+}
+
+// Used by a whole-app data import (Settings > Import data) - unlike
+// create_or_find_source_by_name (which only fills in the subset of columns
+// a fresh M3U/Xtream/custom add ever needs), this writes every column a
+// source row can have, since an export captures a source's complete
+// config. If a source with the same name already exists, its row is left
+// untouched (never silently overwritten with the backup's credentials) and
+// its id is returned as-is, so the caller can still restore that source's
+// favourites/history/hidden entries onto it.
+pub fn import_source_full(tx: &Transaction, source: &Source) -> Result<i64> {
+    let id: Option<i64> = tx
+        .query_row(
+            "SELECT id FROM sources WHERE name = ?1",
+            params![source.name],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if let Some(id) = id {
+        return Ok(id);
+    }
+    tx.execute(
+        r#"
+        INSERT INTO sources
+          (name, source_type, url, username, password, enabled, use_tvg_id, user_agent, max_streams, stream_user_agent, last_updated, epg_url, timezone, epg_retention_days)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "#,
+        params![
+            source.name,
+            source.source_type,
+            source.url,
+            source.username,
+            source.password,
+            source.enabled,
+            source.use_tvg_id,
+            source.user_agent,
+            source.max_streams,
+            source.stream_user_agent,
+            source.last_updated,
+            source.epg_url,
+            source.timezone,
+            source.epg_retention_days,
+        ],
     )?;
     Ok(tx.last_insert_rowid())
 }
@@ -1714,6 +1775,13 @@ pub fn delete_source(id: i64) -> Result<()> {
     "#,
         params![id],
     )?;
+    sql.execute(
+        r#"
+        DELETE FROM pending_preserve
+        WHERE source_id = ?;
+    "#,
+        params![id],
+    )?;
     let count = sql.execute(
         r#"
         DELETE FROM sources
@@ -2539,6 +2607,51 @@ pub fn restore_preserve(
         }
     }
     Ok(())
+}
+
+// See pending_preserve's own migration comment - stages a whole-app
+// import's per-source favourites/history/hidden data for a source whose
+// channels don't exist yet, so the next refresh can apply it once they do.
+pub fn set_pending_preserve(
+    tx: &Transaction,
+    source_id: i64,
+    preserve: &[ChannelPreserve],
+) -> Result<()> {
+    let data = serde_json::to_string(preserve)?;
+    tx.execute(
+        r#"
+          INSERT INTO pending_preserve (source_id, data)
+          VALUES (?1, ?2)
+          ON CONFLICT(source_id) DO UPDATE SET data = ?2
+        "#,
+        params![source_id, data],
+    )?;
+    Ok(())
+}
+
+// Reads back (and clears) whatever was staged for this source by
+// set_pending_preserve - called right before a refresh wipes and
+// re-inserts its channels, so the merged result (this plus whatever
+// get_preserve captured from the current, about-to-be-wiped state) can be
+// restore_preserve'd against the freshly re-inserted rows. Returns an empty
+// Vec, not an error, when nothing was staged - the common case for every
+// refresh that didn't follow a data import.
+pub fn consume_pending_preserve(tx: &Transaction, source_id: i64) -> Result<Vec<ChannelPreserve>> {
+    let data: Option<String> = tx
+        .query_row(
+            "SELECT data FROM pending_preserve WHERE source_id = ?",
+            params![source_id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let Some(data) = data else {
+        return Ok(Vec::new());
+    };
+    tx.execute(
+        "DELETE FROM pending_preserve WHERE source_id = ?",
+        params![source_id],
+    )?;
+    Ok(serde_json::from_str(&data)?)
 }
 
 pub fn analyze(tx: &Transaction) -> Result<()> {

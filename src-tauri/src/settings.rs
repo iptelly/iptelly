@@ -153,6 +153,21 @@ pub fn verify_adult_pin(pin: &str) -> Result<bool> {
         .is_some_and(|stored_hash| *stored_hash == hash_adult_pin(pin)))
 }
 
+// Used by app_data's export/import (Settings > Export/Import data) - reads
+// and writes the already-hashed value directly, so a backup never needs to
+// carry (or re-derive) the plaintext PIN.
+pub fn get_adult_pin_hash() -> Result<Option<String>> {
+    let map = sql::get_settings()?;
+    Ok(map.get(ADULT_PIN_HASH).cloned())
+}
+
+pub fn set_adult_pin_hash(hash: Option<String>) -> Result<()> {
+    let mut map: HashMap<String, Option<String>> = HashMap::with_capacity(1);
+    map.insert(ADULT_PIN_HASH.to_string(), hash);
+    sql::update_settings(map)?;
+    Ok(())
+}
+
 pub fn get_default_record_path() -> Result<String> {
     let user_dirs = UserDirs::new().context("Failed to get user dirs")?;
     let mut path = user_dirs

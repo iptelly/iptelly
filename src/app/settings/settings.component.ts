@@ -3,7 +3,8 @@ import { debounceTime, distinctUntilChanged, fromEvent, map, Subscription } from
 import { Settings } from "../models/settings";
 import { invoke } from "@tauri-apps/api/core";
 import { Router } from "@angular/router";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
+import { APP_DATA_BACKUP } from "../models/extensions";
 import { Source } from "../models/source";
 import { MemoryService } from "../memory.service";
 import { NgbModal } from "@ng-bootstrap/ng-bootstrap";
@@ -390,6 +391,50 @@ export class SettingsComponent {
         await invoke("clear_epg_cache");
       },
     );
+  }
+
+  // Bundles sources (credentials included), favourites, history, hidden
+  // channels/categories, the adult PIN, general settings and download
+  // history (not the downloaded files) into one file - see app_data.rs.
+  async exportAppData() {
+    const file = await save({
+      canCreateDirectories: true,
+      title: "Select where to save your exported data",
+      defaultPath: `open-tv_backup${APP_DATA_BACKUP}`,
+      filters: [{ name: "extension", extensions: ["otva"] }],
+    });
+    if (!file) return;
+    await this.memory.tryIPC(
+      "Successfully exported data",
+      "Failed to export data",
+      async () => {
+        await invoke("export_app_data", { path: file });
+      },
+    );
+  }
+
+  // Reloads the whole page on success rather than patching every affected
+  // piece of state individually (settings, sources, adult PIN, theme, etc.
+  // are each tracked by a different service/component) - everything already
+  // re-fetches itself from the backend on init, so this is simpler and less
+  // error-prone than re-syncing each one by hand.
+  async importAppData() {
+    const file = await open({
+      canCreateDirectories: false,
+      title: "Select an exported data file",
+      directory: false,
+      multiple: false,
+      filters: [{ name: "extension", extensions: ["otva"] }],
+    });
+    if (!file) return;
+    const failed = await this.memory.tryIPC(
+      "Successfully imported data - reloading",
+      "Failed to import data",
+      async () => {
+        await invoke("import_app_data", { path: file });
+      },
+    );
+    if (!failed) window.location.reload();
   }
 
   ngOnDestroy(): void {
