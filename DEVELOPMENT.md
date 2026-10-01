@@ -114,12 +114,20 @@ Windows via WiX, `.dmg`/`.app` on macOS) the same way.
 
 ## Verifying before committing
 
-There's no dedicated test suite to run, so the practical checks are:
+There's a small backend test suite (`src-tauri/src/**/test_*` modules), plus these
+practical checks:
 
 ```
-cd src-tauri && cargo check --no-default-features   # backend compiles
-cd .. && pnpm ng build --configuration development   # frontend compiles
+cd src-tauri && cargo check --no-default-features    # backend compiles
+cd src-tauri && RUSTFLAGS="-D warnings" cargo test --no-default-features
+                                                       # backend tests pass, no warnings
+cd .. && pnpm ng build --configuration development    # frontend compiles
 ```
 
-Both are quick and catch the vast majority of mistakes before you get to a full
+The `RUSTFLAGS="-D warnings"` run is what CI (`.github/workflows/rustLint.yml`) enforces
+on every push/PR - it turns plain rustc warnings (unused imports, unused variables, dead
+code, ...) into build failures across every target, including `#[cfg(test)]` modules,
+which a plain `cargo check`/`cargo build` never compiles at all.
+
+These are quick and catch the vast majority of mistakes before you get to a full
 `tauri build`, which is much slower.
