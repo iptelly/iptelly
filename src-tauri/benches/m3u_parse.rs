@@ -139,10 +139,58 @@ fn bench_parse_large_synthetic_playlist(c: &mut Criterion) {
     group.finish();
 }
 
+// Isolates read_m3u8's per-line directive check (not exercised by the other
+// benchmarks here, which all call get_channel_from_lines directly) - answers
+// whether avoiding the to_uppercase() allocation there actually helped.
+fn bench_line_prefix_check(c: &mut Criterion) {
+    let text = std::fs::read_to_string(FIXTURE).expect("fixture playlist should exist");
+    let lines: Vec<&str> = text.lines().collect();
+
+    let mut group = c.benchmark_group("line prefix check (read_m3u8's per-line classification)");
+    group.bench_function("old: to_uppercase() + starts_with", |b| {
+        b.iter(|| {
+            let mut extinf = 0usize;
+            let mut vlcopt = 0usize;
+            for line in &lines {
+                let upper = black_box(*line).to_uppercase();
+                if upper.starts_with("#EXTINF") {
+                    extinf += 1;
+                } else if upper.starts_with("#EXTVLCOPT") {
+                    vlcopt += 1;
+                }
+            }
+            black_box((extinf, vlcopt))
+        })
+    });
+    group.bench_function("new: eq_ignore_ascii_case on a prefix slice", |b| {
+        b.iter(|| {
+            let mut extinf = 0usize;
+            let mut vlcopt = 0usize;
+            for line in &lines {
+                let line = black_box(*line);
+                if line
+                    .get(.."#EXTINF".len())
+                    .is_some_and(|s| s.eq_ignore_ascii_case("#EXTINF"))
+                {
+                    extinf += 1;
+                } else if line
+                    .get(.."#EXTVLCOPT".len())
+                    .is_some_and(|s| s.eq_ignore_ascii_case("#EXTVLCOPT"))
+                {
+                    vlcopt += 1;
+                }
+            }
+            black_box((extinf, vlcopt))
+        })
+    });
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_parse_full_playlist,
     bench_parse_single_channel,
-    bench_parse_large_synthetic_playlist
+    bench_parse_large_synthetic_playlist,
+    bench_line_prefix_check
 );
 criterion_main!(benches);

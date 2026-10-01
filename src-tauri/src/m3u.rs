@@ -83,12 +83,11 @@ pub fn read_m3u8(mut source: Source, wipe: bool) -> Result<()> {
                 continue;
             }
         };
-        let l1_upper = l1.to_uppercase();
-        if l1_upper.starts_with("#EXTINF") {
+        if starts_with_ignore_case(&l1, "#EXTINF") {
             try_commit_channel(&mut processing, &tx);
             processing.channel_line = Some(l1);
             processing.channel_headers_set = false;
-        } else if l1_upper.starts_with("#EXTVLCOPT") {
+        } else if starts_with_ignore_case(&l1, "#EXTVLCOPT") {
             if processing.channel_headers.is_none() {
                 processing.channel_headers = Some(ChannelHttpHeaders {
                     ..Default::default()
@@ -202,13 +201,25 @@ fn get_tmp_path() -> Result<String> {
     Ok(path.to_string_lossy().to_string())
 }
 
-// Trims before allocating, rather than after - every caller used to repeat
-// its own `.trim().to_string()` on top of this, re-copying a string that
-// was just copied here. Returns the already-trimmed value so none of them
-// need to anymore.
-fn extract_non_empty_capture(caps: Captures) -> Option<String> {
-    let value = caps.get(1)?.as_str().trim();
+// Avoids allocating an uppercased copy of the *entire* line (read_m3u8's
+// main loop runs this on every line of the file, URLs included, not just
+// the directive lines it's actually checking for) just to do a
+// case-insensitive prefix check.
+fn starts_with_ignore_case(line: &str, prefix: &str) -> bool {
+    line.get(..prefix.len())
+        .is_some_and(|s| s.eq_ignore_ascii_case(prefix))
+}
+
+// Trims before allocating, rather than after - some callers used to repeat
+// their own `.trim().to_string()` on top of this, re-copying a string that
+// was just copied here. Returns the already-trimmed value, None if blank.
+fn non_empty_trimmed(m: regex::Match) -> Option<String> {
+    let value = m.as_str().trim();
     (!value.is_empty()).then(|| value.to_string())
+}
+
+fn extract_non_empty_capture(caps: Captures) -> Option<String> {
+    caps.get(1).and_then(non_empty_trimmed)
 }
 
 fn set_http_headers(line: &str, headers: &mut ChannelHttpHeaders) -> bool {
@@ -258,9 +269,8 @@ pub fn get_channel_from_lines(
             // inside an earlier attribute (e.g. group-title="Sports,
             // General"), and splitting there would wrongly cut the name
             // right after it instead of at the real title separator. A
-            // plain rfind is also meaningfully cheaper than the regex this
-            // replaced, which had to scan the whole line through the regex
-            // engine just to find that same last comma.
+            // plain rfind is also meaningfully cheaper than a regex scan
+            // for that same last comma would be.
             let name_alt = || {
                 first.rfind(',').and_then(|comma| {
                     let value = first[comma + 1..].trim();
@@ -423,10 +433,29 @@ mod test_m3u {
 
     #[test]
     fn test_extract_non_empty_capture_treats_whitespace_as_empty() {
-        let caps = ID_REGEX.captures(r#"tvg-id="   ""#).unwrap();
+        let re = Regex::new(r#"x="(?P<v>[^"]*)""#).unwrap();
+        let caps = re.captures(r#"x="   ""#).unwrap();
         assert_eq!(extract_non_empty_capture(caps), None);
 
-        let caps = ID_REGEX.captures(r#"tvg-id="real-id""#).unwrap();
-        assert_eq!(extract_non_empty_capture(caps), Some("real-id".to_string()));
+        let caps = re.captures(r#"x="real-value""#).unwrap();
+        assert_eq!(extract_non_empty_capture(caps), Some("real-value".to_string()));
+    }
+
+    #[test]
+    fn test_get_channel_from_lines_attribute_order_and_duplicates() {
+        // Attribute order on the line shouldn't matter, and a duplicated
+        // attribute should resolve to its *first* occurrence.
+        let channel = get_channel_from_lines(
+            r#"#EXTINF:-1 group-title="News" tvg-logo="http://x/logo.png" tvg-name="Channel Name" tvg-id="first" tvg-id="second""#
+                .to_string(),
+            "http://x/stream.ts".to_string(),
+            0,
+            Some(true),
+        )
+        .unwrap();
+        assert_eq!(channel.tvg_id, Some("first".to_string()));
+        assert_eq!(channel.name, "Channel Name");
+        assert_eq!(channel.group, Some("News".to_string()));
+        assert_eq!(channel.image, Some("http://x/logo.png".to_string()));
     }
 }
