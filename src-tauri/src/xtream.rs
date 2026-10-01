@@ -216,10 +216,13 @@ pub async fn get_xtream(mut source: Source, wipe: bool) -> Result<()> {
         db_start.elapsed()
     ));
     let mut fail_count = 0;
+    let mut failures: Vec<String> = Vec::new();
     let process_start = std::time::Instant::now();
     live.and_then(|live| process_xtream(&tx, live, live_cats?, &source, media_type::LIVESTREAM))
         .unwrap_or_else(|e| {
-            log::log(format!("{:?}", e.context("Failed to process live")));
+            let e = e.context("Failed to process live streams");
+            log::log(format!("{:?}", e));
+            failures.push(format!("{:?}", e));
             fail_count += 1;
         });
     log::log(format!(
@@ -232,7 +235,9 @@ pub async fn get_xtream(mut source: Source, wipe: bool) -> Result<()> {
         process_xtream(&tx, vods, vods_cats?, &source, media_type::MOVIE)
     })
     .unwrap_or_else(|e| {
-        log::log(format!("{:?}", e.context("Failed to process vods")));
+        let e = e.context("Failed to process VODs");
+        log::log(format!("{:?}", e));
+        failures.push(format!("{:?}", e));
         fail_count += 1;
     });
     log::log(format!(
@@ -246,7 +251,9 @@ pub async fn get_xtream(mut source: Source, wipe: bool) -> Result<()> {
             process_xtream(&tx, series, series_cats?, &source, media_type::SERIE)
         })
         .unwrap_or_else(|e| {
-            log::log(format!("{:?}", e.context("Failed to process series")));
+            let e = e.context("Failed to process series");
+            log::log(format!("{:?}", e));
+            failures.push(format!("{:?}", e));
             fail_count += 1;
         });
     log::log(format!(
@@ -259,7 +266,11 @@ pub async fn get_xtream(mut source: Source, wipe: bool) -> Result<()> {
             Ok(_) => {}
             Err(e) => log::log(format!("Failed to rollback tx: {:?}", e)),
         }
-        return Err(anyhow::anyhow!("Too many Xtream requests failed"));
+        return Err(anyhow::anyhow!(
+            "Xtream refresh failed for '{}':\n{}",
+            source.name,
+            failures.join("\n")
+        ));
     }
     let finalize_start = std::time::Instant::now();
     if wipe {
