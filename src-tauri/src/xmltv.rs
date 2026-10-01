@@ -50,7 +50,7 @@ pub async fn refresh_epg_from_url(source: Source, url: String) -> Result<()> {
     if !response.status().is_success() {
         bail!("Failed to fetch EPG, status: {}", response.status());
     }
-    let tmp_path = get_tmp_path();
+    let tmp_path = get_tmp_path()?;
     let mut bytes_written: u64 = 0;
     {
         let mut file = std::fs::File::create(&tmp_path)?;
@@ -121,16 +121,16 @@ pub fn prune_old_epg(source: Source) -> Result<()> {
     sql::prune_old_epg(source_id, cutoff)
 }
 
-fn get_tmp_path() -> String {
+fn get_tmp_path() -> Result<String> {
     let mut path = directories::ProjectDirs::from("dev", "fredol", "open-tv")
-        .unwrap()
+        .context("Could not determine the app cache directory")?
         .cache_dir()
         .to_owned();
     if !path.exists() {
-        std::fs::create_dir_all(&path).unwrap();
+        std::fs::create_dir_all(&path).context("Failed to create EPG cache directory")?;
     }
     path.push("get_epg.dat");
-    path.to_string_lossy().to_string()
+    Ok(path.to_string_lossy().to_string())
 }
 
 fn open_reader(path: &str) -> Result<Box<dyn BufRead>> {

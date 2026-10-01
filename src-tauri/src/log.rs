@@ -1,3 +1,4 @@
+use anyhow::{Context, Result};
 use chrono::Local;
 use directories::ProjectDirs;
 use std::{fs, sync::LazyLock};
@@ -13,7 +14,14 @@ pub fn log(message: String) {
 }
 
 fn init_logger() -> bool {
-    let file = match fs::File::create(get_and_create_log_path()) {
+    let path = match get_and_create_log_path() {
+        Ok(val) => val,
+        Err(e) => {
+            eprint!("Failed to determine log path, {:?}", e);
+            return false;
+        }
+    };
+    let file = match fs::File::create(path) {
         Ok(val) => val,
         Err(e) => {
             eprint!("Failed to create file for logger, {:?}", e);
@@ -33,17 +41,17 @@ fn init_logger() -> bool {
     }
 }
 
-fn get_and_create_log_path() -> String {
+fn get_and_create_log_path() -> Result<String> {
     let mut path = ProjectDirs::from("dev", "fredol", "open-tv")
-        .unwrap()
+        .context("Could not determine the app cache directory")?
         .cache_dir()
         .to_owned();
     path.push("logs");
     if !path.exists() {
-        std::fs::create_dir_all(&path).unwrap();
+        std::fs::create_dir_all(&path).context("Failed to create log directory")?;
     }
     path.push(get_log_name());
-    return path.to_string_lossy().to_string();
+    Ok(path.to_string_lossy().to_string())
 }
 
 fn get_log_name() -> String {

@@ -50,7 +50,7 @@ struct M3UProcessing {
 
 pub fn read_m3u8(mut source: Source, wipe: bool) -> Result<()> {
     let path = match source.source_type {
-        source_type::M3U_LINK => get_tmp_path(),
+        source_type::M3U_LINK => get_tmp_path()?,
         _ => source.url.clone().context("no file path found")?,
     };
     let file = File::open(path).context("Failed to open m3u8 file")?;
@@ -185,23 +185,23 @@ pub async fn get_m3u8_from_link(source: Source, wipe: bool) -> Result<()> {
             response.status()
         );
     }
-    let mut file = std::fs::File::create(get_tmp_path())?;
+    let mut file = std::fs::File::create(get_tmp_path()?)?;
     while let Some(chunk) = response.chunk().await? {
         file.write(&chunk)?;
     }
     read_m3u8(source, wipe)
 }
 
-fn get_tmp_path() -> String {
+fn get_tmp_path() -> Result<String> {
     let mut path = directories::ProjectDirs::from("dev", "fredol", "open-tv")
-        .unwrap()
+        .context("Could not determine the app cache directory")?
         .cache_dir()
         .to_owned();
     if !path.exists() {
-        std::fs::create_dir_all(&path).unwrap();
+        std::fs::create_dir_all(&path).context("Failed to create m3u cache directory")?;
     }
     path.push("get.m3u");
-    return path.to_string_lossy().to_string();
+    Ok(path.to_string_lossy().to_string())
 }
 
 fn extract_non_empty_capture(caps: Captures) -> Option<String> {

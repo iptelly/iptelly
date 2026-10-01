@@ -147,7 +147,7 @@ fn get_restream_folder() -> Result<PathBuf> {
         .to_owned();
     path.push("restream");
     if !path.exists() {
-        std::fs::create_dir_all(&path).unwrap();
+        std::fs::create_dir_all(&path).context("Failed to create restream cache directory")?;
     }
     Ok(path)
 }

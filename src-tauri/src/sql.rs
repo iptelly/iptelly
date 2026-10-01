@@ -34,16 +34,24 @@ fn create_connection_pool() -> Pool<SqliteConnectionManager> {
     // unless this is turned on for each connection the pool hands out.
     let manager = SqliteConnectionManager::file(get_and_create_sqlite_db_path())
         .with_init(|c| c.execute_batch("PRAGMA foreign_keys = ON;"));
-    r2d2::Pool::builder().max_size(20).build(manager).unwrap()
+    r2d2::Pool::builder()
+        .max_size(20)
+        .build(manager)
+        .expect("Failed to build the SQLite connection pool")
 }
 
+// The app has no way to function at all without its database, so failure
+// here is deliberately fatal (same rationale as lib.rs's main-window
+// .expect() calls) - unlike the other cache/log directories, this isn't
+// something that can degrade gracefully. Using .expect() with a message
+// instead of a bare .unwrap() at least makes the crash diagnosable.
 fn get_and_create_sqlite_db_path() -> String {
     let mut path = ProjectDirs::from("dev", "fredol", "open-tv")
-        .unwrap()
+        .expect("Could not determine the app data directory")
         .data_dir()
         .to_owned();
     if !path.exists() {
-        std::fs::create_dir_all(&path).unwrap();
+        std::fs::create_dir_all(&path).expect("Failed to create app data directory");
     }
     path.push(DB_NAME);
     return path.to_string_lossy().to_string();
@@ -899,10 +907,23 @@ pub fn search(filters: Filters, hide_adult: bool) -> Result<Vec<Channel>> {
         return search_series(filters);
     }
     let sql = get_conn()?;
-    let offset: u16 = filters.page as u16 * PAGE_SIZE as u16 - PAGE_SIZE as u16;
+    // page.max(1) - 1, rather than page * PAGE_SIZE - PAGE_SIZE, so a page
+    // of 0 clamps to the first page instead of underflowing (page is only
+    // ever sent as 1-indexed by the frontend, but nothing enforces that at
+    // the IPC boundary, and the raw subtraction would panic in debug builds
+    // or silently return a huge bogus offset in release).
+    let offset: u16 = (filters.page.max(1) as u16 - 1) * PAGE_SIZE as u16;
     let media_types = match filters.series_id.is_some() {
         true => vec![1],
-        false => filters.media_types.clone().unwrap(),
+        // Only reachable with series_id absent - the frontend always sends
+        // a real (possibly empty) array there, but that's an unenforced
+        // cross-language invariant, not a type-level guarantee, so fall
+        // back to "every channel type" instead of panicking if it's ever
+        // actually missing.
+        false => filters
+            .media_types
+            .clone()
+            .unwrap_or_else(|| vec![media_type::LIVESTREAM, media_type::MOVIE, media_type::SERIE]),
     };
     let query = filters.query.unwrap_or("".to_string());
     let keywords: Vec<String> = match filters.use_keywords {
@@ -983,7 +1004,12 @@ pub fn search(filters: Filters, hide_adult: bool) -> Result<Vec<Channel>> {
 
 fn search_series(filters: Filters) -> Result<Vec<Channel>> {
     let sql = get_conn()?;
-    let offset: u16 = filters.page as u16 * PAGE_SIZE as u16 - PAGE_SIZE as u16;
+    // page.max(1) - 1, rather than page * PAGE_SIZE - PAGE_SIZE, so a page
+    // of 0 clamps to the first page instead of underflowing (page is only
+    // ever sent as 1-indexed by the frontend, but nothing enforces that at
+    // the IPC boundary, and the raw subtraction would panic in debug builds
+    // or silently return a huge bogus offset in release).
+    let offset: u16 = (filters.page.max(1) as u16 - 1) * PAGE_SIZE as u16;
     let query = filters.query.unwrap_or("".to_string());
     let keywords: Vec<String> = match filters.use_keywords {
         true => query
@@ -1348,11 +1374,24 @@ fn apply_bulk_channels(
 
 fn search_hidden(filters: Filters, hide_adult: bool) -> Result<Vec<Channel>> {
     let sql = get_conn()?;
-    let offset: u16 = filters.page as u16 * PAGE_SIZE as u16 - PAGE_SIZE as u16;
+    // page.max(1) - 1, rather than page * PAGE_SIZE - PAGE_SIZE, so a page
+    // of 0 clamps to the first page instead of underflowing (page is only
+    // ever sent as 1-indexed by the frontend, but nothing enforces that at
+    // the IPC boundary, and the raw subtraction would panic in debug builds
+    // or silently return a huge bogus offset in release).
+    let offset: u16 = (filters.page.max(1) as u16 - 1) * PAGE_SIZE as u16;
 
     let media_types = match filters.series_id.is_some() {
         true => vec![1],
-        false => filters.media_types.clone().unwrap(),
+        // Only reachable with series_id absent - the frontend always sends
+        // a real (possibly empty) array there, but that's an unenforced
+        // cross-language invariant, not a type-level guarantee, so fall
+        // back to "every channel type" instead of panicking if it's ever
+        // actually missing.
+        false => filters
+            .media_types
+            .clone()
+            .unwrap_or_else(|| vec![media_type::LIVESTREAM, media_type::MOVIE, media_type::SERIE]),
     };
 
     let query = filters.query.unwrap_or("".to_string());
@@ -1465,7 +1504,12 @@ fn to_sql_like(query: Option<String>) -> String {
 
 pub fn search_group(filters: Filters) -> Result<Vec<Channel>> {
     let sql = get_conn()?;
-    let offset: u16 = filters.page as u16 * PAGE_SIZE as u16 - PAGE_SIZE as u16;
+    // page.max(1) - 1, rather than page * PAGE_SIZE - PAGE_SIZE, so a page
+    // of 0 clamps to the first page instead of underflowing (page is only
+    // ever sent as 1-indexed by the frontend, but nothing enforces that at
+    // the IPC boundary, and the raw subtraction would panic in debug builds
+    // or silently return a huge bogus offset in release).
+    let offset: u16 = (filters.page.max(1) as u16 - 1) * PAGE_SIZE as u16;
     let query = filters.query.unwrap_or("".to_string());
     let media_types = filters.media_types.context("no media types")?;
     let keywords: Vec<String> = match filters.use_keywords {
