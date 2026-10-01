@@ -32,6 +32,16 @@ fn create_connection_pool() -> Pool<SqliteConnectionManager> {
     // connection, for backwards compatibility - the FOREIGN KEY/ON DELETE
     // CASCADE clauses already declared throughout this schema do nothing
     // unless this is turned on for each connection the pool hands out.
+    //
+    // Tried journal_mode=WAL + synchronous=NORMAL after profiling a bulk
+    // xtream refresh (see benches/xtream_parse.rs) showed most time going
+    // into SQLite's own journal/page-cache machinery - measured 18% slower
+    // for a single 500k-row transaction (WAL only gets one checkpoint
+    // opportunity, at that one commit, likely turning into one large
+    // merge-back), and committing in chunks to give it more checkpoint
+    // opportunities measured slower still. Reverted - the plain default is
+    // the fastest of the three for this app's actual access pattern (one
+    // large bulk transaction per refresh, not many small concurrent ones).
     let manager = SqliteConnectionManager::file(get_and_create_sqlite_db_path())
         .with_init(|c| c.execute_batch("PRAGMA foreign_keys = ON;"));
     r2d2::Pool::builder()

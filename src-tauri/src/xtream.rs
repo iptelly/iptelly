@@ -319,6 +319,22 @@ fn truncate_for_preview(text: &str) -> String {
     text.chars().take(PREVIEW_LEN).collect()
 }
 
+// pub so the integration test and benchmark (both compiled as separate
+// crates) can drive the real JSON-to-database pipeline directly, without
+// needing XtreamStream/XtreamCategory/process_xtream themselves to be pub -
+// takes raw JSON text, the same shape a real panel response would have.
+pub fn process_xtream_json(
+    tx: &Transaction,
+    streams_json: &str,
+    categories_json: &str,
+    source: &Source,
+    stream_type: u8,
+) -> Result<()> {
+    let streams: Vec<XtreamStream> = serde_json::from_str(streams_json)?;
+    let cats: Vec<XtreamCategory> = serde_json::from_str(categories_json)?;
+    process_xtream(tx, streams, cats, source, stream_type)
+}
+
 fn process_xtream(
     tx: &Transaction,
     streams: Vec<XtreamStream>,

@@ -18,6 +18,10 @@ crate-type = ["staticlib", "cdylib", "lib"]
 name = "m3u_parse"
 harness = false
 
+[[bench]]
+name = "xtream_parse"
+harness = false
+
 [build-dependencies]
 tauri-build = { version = "2.5.2", features = [] }
 
@@ -75,3 +79,4 @@ criterion = { version = "0.8.2", default-features = false, features = ["html_rep
 # Only for building a fake reqwest::Response in tests (reqwest's
 # From<http::Response<T>> impl needs the matching http crate version).
 http = "1"
+pprof = { version = "0.15.0", default-features = false, features = ["flamegraph"] }
