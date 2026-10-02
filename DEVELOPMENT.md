@@ -10,14 +10,14 @@ IPTelly is a [Tauri v2](https://v2.tauri.app/) desktop app:
 
 - **Backend**: Rust, in `src-tauri/` (SQLite for storage, `mpv`/`vlc` spawned as external
   player processes).
-- **Frontend**: Angular 17, in `src/` (renders inside the Tauri webview).
+- **Frontend**: Angular 22, in `src/` (renders inside the Tauri webview).
 
 ## Prerequisites
 
 1. **Rust** - install via [rustup](https://rustup.rs/). The project targets edition 2024
    and Rust 1.91.1+ (`src-tauri/Cargo.toml`'s `rust-version`); `rustup` will pick up
    whatever `stable` resolves to, which is fine.
-2. **Node.js 20+** with npm (bundled with Node) - see [Package manager](#package-manager)
+2. **Node.js 24** (or 22.22.3+) with npm (bundled with Node) - see [Package manager](#package-manager)
    below.
 3. **Platform build dependencies** for Tauri itself:
    - **Linux (Debian/Ubuntu)**:

@@ -14,7 +14,7 @@ RUN apt update && apt install -y \
   libayatana-appindicator3-dev \
   librsvg2-dev \
   libxdo-dev \
-  && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+  && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
   && apt install -y nodejs \
   && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
