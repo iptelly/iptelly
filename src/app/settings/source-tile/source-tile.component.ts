@@ -98,7 +98,7 @@ export class SourceTileComponent {
       invoke("toggle_source", { value: !this.source?.enabled, sourceId: this.source?.id }),
     );
     this.memory.RefreshSources.next(true);
-    // The enabled/disabled variant is swapped via *ngIf, so the button just
+    // The enabled/disabled variant is swapped via @if, so the button just
     // clicked/activated is always a new DOM node - re-focus its replacement
     // so keyboard users land back where they were instead of losing focus.
     setTimeout(() => {
@@ -158,7 +158,7 @@ export class SourceTileComponent {
   edit() {
     this.editableSource = { ...this.source };
     this.editing = true;
-    // The url field only exists in the DOM once *ngIf picks up `editing` on
+    // The url field only exists in the DOM once @if picks up `editing` on
     // the next change detection pass, hence the setTimeout - same pattern
     // used for post-render focus elsewhere (e.g. home.component.ts).
     setTimeout(() => {

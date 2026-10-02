@@ -1,11 +1,17 @@
 <div class="epg-timeline">
-  <ng-container *ngIf="fetched && epgs.length > 0">
-    <div class="epg-block" *ngFor="let epg of epgs; let i = index" [ngbTooltip]="tooltip(epg)" container="body"
-      [ngClass]="{ 'now-playing': isNowPlaying(epg), focused: i === focusedIndex }" [style.left.%]="leftPercent(epg)"
-      [style.width.%]="widthPercent(epg)" (click)="onProgrammeClick(epg, $event)">
-      <span class="epg-title">{{ epg.title }}</span>
-    </div>
-    <div class="now-line" *ngIf="showNowLine()" [style.left.%]="nowPercent()"></div>
-  </ng-container>
-  <div class="epg-empty" *ngIf="fetched && epgs.length === 0">No EPG data</div>
+  @if (fetched && epgs.length > 0) {
+    @for (epg of epgs; track epg; let i = $index) {
+      <div class="epg-block" [ngbTooltip]="tooltip(epg)" container="body"
+        [ngClass]="{ 'now-playing': isNowPlaying(epg), focused: i === focusedIndex }" [style.left.%]="leftPercent(epg)"
+        [style.width.%]="widthPercent(epg)" (click)="onProgrammeClick(epg, $event)">
+        <span class="epg-title">{{ epg.title }}</span>
+      </div>
+    }
+    @if (showNowLine()) {
+      <div class="now-line" [style.left.%]="nowPercent()"></div>
+    }
+  }
+  @if (fetched && epgs.length === 0) {
+    <div class="epg-empty">No EPG data</div>
+  }
 </div>

@@ -21,7 +21,7 @@ export class EpgTimelineHeaderComponent implements OnInit, OnDestroy {
   offsetSeconds = 0;
   // Cached once per tick rather than reading Date.now() directly inside
   // nowPercent()/showNowLine() - the template calls nowPercent() from two
-  // separate bindings ([style.left.%] and the *ngIf via showNowLine()) in
+  // separate bindings ([style.left.%] and the @if via showNowLine()) in
   // the same change-detection pass, and two independent Date.now() reads
   // milliseconds apart returned different values, which Angular's dev-mode
   // checkNoChanges pass flags as NG0100.

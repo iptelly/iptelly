@@ -1,21 +1,23 @@
 <div class="modal-header">
-    <h4 class="modal-title lbl">
-        Enter PIN
-    </h4>
-    <button type="button" class="btn-close btn-close-white" aria-label="Close"
-        (click)="activeModal.dismiss('Cross click')"></button>
+  <h4 class="modal-title lbl">
+    Enter PIN
+  </h4>
+  <button type="button" class="btn-close btn-close-white" aria-label="Close"
+  (click)="activeModal.dismiss('Cross click')"></button>
 </div>
 <div class="modal-body">
-    <p>Adult content is locked. Enter your PIN to unlock it for the rest of this session.</p>
-    <input #pinInput [(ngModel)]="pin" (keyup.enter)="unlock()" type="password" inputmode="numeric"
-        autocomplete="off" class="form-control" [class.is-invalid]="incorrect" [disabled]="loading" autofocus />
-    <div class="invalid-feedback" *ngIf="incorrect">Incorrect PIN.</div>
+  <p>Adult content is locked. Enter your PIN to unlock it for the rest of this session.</p>
+  <input #pinInput [(ngModel)]="pin" (keyup.enter)="unlock()" type="password" inputmode="numeric"
+    autocomplete="off" class="form-control" [class.is-invalid]="incorrect" [disabled]="loading" autofocus />
+  @if (incorrect) {
+    <div class="invalid-feedback">Incorrect PIN.</div>
+  }
 </div>
 <div class="modal-footer">
-    <button [disabled]="loading || !pin" (click)="unlock()" class="btn btn-primary" type="submit">
-        Unlock
-    </button>
-    <button [disabled]="loading" (click)="activeModal.dismiss('cancel')" class="btn btn-secondary" type="submit">
-        Cancel
-    </button>
+  <button [disabled]="loading || !pin" (click)="unlock()" class="btn btn-primary" type="submit">
+    Unlock
+  </button>
+  <button [disabled]="loading" (click)="activeModal.dismiss('cancel')" class="btn btn-secondary" type="submit">
+    Cancel
+  </button>
 </div>

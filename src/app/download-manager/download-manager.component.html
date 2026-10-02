@@ -1,35 +1,45 @@
 <ng-template #downloadRow let-download>
   <div class="d-flex justify-content-between small mb-1">
     <span>{{ download.channel.name }}</span>
-    <span *ngIf="download.status === 'queued'">Queued</span>
-    <span *ngIf="download.status !== 'queued'">
-      {{ download.status === "paused" ? "Paused - " : "" }}{{ download.progress }}%
-      <span class="size-label" *ngIf="download.totalBytes">
-        ({{ formatBytes(download.downloadedBytes) }} / {{ formatBytes(download.totalBytes) }})
+    @if (download.status === 'queued') {
+      <span>Queued</span>
+    }
+    @if (download.status !== 'queued') {
+      <span>
+        {{ download.status === "paused" ? "Paused - " : "" }}{{ download.progress }}%
+        @if (download.totalBytes) {
+          <span class="size-label">
+            ({{ formatBytes(download.downloadedBytes) }} / {{ formatBytes(download.totalBytes) }})
+          </span>
+        }
       </span>
-    </span>
+    }
   </div>
   <div class="d-flex align-items-center">
     <div class="progress" style="height: 6px; width: 80%">
       <div class="progress-bar" [class.bg-success]="download.status === 'downloading'"
         [class.bg-warning]="download.status === 'paused'" [class.bg-secondary]="download.status === 'queued'"
         role="progressbar" [style.width.%]="download.progress" [attr.aria-valuenow]="download.progress"
-        aria-valuemin="0" aria-valuemax="100"></div>
+      aria-valuemin="0" aria-valuemax="100"></div>
     </div>
-    <svg *ngIf="download.status === 'downloading'" fill="currentColor" (click)="pauseDownload(download.id)"
-      (keydown.enter)="pauseDownload(download.id); $event.preventDefault()"
-      (keydown.space)="pauseDownload(download.id); $event.preventDefault()" tabindex="0" role="button"
-      ngbTooltip="Pause" class="action ms-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-      <title>Pause</title>
-      <path d="M14,19H18V5H14M6,19H10V5H6V19Z" />
-    </svg>
-    <svg *ngIf="download.status === 'paused'" fill="currentColor" (click)="resumeDownload(download)"
-      (keydown.enter)="resumeDownload(download); $event.preventDefault()"
-      (keydown.space)="resumeDownload(download); $event.preventDefault()" tabindex="0" role="button"
-      ngbTooltip="Resume" class="action ms-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-      <title>Resume</title>
-      <path d="M8,5.14V19.14L19,12.14L8,5.14Z" />
-    </svg>
+    @if (download.status === 'downloading') {
+      <svg fill="currentColor" (click)="pauseDownload(download.id)"
+        (keydown.enter)="pauseDownload(download.id); $event.preventDefault()"
+        (keydown.space)="pauseDownload(download.id); $event.preventDefault()" tabindex="0" role="button"
+        ngbTooltip="Pause" class="action ms-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+        <title>Pause</title>
+        <path d="M14,19H18V5H14M6,19H10V5H6V19Z" />
+      </svg>
+    }
+    @if (download.status === 'paused') {
+      <svg fill="currentColor" (click)="resumeDownload(download)"
+        (keydown.enter)="resumeDownload(download); $event.preventDefault()"
+        (keydown.space)="resumeDownload(download); $event.preventDefault()" tabindex="0" role="button"
+        ngbTooltip="Resume" class="action ms-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+        <title>Resume</title>
+        <path d="M8,5.14V19.14L19,12.14L8,5.14Z" />
+      </svg>
+    }
     <svg fill="red" (click)="cancelDownload(download.id)" (keydown.enter)="cancelDownload(download.id); $event.preventDefault()"
       (keydown.space)="cancelDownload(download.id); $event.preventDefault()" tabindex="0" role="button"
       ngbTooltip="Cancel" class="action stop ms-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
@@ -45,21 +55,33 @@
     <div class="history-item-info">
       <span class="history-item-name" [title]="item.name">{{ item.name }}</span>
       <span class="status-badge ms-2 flex-shrink-0" [ngClass]="'status-' + item.status">{{ item.status }}</span>
-      <span class="size-label ms-2 flex-shrink-0" *ngIf="item.total_bytes || item.downloaded_bytes">
-        {{ formatBytes(item.total_bytes || item.downloaded_bytes) }}
-      </span>
+      @if (item.total_bytes || item.downloaded_bytes) {
+        <span class="size-label ms-2 flex-shrink-0">
+          {{ formatBytes(item.total_bytes || item.downloaded_bytes) }}
+        </span>
+      }
     </div>
     <div class="history-item-actions">
-      <button *ngIf="item.status === 'completed'" tabindex="0" class="btn btn-sm btn-secondary"
+      @if (item.status === 'completed') {
+        <button tabindex="0" class="btn btn-sm btn-secondary"
         (click)="playHistoryItem(item)">Play</button>
-      <button *ngIf="item.status === 'completed'" tabindex="0" class="btn btn-sm btn-outline-danger ms-1"
+      }
+      @if (item.status === 'completed') {
+        <button tabindex="0" class="btn btn-sm btn-outline-danger ms-1"
         (click)="deleteDownloadedFile(item)">Delete</button>
-      <button *ngIf="item.status === 'paused'" tabindex="0" class="btn btn-sm btn-secondary"
+      }
+      @if (item.status === 'paused') {
+        <button tabindex="0" class="btn btn-sm btn-secondary"
         (click)="resumeHistoryItem(item)">Resume</button>
-      <button *ngIf="item.status === 'cancelled' || item.status === 'failed'" tabindex="0"
+      }
+      @if (item.status === 'cancelled' || item.status === 'failed') {
+        <button tabindex="0"
         class="btn btn-sm btn-secondary" (click)="resumeHistoryItem(item)">Restart</button>
-      <button *ngIf="item.status === 'cancelled' || item.status === 'failed'" tabindex="0"
+      }
+      @if (item.status === 'cancelled' || item.status === 'failed') {
+        <button tabindex="0"
         class="btn btn-sm btn-outline-danger ms-1" (click)="deleteHistoryItem(item)">Delete</button>
+      }
     </div>
   </div>
 </ng-template>
@@ -69,46 +91,62 @@
     <h2 class="mb-0">
       {{ selectedCategory === "queued" ? "Queued" : selectedCategory === "completed" ? "Downloaded" : "Cancelled" }}
     </h2>
-    <div *ngIf="selectedCategory === 'queued' && hasActive()">
-      <button tabindex="0" class="btn btn-secondary btn-sm me-2" (click)="pauseAll()">Pause all</button>
-      <button tabindex="0" class="btn btn-danger btn-sm" (click)="cancelAll()">Cancel all</button>
-    </div>
-    <div *ngIf="selectedCategory === 'cancelled' && getCancelled().length > 0">
-      <button tabindex="0" class="btn btn-secondary btn-sm me-2" (click)="restartAllCancelled()">Restart all</button>
-      <button tabindex="0" class="btn btn-outline-danger btn-sm" (click)="clearCancelled()">Clear all</button>
-    </div>
+    @if (selectedCategory === 'queued' && hasActive()) {
+      <div>
+        <button tabindex="0" class="btn btn-secondary btn-sm me-2" (click)="pauseAll()">Pause all</button>
+        <button tabindex="0" class="btn btn-danger btn-sm" (click)="cancelAll()">Cancel all</button>
+      </div>
+    }
+    @if (selectedCategory === 'cancelled' && getCancelled().length > 0) {
+      <div>
+        <button tabindex="0" class="btn btn-secondary btn-sm me-2" (click)="restartAllCancelled()">Restart all</button>
+        <button tabindex="0" class="btn btn-outline-danger btn-sm" (click)="clearCancelled()">Clear all</button>
+      </div>
+    }
   </div>
 
-  <ng-container *ngIf="selectedCategory === 'queued'">
-    <div *ngIf="getDownloads().length === 0" class="empty-state">
-      <span>No active downloads.</span>
-    </div>
+  @if (selectedCategory === 'queued') {
+    @if (getDownloads().length === 0) {
+      <div class="empty-state">
+        <span>No active downloads.</span>
+      </div>
+    }
     <div class="mx-auto embedded-list d-grid gap-3">
-      <div *ngFor="let download of getDownloads()" class="embedded-item">
-        <ng-container *ngTemplateOutlet="downloadRow; context: { $implicit: download }"></ng-container>
-      </div>
+      @for (download of getDownloads(); track download) {
+        <div class="embedded-item">
+          <ng-container *ngTemplateOutlet="downloadRow; context: { $implicit: download }"></ng-container>
+        </div>
+      }
     </div>
-  </ng-container>
+  }
 
-  <ng-container *ngIf="selectedCategory === 'completed'">
-    <div *ngIf="getCompleted().length === 0" class="empty-state">
-      <span>Nothing downloaded yet.</span>
-    </div>
-    <div class="mx-auto embedded-list d-grid gap-2">
-      <div *ngFor="let item of getCompleted()" class="embedded-item history-item">
-        <ng-container *ngTemplateOutlet="historyRow; context: { $implicit: item }"></ng-container>
+  @if (selectedCategory === 'completed') {
+    @if (getCompleted().length === 0) {
+      <div class="empty-state">
+        <span>Nothing downloaded yet.</span>
       </div>
+    }
+    <div class="mx-auto embedded-list d-grid gap-2">
+      @for (item of getCompleted(); track item) {
+        <div class="embedded-item history-item">
+          <ng-container *ngTemplateOutlet="historyRow; context: { $implicit: item }"></ng-container>
+        </div>
+      }
     </div>
-  </ng-container>
+  }
 
-  <ng-container *ngIf="selectedCategory === 'cancelled'">
-    <div *ngIf="getCancelled().length === 0" class="empty-state">
-      <span>Nothing cancelled, failed, or paused.</span>
-    </div>
-    <div class="mx-auto embedded-list d-grid gap-2">
-      <div *ngFor="let item of getCancelled()" class="embedded-item history-item">
-        <ng-container *ngTemplateOutlet="historyRow; context: { $implicit: item }"></ng-container>
+  @if (selectedCategory === 'cancelled') {
+    @if (getCancelled().length === 0) {
+      <div class="empty-state">
+        <span>Nothing cancelled, failed, or paused.</span>
       </div>
+    }
+    <div class="mx-auto embedded-list d-grid gap-2">
+      @for (item of getCancelled(); track item) {
+        <div class="embedded-item history-item">
+          <ng-container *ngTemplateOutlet="historyRow; context: { $implicit: item }"></ng-container>
+        </div>
+      }
     </div>
-  </ng-container>
+  }
 </div>
