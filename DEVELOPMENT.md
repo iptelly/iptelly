@@ -144,7 +144,7 @@ fails on any high or critical advisory in the production dependencies. Dev depen
 those too.
 
 The `RUSTFLAGS="-D warnings"` run is what CI (`.github/workflows/rustLint.yml`) enforces
-on every push/PR - it turns plain rustc warnings (unused imports, unused variables, dead
+on every PR - it turns plain rustc warnings (unused imports, unused variables, dead
 code, ...) into build failures across every target, including `#[cfg(test)]` modules,
 which a plain `cargo check`/`cargo build` never compiles at all.
 
@@ -171,7 +171,7 @@ Two helpers in `src/testing/` keep specs short:
   so `invoke()` returns empty results instead of failing, and stubs the browser
   observers jsdom lacks. Override a command in a single spec by calling `mockIPC` again.
 
-CI's `test` job runs the single-run command on every push/PR.
+CI's `test` job runs the single-run command on every PR.
 
 ### Frontend linting and formatting (Biome)
 
@@ -184,7 +184,7 @@ npm run lint        # check formatting, import order and lint rules
 npm run lint:fix    # apply formatting and safe fixes
 ```
 
-CI (`.github/workflows/frontendLint.yml`) runs `npx biome ci` on every push/PR and fails
+CI (`.github/workflows/frontendLint.yml`) runs `npx biome ci` on every PR and fails
 on any error-level finding. Install the Biome editor extension to format on save.
 
 Biome doesn't lint Angular `.html` templates. Template type errors are still caught by
