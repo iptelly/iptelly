@@ -7,7 +7,7 @@ on:
     branches: ["main"]
 
 jobs:
-  lint:
+  rust-lint:
     runs-on: ubuntu-22.04
 
     steps:

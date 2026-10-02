@@ -7,7 +7,7 @@ on:
     branches: ["main"]
 
 jobs:
-  lint:
+  frontend-lint:
     runs-on: ubuntu-22.04
 
     steps:
