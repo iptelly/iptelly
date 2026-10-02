@@ -187,12 +187,22 @@ pub(crate) fn get_filename(channel_name: String, url: String) -> Result<String> 
     Ok(filename)
 }
 
+// Only the last path segment can hold the file's extension - dots in the
+// host, query string or fragment don't count. PHP endpoints (e.g. Xtream's
+// get.php) serve the stream rather than a file of that type, so they fall
+// back to mp4 like URLs with no extension at all. Matches getExtension in
+// the frontend's utils.ts.
 fn get_extension(url: String) -> String {
-    url.rsplit(".")
-        .next()
-        .filter(|ext| !ext.starts_with("php?"))
-        .unwrap_or("mp4")
-        .to_string()
+    let without_query = url.split(['?', '#']).next().unwrap_or_default();
+    let path = match without_query.split_once("://") {
+        Some((_, rest)) => rest.find('/').map_or("", |i| &rest[i..]),
+        None => without_query,
+    };
+    let file_name = path.rsplit('/').next().unwrap_or_default();
+    match file_name.rsplit_once('.') {
+        Some((_, ext)) if !ext.is_empty() && !ext.eq_ignore_ascii_case("php") => ext.to_string(),
+        _ => "mp4".to_string(),
+    }
 }
 
 pub fn sanitize(str: String) -> String {
@@ -383,7 +393,7 @@ pub fn get_user_agent_from_source(source: &Source) -> Result<String> {
 
 #[cfg(test)]
 mod test_utils {
-    use super::{get_filename, normalize_tvg_id, sanitize};
+    use super::{get_extension, get_filename, normalize_tvg_id, sanitize};
 
     #[test]
     fn test_sanitize() {
@@ -456,5 +466,40 @@ mod test_utils {
             .unwrap(),
             "Live.mp4"
         );
+    }
+
+    #[test]
+    fn get_extension_defaults_to_mp4_when_the_path_has_no_extension() {
+        for url in [
+            "stream",
+            "http://example.com/stream",
+            "http://example.com:8080/live/u/p/123",
+            "http://example.com",
+            "http://example.com/",
+            "http://192.168.1.10/movies.dir/stream",
+        ] {
+            assert_eq!(get_extension(url.to_string()), "mp4", "{url}");
+        }
+    }
+
+    #[test]
+    fn get_extension_defaults_to_mp4_for_php_endpoints() {
+        for url in [
+            "http://example.com/stream.php",
+            "http://example.com/stream.PHP",
+        ] {
+            assert_eq!(get_extension(url.to_string()), "mp4", "{url}");
+        }
+    }
+
+    #[test]
+    fn get_extension_ignores_the_query_string_and_fragment() {
+        for (url, expected) in [
+            ("http://example.com/movie.mkv?token=a.b", "mkv"),
+            ("http://example.com/movie.mp4#t=1.5", "mp4"),
+            ("http://example.com/play?file=movie.avi", "mp4"),
+        ] {
+            assert_eq!(get_extension(url.to_string()), expected, "{url}");
+        }
     }
 }
