@@ -16,7 +16,6 @@ import { NgbModal } from "@ng-bootstrap/ng-bootstrap";
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { AllowIn, ShortcutInput } from "ng-keyboard-shortcuts";
 import { ToastrService } from "ngx-toastr";
 import {
   debounceTime,
@@ -34,6 +33,7 @@ import { BulkActionType } from "../models/bulkActionType";
 import { Channel } from "../models/channel";
 import { Filters } from "../models/filters";
 import { FocusArea, FocusAreaPrefix } from "../models/focusArea";
+import { KeyboardShortcut, runKeyboardShortcut } from "../models/keyboardShortcut";
 import { LAST_SEEN_VERSION } from "../models/localStorage";
 import { MediaType } from "../models/mediaType";
 import { Node } from "../models/node";
@@ -45,6 +45,7 @@ import { Source } from "../models/source";
 import { SourceType } from "../models/sourceType";
 import { Stack } from "../models/stack";
 import { ViewMode } from "../models/viewMode";
+import { ShortcutsHelpModalComponent } from "../shortcuts-help-modal/shortcuts-help-modal.component";
 import { isInputFocused } from "../utils";
 import { WhatsNewModalComponent } from "../whats-new-modal/whats-new-modal.component";
 import { DownloadSidebarComponent } from "./download-sidebar/download-sidebar.component";
@@ -98,7 +99,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   @ViewChild(PlaylistSidebarComponent) playlistSidebar?: PlaylistSidebarComponent;
   @ViewChild(DownloadSidebarComponent) downloadSidebar?: DownloadSidebarComponent;
   @ViewChild(DownloadManagerComponent) downloadManager?: DownloadManagerComponent;
-  shortcuts: ShortcutInput[] = [];
+  shortcuts: KeyboardShortcut[] = [];
   focus: number = 0;
   focusArea = FocusArea.Tiles;
   // Whether the keyboard cursor is currently in the Favourites page's
@@ -647,100 +648,100 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
 
     this.shortcuts.push(
       {
-        key: ["ctrl + f", "ctrl + space", "cmd + f"],
+        keys: ["ctrl + f", "ctrl + space", "cmd + f"],
         label: "Search",
         description: "Go to search",
         preventDefault: true,
-        allowIn: [AllowIn.Input],
-        command: (_) => this.focusSearch(),
+        allowInInput: true,
+        command: () => this.focusSearch(),
       },
       {
-        key: ["ctrl + a", "cmd + a"],
+        keys: ["ctrl + a", "cmd + a"],
         label: "Switching modes",
         description: "Selects the all channels view",
         preventDefault: true,
-        command: async (_) => await this.switchMode(this.viewModeEnum.All),
+        command: async () => await this.switchMode(this.viewModeEnum.All),
       },
       {
-        key: ["ctrl + s", "cmd + s"],
+        keys: ["ctrl + s", "cmd + s"],
         label: "Switching modes",
         description: "Selects the categories view",
-        command: async (_) => await this.switchMode(this.viewModeEnum.Categories),
+        command: async () => await this.switchMode(this.viewModeEnum.Categories),
       },
       {
-        key: ["ctrl + d", "cmd + d"],
+        keys: ["ctrl + d", "cmd + d"],
         label: "Switching modes",
         description: "Selects the history view",
-        command: async (_) => await this.switchMode(this.viewModeEnum.History),
+        command: async () => await this.switchMode(this.viewModeEnum.History),
       },
       {
-        key: ["ctrl + r", "cmd + r"],
+        keys: ["ctrl + r", "cmd + r"],
         label: "Switching modes",
         description: "Selects the favorites view",
-        command: async (_) => await this.switchMode(this.viewModeEnum.Favorites),
+        command: async () => await this.switchMode(this.viewModeEnum.Favorites),
       },
       {
-        key: "ctrl + q",
+        keys: ["ctrl + q"],
         label: "Media Type Filters",
         description: "Enable/Disable livestreams",
         preventDefault: true,
-        allowIn: [AllowIn.Input],
-        command: async (_) => {
+        allowInInput: true,
+        command: async () => {
           this.chkLiveStream = !this.chkLiveStream;
           this.updateMediaTypes(MediaType.livestream);
         },
       },
       {
-        key: "ctrl + w",
+        keys: ["ctrl + w"],
         label: "Media Type Filters",
         description: "Enable/Disable movies",
         preventDefault: true,
-        allowIn: [AllowIn.Input],
-        command: async (_) => {
+        allowInInput: true,
+        command: async () => {
           this.chkMovie = !this.chkMovie;
           this.updateMediaTypes(MediaType.movie);
         },
       },
       {
-        key: "ctrl + e",
+        keys: ["ctrl + e"],
         label: "Media Type Filters",
         description: "Enable/Disable series",
         preventDefault: true,
-        allowIn: [AllowIn.Input],
-        command: async (_) => {
+        allowInInput: true,
+        command: async () => {
           this.chkSerie = !this.chkSerie;
           this.updateMediaTypes(MediaType.serie);
         },
       },
       {
-        key: "left",
+        keys: ["left"],
         label: "Navigation",
         description: "Go left",
-        allowIn: [AllowIn.Input],
-        command: async (_) => await this.nav("ArrowLeft"),
+        allowInInput: true,
+        command: async () => await this.nav("ArrowLeft"),
       },
       {
-        key: "right",
+        keys: ["right"],
         label: "Navigation",
         description: "Go right",
-        allowIn: [AllowIn.Input],
-        command: async (_) => await this.nav("ArrowRight"),
+        allowInInput: true,
+        command: async () => await this.nav("ArrowRight"),
       },
       {
-        key: "up",
+        keys: ["up"],
         label: "Navigation",
         description: "Go up",
-        allowIn: [AllowIn.Input],
+        allowInInput: true,
         preventDefault: true,
-        command: async (_) => await this.nav("ArrowUp"),
+        command: async () => await this.nav("ArrowUp"),
       },
       {
-        key: "down",
+        keys: ["down"],
         label: "Navigation",
         description: "Go down",
-        allowIn: [AllowIn.Input],
+        allowInInput: true,
         preventDefault: true,
-        command: async (_) => await this.nav("ArrowDown"),
+        command: async () => await this.nav("ArrowDown"),
       },
     );
   }
@@ -1323,9 +1324,14 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     }
   }
 
-  //Temporary solution because the ng-keyboard-shortcuts library doesn't seem to support ESC
   @HostListener("document:keydown", ["$event"])
   onKeyDown(event: KeyboardEvent) {
+    if (event.key === "F1") {
+      event.preventDefault();
+      this.openShortcutsHelp();
+      return;
+    }
+    if (runKeyboardShortcut(this.shortcuts, event)) return;
     if (
       event.key == "Escape" ||
       event.key == "BrowserBack" ||
@@ -1340,6 +1346,16 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     }
     if (event.key == "Enter" && document.activeElement?.id?.startsWith("filter-"))
       (document.activeElement as any).click();
+  }
+
+  openShortcutsHelp() {
+    if (this.memory.ModalRef) return;
+    this.memory.ModalRef = this.modal.open(ShortcutsHelpModalComponent, { size: "lg" });
+    this.memory.ModalRef.componentInstance.shortcuts = this.shortcuts;
+    this.memory.ModalRef.result.then(
+      () => (this.memory.ModalRef = undefined),
+      () => (this.memory.ModalRef = undefined),
+    );
   }
 
   selectFirstChannel() {

@@ -1,0 +1,26 @@
+<div class="modal-header">
+  <h4 class="modal-title lbl">Keyboard shortcuts</h4>
+  <button type="button" class="btn-close" aria-label="Close" (click)="activeModal.close()"></button>
+</div>
+<div class="modal-body">
+  @for (group of groups; track group.label) {
+    <h5>{{ group.label }}</h5>
+    <table class="table table-sm">
+      <tbody>
+        @for (shortcut of group.shortcuts; track shortcut.description) {
+          <tr>
+            <td>{{ shortcut.description }}</td>
+            <td class="text-end">
+              @for (combo of shortcut.keys; track combo; let last = $last) {
+                <kbd>{{ combo }}</kbd>
+                @if (!last) {
+                  <span> or </span>
+                }
+              }
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  }
+</div>

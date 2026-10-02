@@ -6,7 +6,6 @@ import { BrowserModule } from "@angular/platform-browser";
 import { BrowserAnimationsModule } from "@angular/platform-browser/animations";
 import { provideAnimationsAsync } from "@angular/platform-browser/animations/async";
 import { NgbModalModule, NgbTooltipModule, NgbTypeaheadModule } from "@ng-bootstrap/ng-bootstrap";
-import { KeyboardShortcutsModule } from "ng-keyboard-shortcuts";
 import { ToastrModule } from "ngx-toastr";
 import { AdultPinModalComponent } from "./adult-pin-modal/adult-pin-modal.component";
 import { AppComponent } from "./app.component";
@@ -42,6 +41,7 @@ import { ConfirmModalComponent } from "./setup/confirm-modal/confirm-modal.compo
 import { SetupComponent } from "./setup/setup.component";
 import { NotEmptyValidatorDirective } from "./setup/validators/not-empty-validator.directive";
 import { SourceNameExistsValidator } from "./setup/validators/source-name-exists-validator.directive";
+import { ShortcutsHelpModalComponent } from "./shortcuts-help-modal/shortcuts-help-modal.component";
 
 @NgModule({
   declarations: [
@@ -77,6 +77,7 @@ import { SourceNameExistsValidator } from "./setup/validators/source-name-exists
     EpgTimelineComponent,
     EpgTimelineHeaderComponent,
     ManageCategoriesComponent,
+    ShortcutsHelpModalComponent,
   ],
   imports: [
     BrowserModule,
@@ -85,7 +86,6 @@ import { SourceNameExistsValidator } from "./setup/validators/source-name-exists
     AppRoutingModule,
     NgbTooltipModule,
     ToastrModule.forRoot(),
-    KeyboardShortcutsModule.forRoot(),
     MatMenuModule,
     NgbModalModule,
     NgbTypeaheadModule,
