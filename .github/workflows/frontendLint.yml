@@ -1,0 +1,25 @@
+name: Frontend Lint
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  lint:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # biome ci checks formatting, import order and lint rules without
+      # writing anything, and fails on any error-level finding.
+      - name: biome ci
+        run: npx biome ci

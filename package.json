@@ -8,7 +8,9 @@
     "build": "tauri build",
     "buildMac": "APPLE_SIGNING_IDENTITY=J5GA8GVZ43 tauri build --target universal-apple-darwin",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test",
+    "lint": "biome check",
+    "lint:fix": "biome check --write"
   },
   "private": true,
   "dependencies": {
@@ -40,6 +42,7 @@
     "@angular/cli": "^17.3.8",
     "@angular/compiler-cli": "^17.3.0",
     "@angular/localize": "^17.3.0",
+    "@biomejs/biome": "2.5.15",
     "@tauri-apps/cli": "^2.12.0",
     "@types/jasmine": "~5.1.0",
     "jasmine-core": "~5.1.0",

@@ -133,6 +133,7 @@ cd src-tauri && cargo check --no-default-features    # backend compiles
 cd src-tauri && RUSTFLAGS="-D warnings" cargo test --no-default-features
                                                        # backend tests pass, no warnings
 cd .. && npx ng build --configuration development     # frontend compiles
+npm run lint                                           # frontend lint + formatting
 ```
 
 The `RUSTFLAGS="-D warnings"` run is what CI (`.github/workflows/rustLint.yml`) enforces
@@ -142,6 +143,36 @@ which a plain `cargo check`/`cargo build` never compiles at all.
 
 These are quick and catch the vast majority of mistakes before you get to a full
 `tauri build`, which is much slower.
+
+### Frontend linting and formatting (Biome)
+
+The frontend uses [Biome](https://biomejs.dev/) for both linting and formatting (there's
+no ESLint or Prettier). Its config is `biome.json`, which covers the `.ts` and `.css`
+files under `src/` and skips the vendored files in `src/assets/`.
+
+```
+npm run lint        # check formatting, import order and lint rules
+npm run lint:fix    # apply formatting and safe fixes
+```
+
+CI (`.github/workflows/frontendLint.yml`) runs `npx biome ci` on every push/PR and fails
+on any error-level finding. Install the Biome editor extension to format on save.
+
+Biome doesn't lint Angular `.html` templates. Template type errors are still caught by
+`ng build`, because `strictTemplates` is on in `tsconfig.json`.
+
+Two Angular-specific settings in `biome.json` matter:
+
+- `style/useImportType` is off. Turning it on would rewrite imports that are only used
+  as constructor parameter types into `import type`, which TypeScript erases, so
+  Angular's dependency injection breaks at runtime even though the build succeeds.
+- `unsafeParameterDecoratorsEnabled` is on so Biome can parse constructor-parameter
+  decorators such as `@Inject(...)`.
+
+A few `suspicious/*` rules (`noDoubleEquals` and others) are temporarily set to `warn`
+because existing code has a backlog of them. Fix those case by case (`==` to `===` can
+change behaviour if a value arrives as a string), then switch each rule back to its
+default once its backlog is cleared.
 
 ### `src-tauri/tests/` - parser integration tests
 
