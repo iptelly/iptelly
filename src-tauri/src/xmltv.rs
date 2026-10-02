@@ -155,8 +155,18 @@ fn parse_xmltv(
     let now = Utc::now().timestamp();
     let from_ts = now - lookback_seconds;
     let to_ts = now + EPG_LOOKAHEAD_SECONDS;
+    parse_programmes(open_reader(path)?, known_tvg_ids, from_ts, to_ts)
+}
 
-    let mut xml_reader = Reader::from_reader(open_reader(path)?);
+// Split from parse_xmltv so tests can feed in-memory XML and a fixed time
+// window, rather than depending on a file and the current time.
+fn parse_programmes(
+    reader: impl BufRead,
+    known_tvg_ids: &HashSet<String>,
+    from_ts: i64,
+    to_ts: i64,
+) -> Result<Vec<ParsedProgramme>> {
+    let mut xml_reader = Reader::from_reader(reader);
     xml_reader.config_mut().trim_text(true);
 
     let mut programmes = Vec::new();
@@ -255,4 +265,254 @@ fn parse_xmltv_time(raw: &str) -> Option<i64> {
     DateTime::parse_from_str(raw.trim(), "%Y%m%d%H%M%S %z")
         .ok()
         .map(|d| d.timestamp())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // 2026-01-01 12:00:00 UTC
+    const NOON: i64 = 1_767_268_800;
+    const HOUR: i64 = 3600;
+
+    fn ids(ids: &[&str]) -> HashSet<String> {
+        ids.iter()
+            .map(|id| crate::utils::normalize_tvg_id(id))
+            .collect()
+    }
+
+    fn parse(xml: &str, known: &[&str]) -> Vec<ParsedProgramme> {
+        parse_programmes(
+            xml.as_bytes(),
+            &ids(known),
+            NOON - 24 * HOUR,
+            NOON + 24 * HOUR,
+        )
+        .unwrap()
+    }
+
+    fn programme(channel: &str, start: &str, stop: &str, inner: &str) -> String {
+        format!(
+            r#"<programme channel="{channel}" start="{start}" stop="{stop}">{inner}</programme>"#
+        )
+    }
+
+    fn tv(programmes: &[String]) -> String {
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?><tv>{}</tv>"#,
+            programmes.concat()
+        )
+    }
+
+    #[test]
+    fn parses_times_with_a_utc_offset() {
+        assert_eq!(parse_xmltv_time("20260101120000 +0000"), Some(NOON));
+        assert_eq!(parse_xmltv_time("20260101130000 +0100"), Some(NOON));
+        assert_eq!(parse_xmltv_time("20260101070000 -0500"), Some(NOON));
+        assert_eq!(parse_xmltv_time("  20260101120000 +0000  "), Some(NOON));
+    }
+
+    #[test]
+    fn rejects_invalid_times() {
+        assert_eq!(parse_xmltv_time(""), None);
+        assert_eq!(parse_xmltv_time("not a time"), None);
+        assert_eq!(parse_xmltv_time("20261301120000 +0000"), None);
+    }
+
+    #[test]
+    fn parses_a_programme() {
+        let xml = tv(&[programme(
+            "bbc1.uk",
+            "20260101120000 +0000",
+            "20260101130000 +0000",
+            "<title>News</title><desc>The headlines</desc>",
+        )]);
+        let programmes = parse(&xml, &["bbc1.uk"]);
+        assert_eq!(programmes.len(), 1);
+        let p = &programmes[0];
+        assert_eq!(p.tvg_id, "bbc1.uk");
+        assert_eq!(p.title, "News");
+        assert_eq!(p.description, "The headlines");
+        assert_eq!(p.start_timestamp, NOON);
+        assert_eq!(p.end_timestamp, NOON + HOUR);
+    }
+
+    #[test]
+    fn ignores_text_outside_title_and_desc() {
+        let xml = tv(&[programme(
+            "bbc1.uk",
+            "20260101120000 +0000",
+            "20260101130000 +0000",
+            "<title>News</title><sub-title>Episode 1</sub-title><category>Factual</category>",
+        )]);
+        let p = &parse(&xml, &["bbc1.uk"])[0];
+        assert_eq!(p.title, "News");
+        assert_eq!(p.description, "");
+    }
+
+    #[test]
+    fn does_not_carry_text_over_between_programmes() {
+        let xml = tv(&[
+            programme(
+                "bbc1.uk",
+                "20260101120000 +0000",
+                "20260101130000 +0000",
+                "<title>News</title><desc>The headlines</desc>",
+            ),
+            programme(
+                "bbc1.uk",
+                "20260101130000 +0000",
+                "20260101140000 +0000",
+                "<title>Weather</title>",
+            ),
+        ]);
+        let programmes = parse(&xml, &["bbc1.uk"]);
+        assert_eq!(programmes.len(), 2);
+        assert_eq!(programmes[1].title, "Weather");
+        assert_eq!(programmes[1].description, "");
+    }
+
+    #[test]
+    fn skips_channels_the_playlist_does_not_have() {
+        let xml = tv(&[
+            programme(
+                "bbc1.uk",
+                "20260101120000 +0000",
+                "20260101130000 +0000",
+                "<title>A</title>",
+            ),
+            programme(
+                "itv1.uk",
+                "20260101120000 +0000",
+                "20260101130000 +0000",
+                "<title>B</title>",
+            ),
+        ]);
+        let programmes = parse(&xml, &["bbc1.uk"]);
+        assert_eq!(programmes.len(), 1);
+        assert_eq!(programmes[0].title, "A");
+    }
+
+    #[test]
+    fn matches_channel_ids_after_normalising_both_sides() {
+        let xml = tv(&[programme(
+            "BBCParliament.UK",
+            "20260101120000 +0000",
+            "20260101130000 +0000",
+            "<title>Debate</title>",
+        )]);
+        let programmes = parse(&xml, &["BBCParliament.uk@SD"]);
+        assert_eq!(programmes.len(), 1);
+        assert_eq!(programmes[0].tvg_id, "bbcparliament.uk");
+    }
+
+    #[test]
+    fn keeps_only_programmes_overlapping_the_window() {
+        let xml = tv(&[
+            // Ended before the window.
+            programme(
+                "c",
+                "20251230100000 +0000",
+                "20251230110000 +0000",
+                "<title>Old</title>",
+            ),
+            // Started before the window but still running into it.
+            programme(
+                "c",
+                "20251231113000 +0000",
+                "20251231123000 +0000",
+                "<title>Edge</title>",
+            ),
+            programme(
+                "c",
+                "20260101120000 +0000",
+                "20260101130000 +0000",
+                "<title>Now</title>",
+            ),
+            // Starts after the window.
+            programme(
+                "c",
+                "20260103120000 +0000",
+                "20260103130000 +0000",
+                "<title>Later</title>",
+            ),
+        ]);
+        let titles: Vec<String> = parse(&xml, &["c"]).into_iter().map(|p| p.title).collect();
+        assert_eq!(titles, ["Edge", "Now"]);
+    }
+
+    #[test]
+    fn skips_programmes_with_missing_or_invalid_times() {
+        let xml = tv(&[
+            r#"<programme channel="c" start="20260101120000 +0000"><title>No stop</title></programme>"#
+                .to_string(),
+            r#"<programme channel="c" stop="20260101130000 +0000"><title>No start</title></programme>"#
+                .to_string(),
+            programme("c", "garbage", "20260101130000 +0000", "<title>Bad start</title>"),
+            programme("c", "20260101120000 +0000", "20260101130000 +0000", "<title>Good</title>"),
+        ]);
+        let titles: Vec<String> = parse(&xml, &["c"]).into_iter().map(|p| p.title).collect();
+        assert_eq!(titles, ["Good"]);
+    }
+
+    #[test]
+    fn skips_programmes_without_a_channel() {
+        let xml = tv(&[
+            r#"<programme start="20260101120000 +0000" stop="20260101130000 +0000"><title>Orphan</title></programme>"#
+                .to_string(),
+        ]);
+        assert!(parse(&xml, &["c"]).is_empty());
+    }
+
+    #[test]
+    fn reads_plain_and_gzipped_files() {
+        let xml = tv(&[programme(
+            "c",
+            "20260101120000 +0000",
+            "20260101130000 +0000",
+            "<title>Now</title>",
+        )]);
+        let dir = std::env::temp_dir();
+        let plain = dir.join(format!("iptelly_xmltv_test_{}.xml", std::process::id()));
+        let gzipped = dir.join(format!("iptelly_xmltv_test_{}.xml.gz", std::process::id()));
+        std::fs::write(&plain, &xml).unwrap();
+        let mut encoder = flate2::write::GzEncoder::new(
+            std::fs::File::create(&gzipped).unwrap(),
+            Default::default(),
+        );
+        encoder.write_all(xml.as_bytes()).unwrap();
+        encoder.finish().unwrap();
+
+        for path in [&plain, &gzipped] {
+            let reader = open_reader(path.to_str().unwrap()).unwrap();
+            let programmes =
+                parse_programmes(reader, &ids(&["c"]), NOON - HOUR, NOON + HOUR).unwrap();
+            assert_eq!(programmes.len(), 1, "{}", path.display());
+            assert_eq!(programmes[0].title, "Now");
+        }
+        std::fs::remove_file(plain).unwrap();
+        std::fs::remove_file(gzipped).unwrap();
+    }
+
+    #[test]
+    fn parses_the_samsung_tv_plus_fixture() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/samsung_tvplus_epg.xml.gz"
+        );
+        let programmes = parse_programmes(
+            open_reader(path).unwrap(),
+            &ids(&["AT1100006NI"]),
+            0,
+            i64::MAX,
+        )
+        .unwrap();
+        assert_eq!(programmes.len(), 17);
+        let first = &programmes[0];
+        assert_eq!(first.tvg_id, "at1100006ni");
+        assert_eq!(first.title, "Lucky Dog");
+        assert!(first.description.starts_with("Brandon zügelt"));
+        assert_eq!(first.start_timestamp, 1_790_841_761);
+        assert_eq!(first.end_timestamp, 1_790_843_130);
+    }
 }

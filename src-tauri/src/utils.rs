@@ -383,13 +383,78 @@ pub fn get_user_agent_from_source(source: &Source) -> Result<String> {
 
 #[cfg(test)]
 mod test_utils {
-    use super::sanitize;
+    use super::{get_filename, normalize_tvg_id, sanitize};
 
     #[test]
     fn test_sanitize() {
         assert_eq!(
             "SuperShow Who will win the million".to_string(),
             sanitize("SuperShow: Who will win the million?".to_string())
+        );
+    }
+
+    #[test]
+    fn sanitize_strips_every_illegal_character() {
+        assert_eq!(sanitize(r#"a<b>c:d"e/f\g|h?i*j"#.to_string()), "abcdefghij");
+        assert_eq!(sanitize("a\x00b\x1Fc".to_string()), "abc");
+        assert_eq!(sanitize("Plain name.mkv".to_string()), "Plain name.mkv");
+    }
+
+    #[test]
+    fn normalize_tvg_id_lowercases_and_trims() {
+        assert_eq!(normalize_tvg_id("  BBCOne.UK  "), "bbcone.uk");
+    }
+
+    #[test]
+    fn normalize_tvg_id_strips_quality_suffixes() {
+        for suffix in ["@SD", "@HD", "@FHD", "@UHD", "@4K", "@hd"] {
+            assert_eq!(
+                normalize_tvg_id(&format!("BBCParliament.uk{suffix}")),
+                "bbcparliament.uk"
+            );
+        }
+    }
+
+    #[test]
+    fn normalize_tvg_id_keeps_other_suffixes() {
+        assert_eq!(normalize_tvg_id("Channel.uk@Plus1"), "channel.uk@plus1");
+        assert_eq!(normalize_tvg_id("a@hd.b"), "a@hd.b");
+        assert_eq!(normalize_tvg_id(""), "");
+    }
+
+    #[test]
+    fn get_filename_uses_the_url_extension() {
+        assert_eq!(
+            get_filename(
+                "Movie".to_string(),
+                "http://example.com:8080/movie/u/p/1.mkv".to_string()
+            )
+            .unwrap(),
+            "Movie.mkv"
+        );
+    }
+
+    #[test]
+    fn get_filename_sanitizes_the_channel_name() {
+        assert_eq!(
+            get_filename(
+                "Show: Part 1?".to_string(),
+                "http://example.com/1.ts".to_string()
+            )
+            .unwrap(),
+            "Show Part 1.ts"
+        );
+    }
+
+    #[test]
+    fn get_filename_defaults_to_mp4_for_php_query_urls() {
+        assert_eq!(
+            get_filename(
+                "Live".to_string(),
+                "http://example.com/get.php?username=a&password=b".to_string()
+            )
+            .unwrap(),
+            "Live.mp4"
         );
     }
 }
