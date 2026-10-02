@@ -1,10 +1,10 @@
 import { Component, ElementRef, HostListener, OnInit } from "@angular/core";
+import { invoke } from "@tauri-apps/api/core";
 import { DownloadService } from "../download.service";
+import { ErrorService } from "../error.service";
+import { Channel } from "../models/channel";
 import { Download } from "../models/download";
 import { DownloadHistoryItem } from "../models/downloadHistoryItem";
-import { invoke } from "@tauri-apps/api/core";
-import { Channel } from "../models/channel";
-import { ErrorService } from "../error.service";
 import { formatBytes } from "../utils";
 
 @Component({
@@ -39,7 +39,10 @@ export class DownloadManagerComponent implements OnInit {
     event.preventDefault();
     const rows = this.focusableRows();
     const current = rows.indexOf(document.activeElement as HTMLElement);
-    const next = Math.max(0, Math.min(rows.length - 1, current + (event.key == "ArrowDown" ? 1 : -1)));
+    const next = Math.max(
+      0,
+      Math.min(rows.length - 1, current + (event.key == "ArrowDown" ? 1 : -1)),
+    );
     rows[next]?.focus();
   }
 

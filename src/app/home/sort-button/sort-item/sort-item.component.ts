@@ -1,6 +1,6 @@
 import { Component, Input } from "@angular/core";
-import { SortType, getSortTypeText } from "../../../models/sortType";
 import { MemoryService } from "../../../memory.service";
+import { getSortTypeText, SortType } from "../../../models/sortType";
 
 @Component({
   selector: "app-sort-item",
@@ -13,7 +13,7 @@ export class SortItemComponent {
   @Input()
   sortType?: SortType;
 
-  getText(): String {
+  getText(): string {
     return getSortTypeText(this.sortType);
   }
 

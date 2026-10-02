@@ -10,7 +10,7 @@ export const SORT_TYPES = [
   SortType.provider,
 ];
 
-export function getSortTypeText(sortType?: SortType): String {
+export function getSortTypeText(sortType?: SortType): string {
   switch (sortType) {
     case SortType.alphabeticalAscending:
       return "Alphabetically asc";

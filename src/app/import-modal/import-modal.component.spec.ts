@@ -1,23 +1,22 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from "@angular/core/testing";
 
-import { ImportModalComponent } from './import-modal.component';
+import { ImportModalComponent } from "./import-modal.component";
 
-describe('ImportModalComponent', () => {
+describe("ImportModalComponent", () => {
   let component: ImportModalComponent;
   let fixture: ComponentFixture<ImportModalComponent>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      declarations: [ImportModalComponent]
-    })
-    .compileComponents();
-    
+      declarations: [ImportModalComponent],
+    }).compileComponents();
+
     fixture = TestBed.createComponent(ImportModalComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
   });
 
-  it('should create', () => {
+  it("should create", () => {
     expect(component).toBeTruthy();
   });
 });

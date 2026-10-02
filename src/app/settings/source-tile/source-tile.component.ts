@@ -1,14 +1,14 @@
 import { Component, ElementRef, Input } from "@angular/core";
-import { Source } from "../../models/source";
-import { SourceType } from "../../models/sourceType";
-import { invoke } from "@tauri-apps/api/core";
-import { MemoryService } from "../../memory.service";
-import { EditChannelModalComponent } from "../../edit-channel-modal/edit-channel-modal.component";
 import { NgbModal } from "@ng-bootstrap/ng-bootstrap";
+import { invoke } from "@tauri-apps/api/core";
+import { open, save } from "@tauri-apps/plugin-dialog";
+import { EditChannelModalComponent } from "../../edit-channel-modal/edit-channel-modal.component";
 import { EditGroupModalComponent } from "../../edit-group-modal/edit-group-modal.component";
 import { ImportModalComponent } from "../../import-modal/import-modal.component";
-import { open, save } from "@tauri-apps/plugin-dialog";
+import { MemoryService } from "../../memory.service";
 import { CHANNEL_EXTENSION, FAVS_BACKUP, PLAYLIST_EXTENSION } from "../../models/extensions";
+import { Source } from "../../models/source";
+import { SourceType } from "../../models/sourceType";
 import { sanitizeFileName } from "../../utils";
 
 @Component({
@@ -35,7 +35,7 @@ export class SourceTileComponent {
     public memory: MemoryService,
     private modal: NgbModal,
     private el: ElementRef,
-  ) { }
+  ) {}
 
   get_source_type_name() {
     if (!this.source) return null;
@@ -140,7 +140,7 @@ export class SourceTileComponent {
   }
 
   async share() {
-    let file = await save({
+    const file = await save({
       canCreateDirectories: true,
       title: "Select where to export custom source",
       defaultPath: sanitizeFileName(this.source?.name!) + PLAYLIST_EXTENSION,
@@ -161,14 +161,16 @@ export class SourceTileComponent {
     // the next change detection pass, hence the setTimeout - same pattern
     // used for post-render focus elsewhere (e.g. home.component.ts).
     setTimeout(() => {
-      const input: HTMLInputElement | null = this.el.nativeElement.querySelector('input[name="url"]');
+      const input: HTMLInputElement | null =
+        this.el.nativeElement.querySelector('input[name="url"]');
       if (input) {
         input.focus();
         return;
       }
       // M3U sources have no typeable url once editing - just the read-only
       // path and a "Browse" button, which is the equivalent next action.
-      const browseBtn: HTMLButtonElement | null = this.el.nativeElement.querySelector(".browse-btn");
+      const browseBtn: HTMLButtonElement | null =
+        this.el.nativeElement.querySelector(".browse-btn");
       browseBtn?.focus();
     });
   }

@@ -1,12 +1,12 @@
 import { Component, OnDestroy, OnInit } from "@angular/core";
-import { Subscription, interval } from "rxjs";
+import { interval, Subscription } from "rxjs";
+import { MemoryService } from "../../memory.service";
 import {
   EPG_PAN_STEP_SECONDS,
   EPG_TIMELINE_DURATION_SECONDS,
   epgTimelinePercentFor,
   epgTimelineWindowStart,
 } from "../../models/epgTimelineWindow";
-import { MemoryService } from "../../memory.service";
 
 const TICK_INTERVAL_SECONDS = 30 * 60;
 
@@ -28,7 +28,7 @@ export class EpgTimelineHeaderComponent implements OnInit, OnDestroy {
   private tickSubscription?: Subscription;
   private offsetSubscription?: Subscription;
 
-  constructor(private memory: MemoryService) { }
+  constructor(private memory: MemoryService) {}
 
   ngOnInit(): void {
     this.tickSubscription = interval(30000).subscribe(() => this.updateNow());
@@ -79,7 +79,10 @@ export class EpgTimelineHeaderComponent implements OnInit, OnDestroy {
   }
 
   tickLabel(timestamp: number): string {
-    return new Date(timestamp * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    return new Date(timestamp * 1000).toLocaleTimeString([], {
+      hour: "numeric",
+      minute: "2-digit",
+    });
   }
 
   nowPercent(): number {

@@ -10,31 +10,30 @@ import {
   Renderer2,
   ViewChild,
 } from "@angular/core";
-import { EpgTimelineComponent } from "./epg-timeline/epg-timeline.component";
 import { MatMenuTrigger } from "@angular/material/menu";
-import { Channel } from "../models/channel";
-import { MemoryService } from "../memory.service";
-import { MediaType } from "../models/mediaType";
-import { invoke } from "@tauri-apps/api/core";
-import { ToastrService } from "ngx-toastr";
-import { ErrorService } from "../error.service";
 import { NgbModal } from "@ng-bootstrap/ng-bootstrap";
+import { invoke } from "@tauri-apps/api/core";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { open, save } from "@tauri-apps/plugin-dialog";
+import { ToastrService } from "ngx-toastr";
+import { Subscription, take } from "rxjs";
+import { DeleteGroupModalComponent } from "../delete-group-modal/delete-group-modal.component";
+import { DownloadService } from "../download.service";
 import { EditChannelModalComponent } from "../edit-channel-modal/edit-channel-modal.component";
 import { EditGroupModalComponent } from "../edit-group-modal/edit-group-modal.component";
-import { DeleteGroupModalComponent } from "../delete-group-modal/delete-group-modal.component";
-import { RestreamModalComponent } from "../restream-modal/restream-modal.component";
-import { DownloadService } from "../download.service";
+import { ErrorService } from "../error.service";
+import { MemoryService } from "../memory.service";
+import { Channel } from "../models/channel";
 import { Download } from "../models/download";
-import { SeriesEpisode } from "../models/seriesEpisode";
-import { SeasonDownloadInfo } from "../models/seasonDownloadInfo";
-import { Subscription, take } from "rxjs";
-import { open, save } from "@tauri-apps/plugin-dialog";
 import { CHANNEL_EXTENSION, GROUP_EXTENSION, RECORD_EXTENSION } from "../models/extensions";
-import { getDateFormatted, getExtension, sanitizeFileName } from "../utils";
-import { NodeType, fromMediaType } from "../models/nodeType";
-
+import { MediaType } from "../models/mediaType";
+import { fromMediaType, NodeType } from "../models/nodeType";
+import { SeasonDownloadInfo } from "../models/seasonDownloadInfo";
+import { SeriesEpisode } from "../models/seriesEpisode";
 import { ViewMode } from "../models/viewMode";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { RestreamModalComponent } from "../restream-modal/restream-modal.component";
+import { getDateFormatted, getExtension, sanitizeFileName } from "../utils";
+import { EpgTimelineComponent } from "./epg-timeline/epg-timeline.component";
 
 @Component({
   selector: "app-channel-tile",
@@ -52,7 +51,7 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
     private renderer: Renderer2,
     private download: DownloadService,
     private cdr: ChangeDetectorRef,
-  ) { }
+  ) {}
   private _channel?: Channel;
   // Precomputed once when the channel input is set, instead of a method
   // binding (a Map lookup) that OnPush would otherwise still re-run on
@@ -178,21 +177,24 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
   }
 
   setDownloadGradient(progress: number) {
-    let element = this.el.nativeElement.querySelector(`#tile-${this.id}`);
-    let background = `linear-gradient(to right, green ${progress}%, #343a40 ${progress}%)`;
+    const element = this.el.nativeElement.querySelector(`#tile-${this.id}`);
+    const background = `linear-gradient(to right, green ${progress}%, #343a40 ${progress}%)`;
     this.renderer.setStyle(element, "background", background);
   }
 
   clearDownloadGradient() {
-    let element = this.el.nativeElement.querySelector(`#tile-${this.id}`);
-    let background = "#343a40";
+    const element = this.el.nativeElement.querySelector(`#tile-${this.id}`);
+    const background = "#343a40";
     this.renderer.setStyle(element, "background", background);
   }
 
   async click(record = false) {
     if (this.starting === true) {
       try {
-        await invoke("cancel_play", { sourceId: this.channel?.source_id, channelId: this.channel?.id });
+        await invoke("cancel_play", {
+          sourceId: this.channel?.source_id,
+          channelId: this.channel?.id,
+        });
       } catch (e) {
         this.error.handleError(e);
       }
@@ -226,7 +228,7 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
       });
       return;
     }
-    let file = undefined;
+    let file;
     if (record && (this.memory.IsContainer || this.memory.AlwaysAskSave)) {
       file = await save({
         canCreateDirectories: true,
@@ -297,12 +299,10 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
       await invoke(call, { channelId: this.channel!.id });
       this.channel!.favorite = !wasFavorite;
       if (wasFavorite) {
-        if (this.viewMode == ViewMode.Favorites)
-          this.fade = true;
+        if (this.viewMode == ViewMode.Favorites) this.fade = true;
         this.toastr.success(`${msg} (updates on reload)`);
       } else {
-        if (this.viewMode == ViewMode.Favorites)
-          this.fade = false;
+        if (this.viewMode == ViewMode.Favorites) this.fade = false;
         this.toastr.success(msg);
       }
       this.cdr.markForCheck();
@@ -406,8 +406,8 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
   }
 
   async share() {
-    let entityName = this.channel?.media_type == MediaType.group ? "group" : "channel";
-    let file = await save({
+    const entityName = this.channel?.media_type == MediaType.group ? "group" : "channel";
+    const file = await save({
       canCreateDirectories: true,
       title: `Select where to export ${entityName}`,
       defaultPath:
@@ -494,7 +494,7 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
   }
 
   async downloadVod() {
-    let file = undefined;
+    let file;
     if (this.memory.IsContainer || this.memory.AlwaysAskSave) {
       file = await save({
         canCreateDirectories: true,
@@ -505,10 +505,7 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
         return;
       }
     }
-    let download = await this.download.addDownload(
-      this.channel!.id!.toString(),
-      this.channel!,
-    );
+    const download = await this.download.addDownload(this.channel!.id!.toString(), this.channel!);
     this.downloadSubscribe(download);
     await this.download.download(download.id, file);
   }
@@ -572,7 +569,7 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
   }
 
   getExistingDownload() {
-    let download = this.download.Downloads.get(this.channel!.id!.toString());
+    const download = this.download.Downloads.get(this.channel!.id!.toString());
     if (download) {
       this.setDownloadGradient(download.progress);
       this.downloadSubscribe(download);
@@ -580,7 +577,7 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
   }
 
   downloadSubscribe(download: Download) {
-    let progressUpdate = download.progressUpdate.subscribe((progress) => {
+    const progressUpdate = download.progressUpdate.subscribe((progress) => {
       this.setDownloadGradient(progress);
       if (progress == 100) progressUpdate.unsubscribe();
     });
@@ -597,8 +594,7 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
     try {
       await writeText(this.channel?.url ?? "");
       this.error.success("Copied channel URL");
-    }
-    catch (e) {
+    } catch (e) {
       this.error.handleError(e);
     }
   }

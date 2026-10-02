@@ -1,9 +1,9 @@
 import { Component, OnInit } from "@angular/core";
 import { NgbActiveModal } from "@ng-bootstrap/ng-bootstrap";
-import { EPG } from "../models/epg";
-import { Channel } from "../models/channel";
 import { invoke } from "@tauri-apps/api/core";
 import { MemoryService } from "../memory.service";
+import { Channel } from "../models/channel";
+import { EPG } from "../models/epg";
 
 @Component({
   selector: "app-epg-modal",
@@ -34,11 +34,11 @@ export class EpgModalComponent implements OnInit {
   constructor(
     public activeModal: NgbActiveModal,
     private memory: MemoryService,
-  ) { }
+  ) {}
 
   ngOnInit() {
     invoke("get_epg_ids").then((x) => {
-      let set = new Set(x as Array<string>);
+      const set = new Set(x as Array<string>);
       this.memory.Watched_epgs = set;
     });
     this.loadSchedule();
@@ -96,7 +96,8 @@ export class EpgModalComponent implements OnInit {
     const epg = this.epg[index];
     if (!epg || epg.has_archive || this.catchupChecked.has(index)) return;
     this.catchupChecked.add(index);
-    const canHaveCatchup = this.channel?.tv_archive === true && epg.start_timestamp < Date.now() / 1000;
+    const canHaveCatchup =
+      this.channel?.tv_archive === true && epg.start_timestamp < Date.now() / 1000;
     if (!canHaveCatchup) return;
     try {
       epg.timeshift_url = await invoke("build_timeshift_url", {

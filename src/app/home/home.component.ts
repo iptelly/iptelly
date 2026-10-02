@@ -1,3 +1,6 @@
+import { animate, state, style, transition, trigger } from "@angular/animations";
+import { ListRange } from "@angular/cdk/collections";
+import { CdkVirtualScrollViewport } from "@angular/cdk/scrolling";
 import {
   AfterViewInit,
   Component,
@@ -7,49 +10,45 @@ import {
   OnDestroy,
   ViewChild,
 } from "@angular/core";
-import { CdkVirtualScrollViewport } from "@angular/cdk/scrolling";
-import { ListRange } from "@angular/cdk/collections";
 import { ActivatedRoute, Router } from "@angular/router";
+import { NgbModal } from "@ng-bootstrap/ng-bootstrap";
+import { getVersion } from "@tauri-apps/api/app";
+import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { AllowIn, ShortcutInput } from "ng-keyboard-shortcuts";
+import { ToastrService } from "ngx-toastr";
 import {
-  Subscription,
   debounceTime,
   distinctUntilChanged,
   filter,
   fromEvent,
   map,
+  Subscription,
   skip,
 } from "rxjs";
-import { MemoryService } from "../memory.service";
-import { Channel } from "../models/channel";
-import { ViewMode } from "../models/viewMode";
-import { MediaType } from "../models/mediaType";
-import { ToastrService } from "ngx-toastr";
-import { FocusArea, FocusAreaPrefix } from "../models/focusArea";
-import { invoke } from "@tauri-apps/api/core";
-import { Source } from "../models/source";
-import { Filters } from "../models/filters";
-import { SourceType } from "../models/sourceType";
-import { animate, state, style, transition, trigger } from "@angular/animations";
+import { DownloadManagerComponent } from "../download-manager/download-manager.component";
 import { ErrorService } from "../error.service";
-import { Settings } from "../models/settings";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { SortType } from "../models/sortType";
-import { getVersion } from "@tauri-apps/api/app";
-import { NgbModal } from "@ng-bootstrap/ng-bootstrap";
-import { WhatsNewModalComponent } from "../whats-new-modal/whats-new-modal.component";
+import { MemoryService } from "../memory.service";
+import { BulkActionType } from "../models/bulkActionType";
+import { Channel } from "../models/channel";
+import { Filters } from "../models/filters";
+import { FocusArea, FocusAreaPrefix } from "../models/focusArea";
 import { LAST_SEEN_VERSION } from "../models/localStorage";
-import { isInputFocused } from "../utils";
+import { MediaType } from "../models/mediaType";
 import { Node } from "../models/node";
 import { NodeType } from "../models/nodeType";
-import { Stack } from "../models/stack";
 import { RailItem } from "../models/railItem";
+import { Settings } from "../models/settings";
+import { SortType } from "../models/sortType";
+import { Source } from "../models/source";
+import { SourceType } from "../models/sourceType";
+import { Stack } from "../models/stack";
+import { ViewMode } from "../models/viewMode";
+import { isInputFocused } from "../utils";
+import { WhatsNewModalComponent } from "../whats-new-modal/whats-new-modal.component";
+import { DownloadSidebarComponent } from "./download-sidebar/download-sidebar.component";
 import { NavRailComponent } from "./nav-rail/nav-rail.component";
 import { PlaylistSidebarComponent } from "./playlist-sidebar/playlist-sidebar.component";
-import { DownloadSidebarComponent } from "./download-sidebar/download-sidebar.component";
-import { DownloadManagerComponent } from "../download-manager/download-manager.component";
-
-import { BulkActionType } from '../models/bulkActionType';
 
 @Component({
   selector: "app-home",
@@ -136,7 +135,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   reachedMax = false;
   readonly PAGE_SIZE = 36;
   channelsVisible = true;
-  prevSearchValue: String = "";
+  prevSearchValue: string = "";
   loading = false;
   nodeStack: Stack = new Stack();
   showScrollTop = false;
@@ -243,19 +242,19 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   }
 
   getSources() {
-    let get_settings = invoke("get_settings");
-    let get_sources = invoke("get_sources");
-    let get_has_adult_pin = invoke("has_adult_pin");
+    const get_settings = invoke("get_settings");
+    const get_sources = invoke("get_sources");
+    const get_has_adult_pin = invoke("has_adult_pin");
     Promise.all([get_settings, get_sources, get_has_adult_pin])
       .then((data) => {
-        let settings = data[0] as Settings;
-        let sources = data[1] as Source[];
+        const settings = data[0] as Settings;
+        const sources = data[1] as Source[];
         if (settings.zoom) getCurrentWebview().setZoom(Math.trunc(settings.zoom! * 100) / 10000);
         this.memory.trayEnabled = settings.enable_tray_icon ?? true;
         this.memory.AlwaysAskSave = settings.always_ask_save ?? false;
         this.memory.LightweightMode = settings.lightweight_mode ?? false;
         this.memory.AdultPinSet = data[2] as boolean;
-        this.memory.Sources = new Map(sources.filter((x) => x.enabled).map(s => [s.id!, s]));
+        this.memory.Sources = new Map(sources.filter((x) => x.enabled).map((s) => [s.id!, s]));
         if (sources.length == 0) this.reset();
         else {
           getVersion().then((version) => {
@@ -290,8 +289,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
           // distinguish Favorites/History and left Movies/Series
           // indistinguishable from Channels.
           const defaultRailItem = settings.default_view ?? RailItem.Channels;
-          this.currentRailItem =
-            defaultRailItem in RailItem ? defaultRailItem : RailItem.Channels;
+          this.currentRailItem = defaultRailItem in RailItem ? defaultRailItem : RailItem.Channels;
           // Allows navigating in from another routed page (e.g. Manage
           // Categories' nav rail) directly to a specific view, instead of
           // always landing back on the configured default. Number(null) is
@@ -479,7 +477,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
       } else {
         this.filters!.page = 1;
       }
-      let channels: Channel[] = await invoke("search", { filters: this.filters });
+      const channels: Channel[] = await invoke("search", { filters: this.filters });
       if (token !== this.loadToken) return;
       if (!more) {
         this.channels = channels;
@@ -557,7 +555,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
       } else {
         this.favMediaFilters.page = 1;
       }
-      let channels: Channel[] = await invoke("search", { filters: this.favMediaFilters });
+      const channels: Channel[] = await invoke("search", { filters: this.favMediaFilters });
       if (token !== this.favMediaLoadToken) return;
       if (!more) {
         this.favMediaChannels = channels;
@@ -745,7 +743,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   }
 
   updateMediaTypes(mediaType: MediaType) {
-    let index = this.filters!.media_types.indexOf(mediaType);
+    const index = this.filters!.media_types.indexOf(mediaType);
     if (index == -1) this.filters!.media_types.push(mediaType);
     else this.filters!.media_types.splice(index, 1);
     this.load();
@@ -1096,7 +1094,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
       this.downloadListFocused()
     )
       return;
-    let lowSize = this.currentWindowSize < 768;
+    const lowSize = this.currentWindowSize < 768;
     if (this.memory.currentContextMenu?.menuOpen || this.memory.ModalRef) {
       return;
     }
@@ -1271,7 +1269,11 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   }
 
   anyXtream() {
-    return Array.from(this.memory.Sources.values()).findIndex((x) => x.source_type == SourceType.Xtream) != -1;
+    return (
+      Array.from(this.memory.Sources.values()).findIndex(
+        (x) => x.source_type == SourceType.Xtream,
+      ) != -1
+    );
   }
 
   // The Tab-stops, in order - Playlist is skipped when the sidebar isn't
@@ -1292,7 +1294,8 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   cycleFocusArea(forward: boolean) {
     const order = this.focusOrder();
     const from = order.indexOf(this.focusArea);
-    const next = order[((from == -1 ? 0 : from) + (forward ? 1 : -1) + order.length) % order.length];
+    const next =
+      order[((from == -1 ? 0 : from) + (forward ? 1 : -1) + order.length) % order.length];
     this.focusArea = next;
     this.focus = 0;
     switch (next) {

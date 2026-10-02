@@ -1,7 +1,7 @@
 import { Component } from "@angular/core";
 import { NgbActiveModal } from "@ng-bootstrap/ng-bootstrap";
-import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import { MemoryService } from "../memory.service";
 
 @Component({
@@ -30,8 +30,11 @@ export class ImportModalComponent {
     }
     this.nameOverride = this.nameOverride?.trim();
     if (this.nameOverride == "") this.nameOverride = undefined;
-    let fail = await this.memory.tryIPC("Successfully imported file", "Failed to import file", () =>
-      invoke("import", { sourceId: this.source_id, path: file, nameOverride: this.nameOverride }),
+    const fail = await this.memory.tryIPC(
+      "Successfully imported file",
+      "Failed to import file",
+      () =>
+        invoke("import", { sourceId: this.source_id, path: file, nameOverride: this.nameOverride }),
     );
     this.memory.RefreshSources.next(true);
     if (!fail) this.activeModal.close("close");

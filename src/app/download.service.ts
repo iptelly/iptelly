@@ -1,12 +1,12 @@
 import { Injectable, NgZone } from "@angular/core";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { Subject } from "rxjs";
+import { ErrorService } from "./error.service";
+import { Channel } from "./models/channel";
 import { Download } from "./models/download";
 import { DownloadHistoryItem } from "./models/downloadHistoryItem";
 import { DownloadProgress } from "./models/downloadProgress";
-import { Subject } from "rxjs";
-import { invoke } from "@tauri-apps/api/core";
-import { ErrorService } from "./error.service";
-import { listen } from "@tauri-apps/api/event";
-import { Channel } from "./models/channel";
 import { getExtension, sanitizeFileName } from "./utils";
 
 // A "Download Series"/"Download Season" batch - owns its own sequential
@@ -26,7 +26,7 @@ export type DownloadCategory = "queued" | "completed" | "cancelled";
   providedIn: "root",
 })
 export class DownloadService {
-  Downloads: Map<String, Download> = new Map();
+  Downloads: Map<string, Download> = new Map();
   Batches: Map<string, SeriesBatch> = new Map();
   History: DownloadHistoryItem[] = [];
   // Shared with download-sidebar.component.ts (a sibling, not a parent/child
@@ -86,7 +86,7 @@ export class DownloadService {
     channel: Channel,
     status: Download["status"] = "downloading",
   ): Promise<Download> {
-    let download: Download = {
+    const download: Download = {
       channel: channel,
       progress: 0,
       complete: new Subject(),
@@ -108,7 +108,7 @@ export class DownloadService {
     return download;
   }
 
-  async abortDownload(id: String) {
+  async abortDownload(id: string) {
     try {
       const download = this.Downloads.get(id);
       await invoke("abort_download", { downloadId: id });
@@ -173,8 +173,8 @@ export class DownloadService {
   // status 'paused' rather than being removed when paused, so it can be
   // resumed later - only removed from the active map on completion,
   // cancellation, or failure.
-  async download(id: String, path?: string) {
-    let download = this.Downloads.get(id)!;
+  async download(id: string, path?: string) {
+    const download = this.Downloads.get(id)!;
     try {
       await invoke("download", {
         downloadId: download.id,
@@ -259,7 +259,11 @@ export class DownloadService {
       // large batch partway through - still shows up in History as
       // cancelled instead of just disappearing with no trace.
       try {
-        await invoke("queue_download", { downloadId: entry.id, channel: entry.channel, path: entry.path });
+        await invoke("queue_download", {
+          downloadId: entry.id,
+          channel: entry.channel,
+          path: entry.path,
+        });
       } catch (e) {
         console.error(e);
       }

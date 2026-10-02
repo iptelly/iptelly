@@ -1,10 +1,10 @@
 import { Component, ElementRef, EventEmitter, HostListener, Input, Output } from "@angular/core";
-import { invoke } from "@tauri-apps/api/core";
 import { NgbModal } from "@ng-bootstrap/ng-bootstrap";
-import { RailItem } from "../../models/railItem";
-import { MemoryService } from "../../memory.service";
-import { ErrorService } from "../../error.service";
+import { invoke } from "@tauri-apps/api/core";
 import { AdultPinModalComponent } from "../../adult-pin-modal/adult-pin-modal.component";
+import { ErrorService } from "../../error.service";
+import { MemoryService } from "../../memory.service";
+import { RailItem } from "../../models/railItem";
 
 @Component({
   selector: "app-nav-rail",
@@ -27,7 +27,10 @@ export class NavRailComponent {
     event.preventDefault();
     const rows = this.focusableRows();
     const current = rows.indexOf(document.activeElement as HTMLElement);
-    const next = Math.max(0, Math.min(rows.length - 1, current + (event.key == "ArrowDown" ? 1 : -1)));
+    const next = Math.max(
+      0,
+      Math.min(rows.length - 1, current + (event.key == "ArrowDown" ? 1 : -1)),
+    );
     rows[next]?.focus();
   }
 

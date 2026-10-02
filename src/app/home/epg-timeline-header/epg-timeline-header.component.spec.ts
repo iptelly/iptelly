@@ -1,23 +1,22 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from "@angular/core/testing";
 
-import { EpgTimelineHeaderComponent } from './epg-timeline-header.component';
+import { EpgTimelineHeaderComponent } from "./epg-timeline-header.component";
 
-describe('EpgTimelineHeaderComponent', () => {
+describe("EpgTimelineHeaderComponent", () => {
   let component: EpgTimelineHeaderComponent;
   let fixture: ComponentFixture<EpgTimelineHeaderComponent>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      declarations: [EpgTimelineHeaderComponent]
-    })
-    .compileComponents();
-    
+      declarations: [EpgTimelineHeaderComponent],
+    }).compileComponents();
+
     fixture = TestBed.createComponent(EpgTimelineHeaderComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
   });
 
-  it('should create', () => {
+  it("should create", () => {
     expect(component).toBeTruthy();
   });
 });

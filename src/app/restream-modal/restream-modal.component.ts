@@ -1,13 +1,13 @@
 import { Component, NgZone, OnDestroy, OnInit } from "@angular/core";
-import { Channel } from "../models/channel";
-import { invoke } from "@tauri-apps/api/core";
-import { ErrorService } from "../error.service";
-import { NetworkInfo } from "../models/networkInfo";
 import { NgbActiveModal } from "@ng-bootstrap/ng-bootstrap";
-import { UnlistenFn, listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
+import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
-import { sanitizeFileName } from "../utils";
+import { ErrorService } from "../error.service";
+import { Channel } from "../models/channel";
 import { CHANNEL_EXTENSION } from "../models/extensions";
+import { NetworkInfo } from "../models/networkInfo";
+import { sanitizeFileName } from "../utils";
 
 @Component({
   selector: "app-restream-modal",

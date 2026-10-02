@@ -1,14 +1,14 @@
-import { Component, OnInit } from '@angular/core';
-import { NgbActiveModal } from '@ng-bootstrap/ng-bootstrap';
-import { Group } from '../models/group';
-import { ErrorService } from '../error.service';
-import { invoke } from '@tauri-apps/api/core';
-import { MemoryService } from '../memory.service';
+import { Component, OnInit } from "@angular/core";
+import { NgbActiveModal } from "@ng-bootstrap/ng-bootstrap";
+import { invoke } from "@tauri-apps/api/core";
+import { ErrorService } from "../error.service";
+import { MemoryService } from "../memory.service";
+import { Group } from "../models/group";
 
 @Component({
-  selector: 'app-edit-group-modal',
-  templateUrl: './edit-group-modal.component.html',
-  styleUrl: './edit-group-modal.component.css'
+  selector: "app-edit-group-modal",
+  templateUrl: "./edit-group-modal.component.html",
+  styleUrl: "./edit-group-modal.component.css",
 })
 export class EditGroupModalComponent {
   editing: boolean = false;
@@ -16,16 +16,16 @@ export class EditGroupModalComponent {
   loading = false;
   originalName?: string;
 
-  constructor(public activeModal: NgbActiveModal, private error: ErrorService, private memory: MemoryService) {
-
-  }
+  constructor(
+    public activeModal: NgbActiveModal,
+    private error: ErrorService,
+    private memory: MemoryService,
+  ) {}
 
   save() {
     this.loading = true;
-    if (this.editing)
-      this.edit_group();
-    else
-      this.add_group();
+    if (this.editing) this.edit_group();
+    else this.add_group();
     this.loading = false;
   }
 
@@ -41,8 +41,7 @@ export class EditGroupModalComponent {
       this.error.success("Successfully updated category");
       this.memory.Refresh.next(true);
       this.activeModal.close("close");
-    }
-    catch (e) {
+    } catch (e) {
       this.error.handleError(e);
     }
   }
@@ -50,12 +49,11 @@ export class EditGroupModalComponent {
   async add_group() {
     try {
       this.sanitize();
-      await invoke("add_custom_group", { group: this.group })
+      await invoke("add_custom_group", { group: this.group });
       this.error.success("Successfully added category");
       this.memory.RefreshSources.next(true);
       this.activeModal.close("close");
-    }
-    catch (e) {
+    } catch (e) {
       this.error.handleError(e);
     }
   }

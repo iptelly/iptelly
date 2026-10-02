@@ -12,16 +12,16 @@ import {
   SimpleChanges,
   ViewChild,
 } from "@angular/core";
-import { invoke } from "@tauri-apps/api/core";
 import { MatMenuTrigger } from "@angular/material/menu";
-import { MemoryService } from "../../memory.service";
+import { invoke } from "@tauri-apps/api/core";
 import { ErrorService } from "../../error.service";
+import { MemoryService } from "../../memory.service";
 import { Channel } from "../../models/channel";
-import { Source } from "../../models/source";
 import { MediaType } from "../../models/mediaType";
-import { ViewMode } from "../../models/viewMode";
 import { NodeType } from "../../models/nodeType";
 import { SortType } from "../../models/sortType";
+import { Source } from "../../models/source";
+import { ViewMode } from "../../models/viewMode";
 
 const MIN_WIDTH_PX = 216; // 13.5rem
 const MAX_WIDTH_PX = 416; // 26rem
@@ -69,7 +69,10 @@ export class PlaylistSidebarComponent implements OnInit, OnChanges, AfterViewIni
 
   private handleDragMove(event: MouseEvent) {
     const delta = event.clientX - this.dragStartX;
-    this.manualWidthPx = Math.min(MAX_WIDTH_PX, Math.max(MIN_WIDTH_PX, this.dragStartWidth + delta));
+    this.manualWidthPx = Math.min(
+      MAX_WIDTH_PX,
+      Math.max(MIN_WIDTH_PX, this.dragStartWidth + delta),
+    );
   }
 
   private handleDragEnd() {
@@ -82,7 +85,7 @@ export class PlaylistSidebarComponent implements OnInit, OnChanges, AfterViewIni
     public memory: MemoryService,
     private error: ErrorService,
     private el: ElementRef,
-  ) { }
+  ) {}
 
   // Self-contained keyboard navigation for this sidebar - HomeComponent's
   // Tab-cycling only needs to know how to enter (focusFirstRow) and leave
@@ -103,7 +106,8 @@ export class PlaylistSidebarComponent implements OnInit, OnChanges, AfterViewIni
       const source = this.sources.find((s) => s.id === sourceId);
       if (!source) return;
       const expanded = this.expanded.has(source.id!);
-      if ((event.key == "ArrowRight" && expanded) || (event.key == "ArrowLeft" && !expanded)) return;
+      if ((event.key == "ArrowRight" && expanded) || (event.key == "ArrowLeft" && !expanded))
+        return;
       event.preventDefault();
       this.toggleExpand(source);
       return;
@@ -112,7 +116,10 @@ export class PlaylistSidebarComponent implements OnInit, OnChanges, AfterViewIni
     event.preventDefault();
     const rows = this.focusableRows();
     const current = rows.indexOf(document.activeElement as HTMLElement);
-    const next = Math.max(0, Math.min(rows.length - 1, current + (event.key == "ArrowDown" ? 1 : -1)));
+    const next = Math.max(
+      0,
+      Math.min(rows.length - 1, current + (event.key == "ArrowDown" ? 1 : -1)),
+    );
     rows[next]?.focus();
   }
 
@@ -167,7 +174,11 @@ export class PlaylistSidebarComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   isSourceSelected(source: Source): boolean {
-    return !!this.selectedSourceIds && this.selectedSourceIds.length === 1 && this.selectedSourceIds[0] === source.id;
+    return (
+      !!this.selectedSourceIds &&
+      this.selectedSourceIds.length === 1 &&
+      this.selectedSourceIds[0] === source.id
+    );
   }
 
   selectAllSources() {
@@ -196,7 +207,7 @@ export class PlaylistSidebarComponent implements OnInit, OnChanges, AfterViewIni
       let allGroups: Channel[] = [];
       let page = 1;
       while (true) {
-        let groups: Channel[] = await invoke("search", {
+        const groups: Channel[] = await invoke("search", {
           filters: {
             source_ids: [source.id!],
             media_types: this.mediaType != undefined ? [this.mediaType] : [],
@@ -260,7 +271,11 @@ export class PlaylistSidebarComponent implements OnInit, OnChanges, AfterViewIni
     try {
       await invoke("hide_group", { id: group.id, hidden: true });
       const list = this.categoriesBySource.get(group.source_id!);
-      if (list) this.categoriesBySource.set(group.source_id!, list.filter((g) => g.id !== group.id));
+      if (list)
+        this.categoriesBySource.set(
+          group.source_id!,
+          list.filter((g) => g.id !== group.id),
+        );
     } catch (e) {
       this.error.handleError(e);
     }

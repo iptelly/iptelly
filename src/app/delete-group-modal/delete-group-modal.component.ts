@@ -1,17 +1,17 @@
-import { Component } from '@angular/core';
-import { NgbActiveModal, NgbTypeaheadSelectItemEvent } from '@ng-bootstrap/ng-bootstrap';
-import { debounceTime, distinctUntilChanged, filter, from, map, Observable, switchMap } from 'rxjs';
-import { IdName } from '../models/idName';
-import { invoke } from '@tauri-apps/api/core';
-import { Channel } from '../models/channel';
-import { Group } from '../models/group';
-import { ErrorService } from '../error.service';
-import { MemoryService } from '../memory.service';
+import { Component } from "@angular/core";
+import { NgbActiveModal, NgbTypeaheadSelectItemEvent } from "@ng-bootstrap/ng-bootstrap";
+import { invoke } from "@tauri-apps/api/core";
+import { debounceTime, distinctUntilChanged, filter, from, map, Observable, switchMap } from "rxjs";
+import { ErrorService } from "../error.service";
+import { MemoryService } from "../memory.service";
+import { Channel } from "../models/channel";
+import { Group } from "../models/group";
+import { IdName } from "../models/idName";
 
 @Component({
-  selector: 'app-delete-group-modal',
-  templateUrl: './delete-group-modal.component.html',
-  styleUrl: './delete-group-modal.component.css'
+  selector: "app-delete-group-modal",
+  templateUrl: "./delete-group-modal.component.html",
+  styleUrl: "./delete-group-modal.component.css",
 })
 export class DeleteGroupModalComponent {
   loading: boolean = false;
@@ -22,16 +22,21 @@ export class DeleteGroupModalComponent {
     text$.pipe(
       debounceTime(200),
       distinctUntilChanged(),
-      switchMap(term => {
-        let promise: Promise<IdName[]> = invoke("group_auto_complete", { query: term, sourceId: this.group?.source_id });
-        return from(promise).pipe(map(x => x.filter(y => y.id != this.group?.id)));
+      switchMap((term) => {
+        const promise: Promise<IdName[]> = invoke("group_auto_complete", {
+          query: term,
+          sourceId: this.group?.source_id,
+        });
+        return from(promise).pipe(map((x) => x.filter((y) => y.id != this.group?.id)));
       }),
     );
   formatter = (result: IdName) => result.name;
 
-  constructor(public activeModal: NgbActiveModal, private error: ErrorService, private memory: MemoryService) {
-
-  }
+  constructor(
+    public activeModal: NgbActiveModal,
+    private error: ErrorService,
+    private memory: MemoryService,
+  ) {}
 
   selectGroup(e: NgbTypeaheadSelectItemEvent) {
     this.new_group_id = (e.item as IdName).id;
@@ -46,12 +51,15 @@ export class DeleteGroupModalComponent {
   async delete() {
     this.loading = true;
     try {
-      await invoke("delete_custom_group", { id: this.group?.id, newId: this.new_group_id, doChannelsUpdate: true });
+      await invoke("delete_custom_group", {
+        id: this.group?.id,
+        newId: this.new_group_id,
+        doChannelsUpdate: true,
+      });
       this.error.success("Successfully deleted category");
       this.memory.Refresh.next(true);
       this.activeModal.close("close");
-    }
-    catch (e) {
+    } catch (e) {
       this.error.handleError(e);
     }
     this.loading = false;

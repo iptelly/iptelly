@@ -1,6 +1,6 @@
 import { Component, Input, ViewChild } from "@angular/core";
-import { MemoryService } from "../../memory.service";
 import { MatMenuTrigger } from "@angular/material/menu";
+import { MemoryService } from "../../memory.service";
 import { SORT_TYPES, SortType } from "../../models/sortType";
 
 @Component({

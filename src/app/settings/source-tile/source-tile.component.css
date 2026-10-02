@@ -1,126 +1,126 @@
 .source {
-    border-radius: var(--radius-md);
-    background-color: var(--surface-2);
-    width: 100%;
-    padding: 1rem;
-    position: relative;
+  border-radius: var(--radius-md);
+  background-color: var(--surface-2);
+  width: 100%;
+  padding: 1rem;
+  position: relative;
 }
 
 .thin-line {
-    height: 1px;
-    background-color: var(--border-subtle);
-    width: 100%;
-    margin: 0;
+  height: 1px;
+  background-color: var(--border-subtle);
+  width: 100%;
+  margin: 0;
 }
 
 .field {
-    min-width: 12rem; 
-    display: inline-block;
+  min-width: 12rem;
+  display: inline-block;
 }
 
 .eye {
-    width: 1.5rem;
-    cursor: pointer;
-    transition: transform 0.3s ease;
-    user-select: none;
+  width: 1.5rem;
+  cursor: pointer;
+  transition: transform 0.3s ease;
+  user-select: none;
 }
 
 .eye:hover {
-    transform: scale(125%)
+  transform: scale(125%);
 }
 
 button .refresh {
-    display: inline;
-    height: 1.5rem;
-    width: 1.5rem;
-    transition: transform 0.3s ease;
-  }
-  
-  button:hover .refresh {
-    transform: rotate(360deg);
-  }
+  display: inline;
+  height: 1.5rem;
+  width: 1.5rem;
+  transition: transform 0.3s ease;
+}
+
+button:hover .refresh {
+  transform: rotate(360deg);
+}
 
 button .trash {
-    height: 1.5rem;
-    width: 1.5rem;
-    overflow: visible;
+  height: 1.5rem;
+  width: 1.5rem;
+  overflow: visible;
 }
 
 button .trash-lid {
-    transition: transform 0.3s ease;
+  transition: transform 0.3s ease;
 }
 
 button:hover .trash-lid {
-    transform: translateY(-15%);
+  transform: translateY(-15%);
 }
 
 .wrap-text {
-    overflow: hidden;
-    overflow-wrap: break-word;
+  overflow: hidden;
+  overflow-wrap: break-word;
 }
 
 .check-disabled {
-    position: absolute;
-    height: 3rem;
-    width: 3rem;
-    right: 1rem;
-    top: 50%;
-    transform: translateY(-50%);
+  position: absolute;
+  height: 3rem;
+  width: 3rem;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .check-btn {
-    /* Vertically centered via top/bottom auto-margins rather than
+  /* Vertically centered via top/bottom auto-margins rather than
        transform: translateY(-50%) - this is the only focusable control on
        the page that's absolutely positioned, and combining that with a
        persistent transform kept it unreachable via keyboard focus in
        WebKitGTK even though the same element worked fine in Chromium. */
-    position: absolute;
-    height: 3rem;
-    width: 3rem;
-    right: 1rem;
-    top: 0;
-    bottom: 0;
-    margin: auto 0;
-    cursor: pointer;
-    transition: transform 0.3s ease;
-    color: white;
-    background: none;
-    border: none;
-    padding: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  position: absolute;
+  height: 3rem;
+  width: 3rem;
+  right: 1rem;
+  top: 0;
+  bottom: 0;
+  margin: auto 0;
+  cursor: pointer;
+  transition: transform 0.3s ease;
+  color: white;
+  background: none;
+  border: none;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .check-btn:hover {
-    transform: scale(125%)
+  transform: scale(125%);
 }
 
 .check-btn:focus {
-    outline: none;
-    box-shadow: 0 0 0 0.2rem rgba(109, 106, 240, 0.45);
-    border-radius: var(--radius-sm);
+  outline: none;
+  box-shadow: 0 0 0 0.2rem rgba(109, 106, 240, 0.45);
+  border-radius: var(--radius-sm);
 }
 
 .check {
-    height: 100%;
-    width: 100%;
+  height: 100%;
+  width: 100%;
 }
 
 button .pen {
-    width: 1.5rem;
-    height: 1.5rem;
-    transition: transform 0.3s ease;
+  width: 1.5rem;
+  height: 1.5rem;
+  transition: transform 0.3s ease;
 }
 
 button:hover .pen {
-    transform: scale(125%);
+  transform: scale(125%);
 }
 
 .last-updated {
-    position: absolute;
-    top: 10px;
-    right: 15px;
-    opacity: 0.5;
-    font-size: 0.8em;
+  position: absolute;
+  top: 10px;
+  right: 15px;
+  opacity: 0.5;
+  font-size: 0.8em;
 }

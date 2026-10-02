@@ -1,91 +1,90 @@
 .page-wrapper {
-    /* A plain margin-left here would fight the inner .container's own
+  /* A plain margin-left here would fight the inner .container's own
        Bootstrap auto-centering (both set margin-left on the same box) and
        still center against the full viewport width rather than the space
        actually left of the fixed nav rail. Shrinking the wrapper's width
        to match, instead, gives the container the right box to center
        itself within. */
-    margin-left: 3.75rem;
-    width: calc(100% - 3.75rem);
+  margin-left: 3.75rem;
+  width: calc(100% - 3.75rem);
 }
 
 .author {
-    text-align: center;
-    font-size: 1rem;
+  text-align: center;
+  font-size: 1rem;
 }
 
 a {
-    text-decoration: none;
+  text-decoration: none;
 }
 
 .btn.disabled {
-    pointer-events: auto !important;
+  pointer-events: auto !important;
 }
 
 button .refresh {
-    display: inline;
-    height: 1.5rem;
-    width: 1.5rem;
-    transition: transform 0.3s ease;
-  }
-  
-  button:hover .refresh {
-    transform: rotate(360deg);
-  }
+  display: inline;
+  height: 1.5rem;
+  width: 1.5rem;
+  transition: transform 0.3s ease;
+}
+
+button:hover .refresh {
+  transform: rotate(360deg);
+}
 
 button .plus {
-    width: 1.5rem;
-    height: 1.5rem;
-    transition: transform 0.3s ease;
+  width: 1.5rem;
+  height: 1.5rem;
+  transition: transform 0.3s ease;
 }
 
 button:hover .plus {
-    transform: scale(125%);
+  transform: scale(125%);
 }
 
 button .nuke {
-    width: 1.5rem;
-    height: 1.5rem;
-    transition: transform 0.3s ease;
+  width: 1.5rem;
+  height: 1.5rem;
+  transition: transform 0.3s ease;
 }
 
 button:hover .nuke {
-    transform: scale(125%);
+  transform: scale(125%);
 }
 
 button .history {
-    width: 1.5rem;
-    height: 1.5rem;
-    transition: transform 0.3s ease;
+  width: 1.5rem;
+  height: 1.5rem;
+  transition: transform 0.3s ease;
 }
 
 button:hover .history {
-    transform: scale(125%);
+  transform: scale(125%);
 }
 
 .folder {
-    height: 1rem;
-    width: 1rem;
+  height: 1rem;
+  width: 1rem;
 }
 
 .volume-row {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .volume-row .form-range {
-    flex: 1;
+  flex: 1;
 }
 
 .volume-value {
-    min-width: 3rem;
-    text-align: right;
-    color: var(--text-secondary);
-    font-variant-numeric: tabular-nums;
+  min-width: 3rem;
+  text-align: right;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
 .compact-input {
-    width: 10rem;
+  width: 10rem;
 }
-

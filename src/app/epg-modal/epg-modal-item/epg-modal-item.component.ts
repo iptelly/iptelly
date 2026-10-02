@@ -1,15 +1,15 @@
 import { Component, Input, NgZone, OnDestroy } from "@angular/core";
-import { EPG } from "../../models/epg";
-import { MemoryService } from "../../memory.service";
 import { invoke } from "@tauri-apps/api/core";
-import { EPGNotify } from "../../models/epgNotify";
-import { ErrorService } from "../../error.service";
-import { Channel } from "../../models/channel";
-import { MediaType } from "../../models/mediaType";
-import { DownloadService } from "../../download.service";
-import { Subscription, take } from "rxjs";
-import { Download } from "../../models/download";
 import { save } from "@tauri-apps/plugin-dialog";
+import { Subscription, take } from "rxjs";
+import { DownloadService } from "../../download.service";
+import { ErrorService } from "../../error.service";
+import { MemoryService } from "../../memory.service";
+import { Channel } from "../../models/channel";
+import { Download } from "../../models/download";
+import { EPG } from "../../models/epg";
+import { EPGNotify } from "../../models/epgNotify";
+import { MediaType } from "../../models/mediaType";
 import { getDateFormatted, getExtension, sanitizeFileName } from "../../utils";
 
 @Component({
@@ -23,7 +23,7 @@ export class EpgModalItemComponent implements OnDestroy {
     private error: ErrorService,
     private download: DownloadService,
     private ngZone: NgZone,
-  ) { }
+  ) {}
   @Input()
   epg?: EPG;
   @Input()
@@ -37,7 +37,7 @@ export class EpgModalItemComponent implements OnDestroy {
   subscriptions: Subscription[] = [];
 
   ngAfterViewInit(): void {
-    let download = this.download.Downloads.get(this.getDownloadId());
+    const download = this.download.Downloads.get(this.getDownloadId());
     if (download) {
       this.downloadSubscribe(download);
     }
@@ -81,7 +81,7 @@ export class EpgModalItemComponent implements OnDestroy {
   async timeshift() {
     if (this.playing) return;
     this.playing = true;
-    let channel: Channel = {
+    const channel: Channel = {
       id: -1,
       url: this.epg?.timeshift_url,
       name: this.epg?.title,
@@ -112,7 +112,7 @@ export class EpgModalItemComponent implements OnDestroy {
   }
 
   async downloadTimeshift() {
-    let file = undefined;
+    let file;
     if (this.memory.IsContainer || this.memory.AlwaysAskSave) {
       file = await save({
         canCreateDirectories: true,
@@ -124,7 +124,7 @@ export class EpgModalItemComponent implements OnDestroy {
       }
     }
     if (this.downloading()) return;
-    let channel: Channel = {
+    const channel: Channel = {
       id: this.channelId,
       url: this.epg?.timeshift_url,
       name: this.epg?.title,
@@ -133,16 +133,13 @@ export class EpgModalItemComponent implements OnDestroy {
       source_id: this.sourceId,
       is_adult: false,
     };
-    let download = await this.download.addDownload(
-      this.getDownloadId(),
-      channel,
-    );
+    const download = await this.download.addDownload(this.getDownloadId(), channel);
     this.downloadSubscribe(download);
     await this.download.download(download.id, file);
   }
 
   downloadSubscribe(download: Download) {
-    let progressUpdate = download.progressUpdate.subscribe((progress) => {
+    const progressUpdate = download.progressUpdate.subscribe((progress) => {
       this.ngZone.run(() => {
         this.progress = Math.trunc(progress);
       });

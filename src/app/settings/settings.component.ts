@@ -1,22 +1,22 @@
 import { Component, ElementRef, HostListener, ViewChild } from "@angular/core";
-import { debounceTime, distinctUntilChanged, fromEvent, map, Subscription } from "rxjs";
-import { Settings } from "../models/settings";
-import { invoke } from "@tauri-apps/api/core";
 import { Router } from "@angular/router";
-import { open, save } from "@tauri-apps/plugin-dialog";
-import { APP_DATA_BACKUP } from "../models/extensions";
-import { Source } from "../models/source";
-import { MemoryService } from "../memory.service";
 import { NgbModal } from "@ng-bootstrap/ng-bootstrap";
-import { ConfirmDeleteModalComponent } from "../confirm-delete-modal/confirm-delete-modal.component";
-import { SORT_TYPES, SortType, getSortTypeText } from "../models/sortType";
-import { RailItem } from "../models/railItem";
-import { ThemeService } from "../theme.service";
-import { NetworkInterface } from "../models/networkInterface";
-import { ErrorService } from "../error.service";
+import { invoke } from "@tauri-apps/api/core";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { ToastrService } from "ngx-toastr";
+import { debounceTime, distinctUntilChanged, fromEvent, map, Subscription } from "rxjs";
 import { AdultPinModalComponent } from "../adult-pin-modal/adult-pin-modal.component";
+import { ConfirmDeleteModalComponent } from "../confirm-delete-modal/confirm-delete-modal.component";
+import { ErrorService } from "../error.service";
 import { NavRailComponent } from "../home/nav-rail/nav-rail.component";
+import { MemoryService } from "../memory.service";
+import { APP_DATA_BACKUP } from "../models/extensions";
+import { NetworkInterface } from "../models/networkInterface";
+import { RailItem } from "../models/railItem";
+import { Settings } from "../models/settings";
+import { getSortTypeText, SORT_TYPES, SortType } from "../models/sortType";
+import { Source } from "../models/source";
+import { ThemeService } from "../theme.service";
 
 @Component({
   selector: "app-settings",
@@ -60,7 +60,7 @@ export class SettingsComponent {
     private error: ErrorService,
     private toastr: ToastrService,
     private el: ElementRef,
-  ) { }
+  ) {}
 
   // Applies immediately (no reload needed) in addition to persisting -
   // AppComponent only reads this once at startup.
@@ -132,7 +132,10 @@ export class SettingsComponent {
     event.preventDefault();
     const rows = this.focusableRows();
     const current = rows.indexOf(document.activeElement as HTMLElement);
-    const next = Math.max(0, Math.min(rows.length - 1, current + (event.key == "ArrowDown" ? 1 : -1)));
+    const next = Math.max(
+      0,
+      Math.min(rows.length - 1, current + (event.key == "ArrowDown" ? 1 : -1)),
+    );
     rows[next]?.focus();
   }
 
@@ -218,13 +221,13 @@ export class SettingsComponent {
   }
 
   getExpiries() {
-    invoke("get_all_expiries").then(expiries => {
+    invoke("get_all_expiries").then((expiries) => {
       this.expiries = expiries as Record<number, number>;
     });
   }
 
   getTimezones() {
-    invoke("get_all_timezones").then(timezones => {
+    invoke("get_all_timezones").then((timezones) => {
       this.timezones = timezones as Record<number, string>;
     });
   }
@@ -302,11 +305,9 @@ export class SettingsComponent {
 
   async updateSettings() {
     this.settings.mpv_params = this.settings.mpv_params?.trim();
-    if (this.settings.mpv_params == "")
-      this.settings.mpv_params = undefined;
+    if (this.settings.mpv_params == "") this.settings.mpv_params = undefined;
     this.settings.vlc_params = this.settings.vlc_params?.trim();
-    if (this.settings.vlc_params == "")
-      this.settings.vlc_params = undefined;
+    if (this.settings.vlc_params == "") this.settings.vlc_params = undefined;
     await invoke("update_settings", { settings: this.settings });
   }
 
@@ -404,13 +405,9 @@ export class SettingsComponent {
       filters: [{ name: "extension", extensions: ["otva"] }],
     });
     if (!file) return;
-    await this.memory.tryIPC(
-      "Successfully exported data",
-      "Failed to export data",
-      async () => {
-        await invoke("export_app_data", { path: file });
-      },
-    );
+    await this.memory.tryIPC("Successfully exported data", "Failed to export data", async () => {
+      await invoke("export_app_data", { path: file });
+    });
   }
 
   // Reloads the whole page on success rather than patching every affected

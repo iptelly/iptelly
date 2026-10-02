@@ -1,19 +1,19 @@
-import { NgModule } from '@angular/core';
-import { RouterModule, Routes } from '@angular/router';
-import { SetupComponent } from './setup/setup.component';
-import { HomeComponent } from './home/home.component';
-import { SettingsComponent } from './settings/settings.component';
-import { ManageCategoriesComponent } from './manage-categories/manage-categories.component';
+import { NgModule } from "@angular/core";
+import { RouterModule, Routes } from "@angular/router";
+import { HomeComponent } from "./home/home.component";
+import { ManageCategoriesComponent } from "./manage-categories/manage-categories.component";
+import { SettingsComponent } from "./settings/settings.component";
+import { SetupComponent } from "./setup/setup.component";
 
 const routes: Routes = [
-  {path: "", component: HomeComponent},
-  {path: "setup", component: SetupComponent},
-  {path: "settings", component: SettingsComponent},
-  {path: "manage-categories", component: ManageCategoriesComponent},
+  { path: "", component: HomeComponent },
+  { path: "setup", component: SetupComponent },
+  { path: "settings", component: SettingsComponent },
+  { path: "manage-categories", component: ManageCategoriesComponent },
 ];
 
 @NgModule({
   imports: [RouterModule.forRoot(routes)],
-  exports: [RouterModule]
+  exports: [RouterModule],
 })
-export class AppRoutingModule { }
+export class AppRoutingModule {}

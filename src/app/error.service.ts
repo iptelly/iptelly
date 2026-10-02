@@ -1,9 +1,9 @@
 import { Injectable } from "@angular/core";
 import { NgbModal } from "@ng-bootstrap/ng-bootstrap";
-import { ToastrService } from "ngx-toastr";
-import { ErrorModalComponent } from "./error-modal/error-modal.component";
-import { take } from "rxjs";
 import { publicDir } from "@tauri-apps/api/path";
+import { ToastrService } from "ngx-toastr";
+import { take } from "rxjs";
+import { ErrorModalComponent } from "./error-modal/error-modal.component";
 
 @Injectable({
   providedIn: "root",
@@ -15,7 +15,7 @@ export class ErrorService {
   ) {}
 
   public handleError(e: any, message?: string) {
-    let error = e as string;
+    const error = e as string;
     console.error(error);
     this.toastr
       .error(

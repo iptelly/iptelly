@@ -1,7 +1,7 @@
 import { Component, HostListener, OnInit } from "@angular/core";
 import { invoke } from "@tauri-apps/api/core";
-import { ThemeService } from "./theme.service";
 import { Settings } from "./models/settings";
+import { ThemeService } from "./theme.service";
 
 @Component({
   selector: "app-root",

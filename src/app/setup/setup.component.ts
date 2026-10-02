@@ -1,15 +1,15 @@
 import { Component, HostListener } from "@angular/core";
 import { Router } from "@angular/router";
 import { NgbModal } from "@ng-bootstrap/ng-bootstrap";
-import { ToastrService } from "ngx-toastr";
 import { invoke } from "@tauri-apps/api/core";
-import { SourceType } from "../models/sourceType";
-import { Source } from "../models/source";
 import { open } from "@tauri-apps/plugin-dialog";
-import { ConfirmModalComponent } from "./confirm-modal/confirm-modal.component";
-import { MemoryService } from "../memory.service";
-import { ErrorService } from "../error.service";
+import { ToastrService } from "ngx-toastr";
 import { ConfirmDeleteModalComponent } from "../confirm-delete-modal/confirm-delete-modal.component";
+import { ErrorService } from "../error.service";
+import { MemoryService } from "../memory.service";
+import { Source } from "../models/source";
+import { SourceType } from "../models/sourceType";
+import { ConfirmModalComponent } from "./confirm-modal/confirm-modal.component";
 
 @Component({
   selector: "app-setup",
@@ -24,7 +24,7 @@ export class SetupComponent {
     public memory: MemoryService,
     private error: ErrorService,
     private modal: NgbModal,
-  ) { }
+  ) {}
   loading = false;
   sourceTypeEnum = SourceType;
   source: Source = {
@@ -54,7 +54,7 @@ export class SetupComponent {
     );
   }
 
-  ngOnInit(): void { }
+  ngOnInit(): void {}
 
   switchMode(sourceType: SourceType) {
     this.source.source_type = sourceType;
@@ -171,9 +171,9 @@ export class SetupComponent {
       this.source.url = `http://${this.source.url}`;
       this.toastr.info("Since the given URL lacked a protocol, http was assumed");
     }
-    let url = new URL(this.source.url);
+    const url = new URL(this.source.url);
     if (url.pathname == "/") {
-      let result = await this.modalService.open(ConfirmModalComponent, {
+      const result = await this.modalService.open(ConfirmModalComponent, {
         keyboard: false,
         backdrop: "static",
       }).result;

@@ -9,19 +9,19 @@ import {
   OnDestroy,
   SimpleChanges,
 } from "@angular/core";
-import { invoke } from "@tauri-apps/api/core";
 import { NgbModal } from "@ng-bootstrap/ng-bootstrap";
-import { Subject, Subscription, debounceTime, interval } from "rxjs";
+import { invoke } from "@tauri-apps/api/core";
+import { debounceTime, interval, Subject, Subscription } from "rxjs";
+import { EpgModalComponent } from "../../epg-modal/epg-modal.component";
+import { MemoryService } from "../../memory.service";
 import { Channel } from "../../models/channel";
 import { EPG } from "../../models/epg";
 import {
-  epgTimelinePercentFor,
   EPG_FETCH_LOOKAHEAD_SECONDS,
   EPG_FETCH_LOOKBACK_SECONDS,
   EPG_PAN_STEP_SECONDS,
+  epgTimelinePercentFor,
 } from "../../models/epgTimelineWindow";
-import { MemoryService } from "../../memory.service";
-import { EpgModalComponent } from "../../epg-modal/epg-modal.component";
 
 @Component({
   selector: "app-epg-timeline",
@@ -83,7 +83,7 @@ export class EpgTimelineComponent implements AfterViewInit, OnChanges, OnDestroy
     private modal: NgbModal,
     private memory: MemoryService,
     private cdr: ChangeDetectorRef,
-  ) { }
+  ) {}
 
   ngAfterViewInit(): void {
     this.viewInitialized = true;
@@ -106,7 +106,9 @@ export class EpgTimelineComponent implements AfterViewInit, OnChanges, OnDestroy
       }
     });
     this.observer.observe(this.el.nativeElement);
-    this.recycleSubscription = this.recycled$.pipe(debounceTime(150)).subscribe(() => this.fetchEpg());
+    this.recycleSubscription = this.recycled$
+      .pipe(debounceTime(150))
+      .subscribe(() => this.fetchEpg());
   }
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -244,11 +246,20 @@ export class EpgTimelineComponent implements AfterViewInit, OnChanges, OnDestroy
     if (this.focusedStartTimestamp == null) return;
     const epg = this.epgs[this.focusedIndex!];
     let offset = this.offsetSeconds;
-    const guardLimit = (EPG_FETCH_LOOKBACK_SECONDS + EPG_FETCH_LOOKAHEAD_SECONDS) / EPG_PAN_STEP_SECONDS + 1;
-    for (let i = 0; i < guardLimit && epgTimelinePercentFor(epg.end_timestamp, this.trueNow + offset) <= 0; i++) {
+    const guardLimit =
+      (EPG_FETCH_LOOKBACK_SECONDS + EPG_FETCH_LOOKAHEAD_SECONDS) / EPG_PAN_STEP_SECONDS + 1;
+    for (
+      let i = 0;
+      i < guardLimit && epgTimelinePercentFor(epg.end_timestamp, this.trueNow + offset) <= 0;
+      i++
+    ) {
       offset -= EPG_PAN_STEP_SECONDS;
     }
-    for (let i = 0; i < guardLimit && epgTimelinePercentFor(epg.start_timestamp, this.trueNow + offset) >= 100; i++) {
+    for (
+      let i = 0;
+      i < guardLimit && epgTimelinePercentFor(epg.start_timestamp, this.trueNow + offset) >= 100;
+      i++
+    ) {
       offset += EPG_PAN_STEP_SECONDS;
     }
     if (offset != this.offsetSeconds) this.memory.EpgTimelineOffsetSeconds.next(offset);

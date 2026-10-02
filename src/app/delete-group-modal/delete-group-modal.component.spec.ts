@@ -1,23 +1,22 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from "@angular/core/testing";
 
-import { DeleteGroupModalComponent } from './delete-group-modal.component';
+import { DeleteGroupModalComponent } from "./delete-group-modal.component";
 
-describe('DeleteGroupModalComponent', () => {
+describe("DeleteGroupModalComponent", () => {
   let component: DeleteGroupModalComponent;
   let fixture: ComponentFixture<DeleteGroupModalComponent>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      declarations: [DeleteGroupModalComponent]
-    })
-    .compileComponents();
-    
+      declarations: [DeleteGroupModalComponent],
+    }).compileComponents();
+
     fixture = TestBed.createComponent(DeleteGroupModalComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
   });
 
-  it('should create', () => {
+  it("should create", () => {
     expect(component).toBeTruthy();
   });
 });

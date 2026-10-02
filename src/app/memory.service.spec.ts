@@ -1,8 +1,8 @@
-import { TestBed } from '@angular/core/testing';
+import { TestBed } from "@angular/core/testing";
 
-import { MemoryService } from './memory.service';
+import { MemoryService } from "./memory.service";
 
-describe('MemoryService', () => {
+describe("MemoryService", () => {
   let service: MemoryService;
 
   beforeEach(() => {
@@ -10,7 +10,7 @@ describe('MemoryService', () => {
     service = TestBed.inject(MemoryService);
   });
 
-  it('should be created', () => {
+  it("should be created", () => {
     expect(service).toBeTruthy();
   });
 });

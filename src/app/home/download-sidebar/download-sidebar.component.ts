@@ -35,7 +35,10 @@ export class DownloadSidebarComponent {
     event.preventDefault();
     const rows = this.focusableRows();
     const current = rows.indexOf(document.activeElement as HTMLElement);
-    const next = Math.max(0, Math.min(rows.length - 1, current + (event.key == "ArrowDown" ? 1 : -1)));
+    const next = Math.max(
+      0,
+      Math.min(rows.length - 1, current + (event.key == "ArrowDown" ? 1 : -1)),
+    );
     rows[next]?.focus();
   }
 

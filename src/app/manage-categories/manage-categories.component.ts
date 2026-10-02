@@ -1,14 +1,14 @@
 import { Component, ElementRef, HostListener, ViewChild } from "@angular/core";
 import { Router } from "@angular/router";
 import { invoke } from "@tauri-apps/api/core";
+import { NavRailComponent } from "../home/nav-rail/nav-rail.component";
 import { MemoryService } from "../memory.service";
-import { Source } from "../models/source";
-import { Group } from "../models/group";
 import { Channel } from "../models/channel";
+import { Group } from "../models/group";
 import { MediaType } from "../models/mediaType";
 import { RailItem } from "../models/railItem";
+import { Source } from "../models/source";
 import { isInputFocused } from "../utils";
-import { NavRailComponent } from "../home/nav-rail/nav-rail.component";
 
 interface DisplayGroup {
   group: Group;
@@ -76,10 +76,7 @@ export class ManageCategoriesComponent {
 
   async ngOnInit() {
     this.loading = true;
-    const [sources, groups] = await Promise.all([
-      invoke("get_sources"),
-      invoke("get_all_groups"),
-    ]);
+    const [sources, groups] = await Promise.all([invoke("get_sources"), invoke("get_all_groups")]);
     // Disabled sources aren't browsable anywhere else in the app, so their
     // categories shouldn't be manageable here either.
     this.sources = (sources as Source[]).filter((s) => s.enabled);
@@ -130,7 +127,10 @@ export class ManageCategoriesComponent {
     event.preventDefault();
     const rows = this.focusableRows();
     const current = rows.indexOf(document.activeElement as HTMLElement);
-    const next = Math.max(0, Math.min(rows.length - 1, current + (event.key == "ArrowDown" ? 1 : -1)));
+    const next = Math.max(
+      0,
+      Math.min(rows.length - 1, current + (event.key == "ArrowDown" ? 1 : -1)),
+    );
     rows[next]?.focus();
     if (rows[next]?.id != "playlist-select") this.selectEditing = false;
   }

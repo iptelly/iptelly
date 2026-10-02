@@ -1,29 +1,27 @@
-import { Directive, forwardRef, Input, OnChanges, SimpleChanges } from '@angular/core';
-import { AbstractControl, NG_VALIDATORS, ValidationErrors, Validator } from '@angular/forms';
+import { Directive, forwardRef, Input, OnChanges, SimpleChanges } from "@angular/core";
+import { AbstractControl, NG_VALIDATORS, ValidationErrors, Validator } from "@angular/forms";
 
 @Directive({
-  selector: '[empty]',
+  selector: "[empty]",
   providers: [
     {
       provide: NG_VALIDATORS,
       useExisting: forwardRef(() => NotEmptyValidatorDirective),
-      multi: true
-    }
-  ]
+      multi: true,
+    },
+  ],
 })
 export class NotEmptyValidatorDirective implements Validator, OnChanges {
-
-  @Input('emptyDisabled')
+  @Input("emptyDisabled")
   disabled = false;
   private onChange: (() => void) | undefined;
 
   constructor() {}
 
   validate(control: AbstractControl): ValidationErrors | null {
-    if (this.disabled === true) 
-      return null;
+    if (this.disabled === true) return null;
     if (!control.value?.trim()) {
-      return { 'empty': true };
+      return { empty: true };
     }
     return null;
   }
@@ -33,7 +31,7 @@ export class NotEmptyValidatorDirective implements Validator, OnChanges {
   }
 
   ngOnChanges(changes: SimpleChanges): void {
-    if ('disabled' in changes && this.onChange) {
+    if ("disabled" in changes && this.onChange) {
       this.onChange();
     }
   }

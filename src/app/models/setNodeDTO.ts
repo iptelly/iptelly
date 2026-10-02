@@ -11,13 +11,7 @@ export class SetNodeDTO {
   // for why this needs to override filters.media_types.
   public mediaType?: MediaType;
 
-  constructor(
-    id: number,
-    name: string,
-    type: NodeType,
-    sourceId?: number,
-    mediaType?: MediaType,
-  ) {
+  constructor(id: number, name: string, type: NodeType, sourceId?: number, mediaType?: MediaType) {
     this.id = id;
     this.name = name;
     this.type = type;

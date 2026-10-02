@@ -1,14 +1,14 @@
 import { Injectable } from "@angular/core";
-import { Source } from "./models/source";
-import { BehaviorSubject, Subject } from "rxjs";
 import { MatMenuTrigger } from "@angular/material/menu";
-import { ToastrService } from "ngx-toastr";
-import { ErrorService } from "./error.service";
 import { NgbModalRef } from "@ng-bootstrap/ng-bootstrap";
 import { invoke } from "@tauri-apps/api/core";
-import { SortType } from "./models/sortType";
+import { ToastrService } from "ngx-toastr";
+import { BehaviorSubject, Subject } from "rxjs";
+import { ErrorService } from "./error.service";
 import { LAST_SEEN_VERSION } from "./models/localStorage";
 import { SetNodeDTO } from "./models/setNodeDTO";
+import { SortType } from "./models/sortType";
+import { Source } from "./models/source";
 
 @Injectable({
   providedIn: "root",
@@ -72,8 +72,8 @@ export class MemoryService {
   }
 
   async get_epg_ids() {
-    let data = await invoke("get_epg_ids");
-    let set = new Set(data as Array<string>);
+    const data = await invoke("get_epg_ids");
+    const set = new Set(data as Array<string>);
     this.Watched_epgs = set;
   }
 
