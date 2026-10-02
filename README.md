@@ -38,33 +38,6 @@ scoop install mpv ffmpeg yt-dlp # Windows
 choco install mpv ffmpeg yt-dlp # Windows alternative
 ```
 
-## Docker
-You can install IPTelly using Docker. It wouldn't necessarily be the recommended way to install it, but it's now possible.
-You should always install IPTelly from either Releases or Flatpak on Linux.
-
-For Nvidia GPUs:
-```
-docker run --rm -it \
-  --net=host \
-  --env="DISPLAY" \
-  --volume="/tmp/.X11-unix:/tmp/.X11-unix:rw" \
-  --volume="$HOME/.Xauthority:/root/.Xauthority:rw" \
-  --volume="$HOME/.local/share/dev.iptelly.iptelly:/root/.local/share/dev.iptelly.iptelly" \
-  --gpus all \
-  ghcr.io/iptelly/iptelly:latest
-```
-For everyone else (Intel, AMD):
-```
-docker run --rm -it \
-  --net=host \
-  --env="DISPLAY" \
-  --volume="/tmp/.X11-unix:/tmp/.X11-unix:rw" \
-  --volume="$HOME/.Xauthority:/root/.Xauthority:rw" \
-  --volume="$HOME/.local/share/dev.iptelly.iptelly:/root/.local/share/dev.iptelly.iptelly" \
-  --device /dev/dri \
-  ghcr.io/iptelly/iptelly:latest
-```
-
 ## Development
 Want to build IPTelly from source or contribute code? See [DEVELOPMENT.md](DEVELOPMENT.md)
 for how to check out the source, run it in dev mode, and build it locally.

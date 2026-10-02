@@ -48,8 +48,8 @@ If you're working from a fork, clone your fork instead and add this repo as an
 
 ## Package manager
 
-Use **npm**. CI and the release workflow (`.github/workflows/buildAndUpload.yml`), the
-`Dockerfile`, and `tauri.conf.json`'s `beforeDevCommand` all run npm, which reads
+Use **npm**. CI and the release workflow (`.github/workflows/buildAndUpload.yml`) and
+`tauri.conf.json`'s `beforeDevCommand` both run npm, which reads
 `package-lock.json`. The commands below run the Tauri CLI through `npx`, which uses the
 version pinned in `node_modules` (no global install needed).
 
