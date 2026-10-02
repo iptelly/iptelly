@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Read, Write};
 
 use anyhow::{Context, Result, bail};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use flate2::read::GzDecoder;
 use quick_xml::Reader;
 use quick_xml::events::Event;
@@ -299,10 +299,16 @@ fn read_programme_attrs(
     Some((channel_id, start, stop))
 }
 
+// XMLTV makes the timezone offset optional, defaulting to UTC when it's
+// left off, and some guides do leave it off.
 fn parse_xmltv_time(raw: &str) -> Option<i64> {
-    DateTime::parse_from_str(raw.trim(), "%Y%m%d%H%M%S %z")
-        .ok()
+    let raw = raw.trim();
+    DateTime::parse_from_str(raw, "%Y%m%d%H%M%S %z")
         .map(|d| d.timestamp())
+        .or_else(|_| {
+            NaiveDateTime::parse_from_str(raw, "%Y%m%d%H%M%S").map(|d| d.and_utc().timestamp())
+        })
+        .ok()
 }
 
 #[cfg(test)]
@@ -348,6 +354,31 @@ mod tests {
         assert_eq!(parse_xmltv_time("20260101130000 +0100"), Some(NOON));
         assert_eq!(parse_xmltv_time("20260101070000 -0500"), Some(NOON));
         assert_eq!(parse_xmltv_time("  20260101120000 +0000  "), Some(NOON));
+    }
+
+    #[test]
+    fn parses_times_without_a_space_before_the_offset() {
+        assert_eq!(parse_xmltv_time("20260101130000+0100"), Some(NOON));
+    }
+
+    #[test]
+    fn treats_times_without_an_offset_as_utc() {
+        assert_eq!(parse_xmltv_time("20260101120000"), Some(NOON));
+        assert_eq!(parse_xmltv_time(" 20260101120000 "), Some(NOON));
+    }
+
+    #[test]
+    fn keeps_programmes_whose_times_have_no_offset() {
+        let xml = tv(&[programme(
+            "c",
+            "20260101120000",
+            "20260101130000",
+            "<title>Now</title>",
+        )]);
+        let programmes = parse(&xml, &["c"]);
+        assert_eq!(programmes.len(), 1);
+        assert_eq!(programmes[0].start_timestamp, NOON);
+        assert_eq!(programmes[0].end_timestamp, NOON + HOUR);
     }
 
     #[test]
