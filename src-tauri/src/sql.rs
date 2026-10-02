@@ -56,11 +56,7 @@ fn create_connection_pool() -> Pool<SqliteConnectionManager> {
 // something that can degrade gracefully. Using .expect() with a message
 // instead of a bare .unwrap() at least makes the crash diagnosable.
 fn get_and_create_sqlite_db_path() -> String {
-    // Lets integration tests point this at a throwaway file instead of the
-    // real user database - CONN is a LazyLock, so this only needs to be set
-    // before the first sql:: call in the process (each file under tests/ is
-    // its own process, so this can't affect a real running app).
-    if let Ok(path) = std::env::var("OPEN_TV_DB_PATH") {
+    if let Some(path) = db_path_override() {
         return path;
     }
     let mut path = ProjectDirs::from("dev", "iptelly", "iptelly")
@@ -72,6 +68,22 @@ fn get_and_create_sqlite_db_path() -> String {
     }
     path.push(DB_NAME);
     return path.to_string_lossy().to_string();
+}
+
+// Lets integration tests point this at a throwaway file instead of the
+// real user database - CONN is a LazyLock, so this only needs to be set
+// before the first sql:: call in the process (each file under tests/ is
+// its own process, so this can't affect a real running app).
+#[cfg(not(test))]
+fn db_path_override() -> Option<String> {
+    std::env::var("OPEN_TV_DB_PATH").ok()
+}
+
+// Lib unit tests always get a throwaway database, with no env var to
+// forget to set - see test_db.rs.
+#[cfg(test)]
+fn db_path_override() -> Option<String> {
+    Some(crate::test_db::path())
 }
 
 fn create_structure() -> Result<()> {

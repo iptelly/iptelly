@@ -200,3 +200,361 @@ fn get_file_name() -> String {
     let formatted_time = current_time.format("%Y-%m-%d-%H-%M-%S").to_string();
     format!("{formatted_time}.mp4")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{settings, test_db};
+
+    fn headers() -> ChannelHttpHeaders {
+        ChannelHttpHeaders::default()
+    }
+
+    fn source_with_user_agent(user_agent: &str) -> Option<Source> {
+        let mut source = sql::get_custom_source("unused".to_string());
+        source.stream_user_agent = Some(user_agent.to_string());
+        Some(source)
+    }
+
+    fn header_args(headers: Option<ChannelHttpHeaders>, source: &Option<Source>) -> Vec<String> {
+        let mut args = Vec::new();
+        set_headers(headers, &mut args, source);
+        args
+    }
+
+    // Everything before the "--" separator - the options mpv will parse.
+    fn options(args: &[String]) -> &[String] {
+        let end = args
+            .iter()
+            .position(|a| a == "--")
+            .expect("no -- separator");
+        &args[..end]
+    }
+
+    fn play_args(channel: &Channel) -> Vec<String> {
+        get_play_args(channel, false, None, &None).unwrap()
+    }
+
+    #[test]
+    fn set_headers_adds_nothing_without_headers_or_a_source() {
+        assert!(header_args(None, &None).is_empty());
+        assert!(header_args(Some(headers()), &None).is_empty());
+    }
+
+    #[test]
+    fn set_headers_combines_origin_and_referrer_into_one_argument() {
+        let args = header_args(
+            Some(ChannelHttpHeaders {
+                http_origin: Some("https://origin.example".to_string()),
+                referrer: Some("https://referrer.example".to_string()),
+                ..headers()
+            }),
+            &None,
+        );
+        assert_eq!(
+            args,
+            ["--http-header-fields=origin:https://origin.example,referer:https://referrer.example"]
+        );
+    }
+
+    #[test]
+    fn set_headers_prefers_the_channel_user_agent_over_the_source() {
+        let args = header_args(
+            Some(ChannelHttpHeaders {
+                user_agent: Some("Channel UA".to_string()),
+                ..headers()
+            }),
+            &source_with_user_agent("Source UA"),
+        );
+        assert_eq!(args, ["--user-agent=Channel UA"]);
+    }
+
+    #[test]
+    fn set_headers_falls_back_to_the_source_user_agent() {
+        let args = header_args(None, &source_with_user_agent("Source UA"));
+        assert_eq!(args, ["--user-agent=Source UA"]);
+    }
+
+    #[test]
+    fn set_headers_only_skips_certificate_checks_when_asked_to() {
+        let ignore = |value| {
+            header_args(
+                Some(ChannelHttpHeaders {
+                    ignore_ssl: Some(value),
+                    ..headers()
+                }),
+                &None,
+            )
+        };
+        assert_eq!(ignore(true), [ARG_IGNORE_SSL]);
+        assert!(ignore(false).is_empty());
+    }
+
+    #[test]
+    fn the_url_always_comes_after_the_option_separator() {
+        let _db = test_db::lock();
+        test_db::set_setting(settings::MPV_PARAMS, "--mute=yes");
+        let source = test_db::add_source("mpv url separator");
+        // A malicious playlist entry crafted to look like an mpv option.
+        let channel = test_db::add_channel(
+            &source,
+            test_db::channel("Evil", "--script=/tmp/evil.lua", media_type::LIVESTREAM),
+            None,
+        );
+        let args = play_args(&channel);
+        assert_eq!(&args[args.len() - 2..], ["--", "--script=/tmp/evil.lua"]);
+        assert!(!options(&args).contains(&"--script=/tmp/evil.lua".to_string()));
+        assert!(options(&args).contains(&"--mute=yes".to_string()));
+    }
+
+    #[test]
+    fn livestreams_loop_and_prefetch_with_default_settings() {
+        let _db = test_db::lock();
+        let source = test_db::add_source("mpv livestream defaults");
+        let channel = test_db::add_channel(
+            &source,
+            test_db::channel(
+                "News",
+                "http://example.com/live/1.ts",
+                media_type::LIVESTREAM,
+            ),
+            None,
+        );
+        assert_eq!(
+            play_args(&channel),
+            [
+                ARG_HWDEC,
+                "--title=News",
+                ARG_MSG_LEVEL,
+                ARG_PREFETCH_PLAYLIST,
+                ARG_LOOP_PLAYLIST,
+                "--",
+                "http://example.com/live/1.ts",
+            ]
+        );
+    }
+
+    #[test]
+    fn movies_save_their_position_and_do_not_loop() {
+        let _db = test_db::lock();
+        let source = test_db::add_source("mpv movie");
+        let channel = test_db::add_channel(
+            &source,
+            test_db::channel("Film", "http://example.com/movie/1.mkv", media_type::MOVIE),
+            None,
+        );
+        let args = play_args(&channel);
+        assert!(args.contains(&ARG_SAVE_POSITION_ON_QUIT.to_string()));
+        assert!(!args.contains(&ARG_LOOP_PLAYLIST.to_string()));
+        assert!(!args.contains(&ARG_PREFETCH_PLAYLIST.to_string()));
+    }
+
+    #[test]
+    fn timeshift_streams_never_use_hardware_decoding() {
+        let _db = test_db::lock();
+        test_db::set_setting(settings::ENABLE_HWDEC, "true");
+        let source = test_db::add_source("mpv timeshift");
+        let channel = test_db::add_channel(
+            &source,
+            test_db::channel(
+                "Catch-up",
+                "http://example.com/timeshift/u/p/60/2026-01-01:12-00/1.ts",
+                media_type::LIVESTREAM,
+            ),
+            None,
+        );
+        assert!(!play_args(&channel).contains(&ARG_HWDEC.to_string()));
+    }
+
+    #[test]
+    fn applies_playback_settings() {
+        let _db = test_db::lock();
+        test_db::set_setting(settings::ENABLE_HWDEC, "false");
+        test_db::set_setting(settings::USE_STREAM_CACHING, "false");
+        test_db::set_setting(settings::ENABLE_GPU, "true");
+        test_db::set_setting(settings::VOLUME, "50");
+        test_db::set_setting(settings::NETWORK_INTERFACE, "10.0.0.2");
+        let source = test_db::add_source("mpv settings");
+        let channel = test_db::add_channel(
+            &source,
+            test_db::channel(
+                "News",
+                "http://example.com/live/1.ts",
+                media_type::LIVESTREAM,
+            ),
+            None,
+        );
+        let args = play_args(&channel);
+        let options = options(&args);
+        assert!(!options.contains(&ARG_HWDEC.to_string()));
+        for expected in [
+            "--cache=no",
+            ARG_GPU_NEXT,
+            ARG_GPU_PROFILE_HIGH_QUALITY,
+            "--volume=50",
+            "--stream-lavf-o=local_addr=10.0.0.2,interface=10.0.0.2",
+        ] {
+            assert!(
+                options.contains(&expected.to_string()),
+                "missing {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn splits_custom_mpv_params_like_a_shell() {
+        let _db = test_db::lock();
+        test_db::set_setting(
+            settings::MPV_PARAMS,
+            r#"--sub-font="DejaVu Sans" --mute=yes"#,
+        );
+        let source = test_db::add_source("mpv params");
+        let channel = test_db::add_channel(
+            &source,
+            test_db::channel(
+                "News",
+                "http://example.com/live/1.ts",
+                media_type::LIVESTREAM,
+            ),
+            None,
+        );
+        let args = play_args(&channel);
+        let options = options(&args);
+        assert_eq!(
+            &options[options.len() - 2..],
+            ["--sub-font=DejaVu Sans", "--mute=yes"]
+        );
+    }
+
+    #[test]
+    fn rejects_unparseable_mpv_params() {
+        let _db = test_db::lock();
+        test_db::set_setting(settings::MPV_PARAMS, r#"--sub-font="unclosed"#);
+        let source = test_db::add_source("mpv bad params");
+        let channel = test_db::add_channel(
+            &source,
+            test_db::channel(
+                "News",
+                "http://example.com/live/1.ts",
+                media_type::LIVESTREAM,
+            ),
+            None,
+        );
+        assert!(get_play_args(&channel, false, None, &None).is_err());
+    }
+
+    #[test]
+    fn records_to_the_given_path() {
+        let _db = test_db::lock();
+        let source = test_db::add_source("mpv record path");
+        let channel = test_db::add_channel(
+            &source,
+            test_db::channel(
+                "News",
+                "http://example.com/live/1.ts",
+                media_type::LIVESTREAM,
+            ),
+            None,
+        );
+        let args = get_play_args(&channel, true, Some("/tmp/news.mp4".to_string()), &None).unwrap();
+        assert!(options(&args).contains(&"--stream-record=/tmp/news.mp4".to_string()));
+    }
+
+    #[test]
+    fn records_into_the_recording_path_setting() {
+        let _db = test_db::lock();
+        test_db::set_setting(settings::RECORDING_PATH, "/tmp/recordings");
+        let source = test_db::add_source("mpv recording setting");
+        let channel = test_db::add_channel(
+            &source,
+            test_db::channel(
+                "News",
+                "http://example.com/live/1.ts",
+                media_type::LIVESTREAM,
+            ),
+            None,
+        );
+        let args = get_play_args(&channel, true, None, &None).unwrap();
+        let record = options(&args)
+            .iter()
+            .find_map(|a| a.strip_prefix(ARG_RECORD))
+            .expect("no record argument");
+        let record = Path::new(record);
+        assert_eq!(record.parent(), Some(Path::new("/tmp/recordings")));
+        assert_eq!(record.extension().unwrap(), "mp4");
+    }
+
+    #[test]
+    fn uses_the_channel_headers_from_the_database() {
+        let _db = test_db::lock();
+        let source = test_db::add_source("mpv db headers");
+        let channel = test_db::add_channel(
+            &source,
+            test_db::channel(
+                "News",
+                "http://example.com/live/1.ts",
+                media_type::LIVESTREAM,
+            ),
+            Some(ChannelHttpHeaders {
+                referrer: Some("https://referrer.example".to_string()),
+                user_agent: Some("Channel UA".to_string()),
+                ..headers()
+            }),
+        );
+        let args = play_args(&channel);
+        let options = options(&args);
+        assert!(options.contains(&"--user-agent=Channel UA".to_string()));
+        assert!(
+            options.contains(&"--http-header-fields=referer:https://referrer.example".to_string())
+        );
+    }
+
+    #[test]
+    fn queues_the_rest_of_the_season_after_an_episode() {
+        let _db = test_db::lock();
+        let source = test_db::add_source("mpv episodes");
+        let season_id = test_db::add_season(&source, 9001);
+        let episode = |num: i64| {
+            let mut channel = test_db::channel(
+                &format!("Episode {num}"),
+                &format!("http://example.com/series/{num}.mkv"),
+                media_type::SERIE,
+            );
+            channel.season_id = Some(season_id);
+            channel.episode_num = Some(num);
+            test_db::add_channel(&source, channel, None)
+        };
+        let _first = episode(1);
+        let second = episode(2);
+        let _third = episode(3);
+        let _fourth = episode(4);
+
+        let args = play_args(&second);
+        assert!(options(&args).contains(&ARG_NO_RESUME_PLAYBACK.to_string()));
+        let after_separator = &args[options(&args).len() + 1..];
+        assert_eq!(
+            after_separator,
+            [
+                "http://example.com/series/2.mkv",
+                "http://example.com/series/3.mkv",
+                "http://example.com/series/4.mkv",
+            ]
+        );
+    }
+
+    #[test]
+    fn needs_a_channel_id_and_url() {
+        let _db = test_db::lock();
+        let channel = test_db::channel(
+            "News",
+            "http://example.com/live/1.ts",
+            media_type::LIVESTREAM,
+        );
+        assert!(get_play_args(&channel, false, None, &None).is_err());
+
+        let source = test_db::add_source("mpv no url");
+        let mut channel = test_db::add_channel(&source, channel, None);
+        channel.url = None;
+        assert!(get_play_args(&channel, false, None, &None).is_err());
+    }
+}

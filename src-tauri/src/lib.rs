@@ -40,6 +40,9 @@ pub mod vlc;
 pub mod xmltv;
 pub mod xtream;
 
+#[cfg(test)]
+mod test_db;
+
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 static ENABLE_TRAY_ICON: LazyLock<bool> = LazyLock::new(|| {
     settings::get_settings()

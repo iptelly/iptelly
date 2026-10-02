@@ -89,3 +89,186 @@ fn set_headers(headers: Option<ChannelHttpHeaders>, args: &mut Vec<String>, sour
         args.push(format!("{ARG_USER_AGENT}{user_agent}"));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{settings, test_db};
+
+    fn header_args(headers: Option<ChannelHttpHeaders>, source: &Option<Source>) -> Vec<String> {
+        let mut args = Vec::new();
+        set_headers(headers, &mut args, source);
+        args
+    }
+
+    fn source_with_user_agent(user_agent: &str) -> Option<Source> {
+        let mut source = sql::get_custom_source("unused".to_string());
+        source.stream_user_agent = Some(user_agent.to_string());
+        Some(source)
+    }
+
+    // Everything before the "--" separator - the options VLC will parse.
+    fn options(args: &[String]) -> &[String] {
+        let end = args
+            .iter()
+            .position(|a| a == "--")
+            .expect("no -- separator");
+        &args[..end]
+    }
+
+    fn livestream(source_name: &str) -> Channel {
+        let source = test_db::add_source(source_name);
+        test_db::add_channel(
+            &source,
+            test_db::channel(
+                "News",
+                "http://example.com/live/1.ts",
+                media_type::LIVESTREAM,
+            ),
+            None,
+        )
+    }
+
+    #[test]
+    fn set_headers_adds_nothing_without_headers_or_a_source() {
+        assert!(header_args(None, &None).is_empty());
+    }
+
+    #[test]
+    fn set_headers_passes_the_referrer_and_channel_user_agent() {
+        let args = header_args(
+            Some(ChannelHttpHeaders {
+                referrer: Some("https://referrer.example".to_string()),
+                user_agent: Some("Channel UA".to_string()),
+                ..Default::default()
+            }),
+            &source_with_user_agent("Source UA"),
+        );
+        assert_eq!(
+            args,
+            [
+                "--http-referrer=https://referrer.example",
+                "--http-user-agent=Channel UA",
+            ]
+        );
+    }
+
+    #[test]
+    fn set_headers_falls_back_to_the_source_user_agent() {
+        let args = header_args(None, &source_with_user_agent("Source UA"));
+        assert_eq!(args, ["--http-user-agent=Source UA"]);
+    }
+
+    #[test]
+    fn the_url_always_comes_after_the_option_separator() {
+        let _db = test_db::lock();
+        test_db::set_setting(settings::VLC_PARAMS, "--no-audio");
+        let source = test_db::add_source("vlc url separator");
+        // A malicious playlist entry crafted to look like a VLC option.
+        let channel = test_db::add_channel(
+            &source,
+            test_db::channel("Evil", "--extraintf=lua", media_type::LIVESTREAM),
+            None,
+        );
+        let args = get_play_args(&channel, &None).unwrap();
+        assert_eq!(&args[args.len() - 2..], ["--", "--extraintf=lua"]);
+        assert!(options(&args).contains(&"--no-audio".to_string()));
+    }
+
+    #[test]
+    fn livestreams_loop_with_default_settings() {
+        let _db = test_db::lock();
+        let channel = livestream("vlc livestream defaults");
+        assert_eq!(
+            get_play_args(&channel, &None).unwrap(),
+            [
+                ARG_PLAY_AND_EXIT,
+                "--meta-title=News",
+                ARG_HWDEC_ON,
+                "--loop",
+                "--",
+                "http://example.com/live/1.ts",
+            ]
+        );
+    }
+
+    #[test]
+    fn movies_do_not_loop() {
+        let _db = test_db::lock();
+        let source = test_db::add_source("vlc movie");
+        let channel = test_db::add_channel(
+            &source,
+            test_db::channel("Film", "http://example.com/movie/1.mkv", media_type::MOVIE),
+            None,
+        );
+        assert!(
+            !get_play_args(&channel, &None)
+                .unwrap()
+                .contains(&"--loop".to_string())
+        );
+    }
+
+    #[test]
+    fn applies_playback_settings() {
+        let _db = test_db::lock();
+        test_db::set_setting(settings::ENABLE_HWDEC, "false");
+        test_db::set_setting(settings::USE_STREAM_CACHING, "false");
+        test_db::set_setting(settings::VOLUME, "50");
+        let channel = livestream("vlc settings");
+        let args = get_play_args(&channel, &None).unwrap();
+        let options = options(&args);
+        assert!(!options.contains(&ARG_HWDEC_ON.to_string()));
+        for expected in [ARG_HWDEC_OFF, "--network-caching=300", "--gain=0.5"] {
+            assert!(
+                options.contains(&expected.to_string()),
+                "missing {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn splits_custom_vlc_params_like_a_shell() {
+        let _db = test_db::lock();
+        test_db::set_setting(
+            settings::VLC_PARAMS,
+            r#"--sub-file="/tmp/my subs.srt" --no-audio"#,
+        );
+        let channel = livestream("vlc params");
+        let args = get_play_args(&channel, &None).unwrap();
+        let options = options(&args);
+        assert_eq!(
+            &options[options.len() - 2..],
+            ["--sub-file=/tmp/my subs.srt", "--no-audio"]
+        );
+    }
+
+    #[test]
+    fn queues_the_rest_of_the_season_after_an_episode() {
+        let _db = test_db::lock();
+        let source = test_db::add_source("vlc episodes");
+        let season_id = test_db::add_season(&source, 9002);
+        let episode = |num: i64| {
+            let mut channel = test_db::channel(
+                &format!("Episode {num}"),
+                &format!("http://example.com/series/{num}.mkv"),
+                media_type::SERIE,
+            );
+            channel.season_id = Some(season_id);
+            channel.episode_num = Some(num);
+            test_db::add_channel(&source, channel, None)
+        };
+        let _first = episode(1);
+        let second = episode(2);
+        let _third = episode(3);
+
+        let args = get_play_args(&second, &None).unwrap();
+        let after_separator = &args[options(&args).len() + 1..];
+        assert_eq!(
+            after_separator,
+            [
+                "http://example.com/series/2.mkv",
+                "http://example.com/series/3.mkv"
+            ]
+        );
+    }
+}
