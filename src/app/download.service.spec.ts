@@ -1,4 +1,5 @@
 import { TestBed } from "@angular/core/testing";
+import { appTestModule } from "../testing/test-module";
 
 import { DownloadService } from "./download.service";
 
@@ -6,7 +7,7 @@ describe("DownloadService", () => {
   let service: DownloadService;
 
   beforeEach(() => {
-    TestBed.configureTestingModule({});
+    TestBed.configureTestingModule(appTestModule);
     service = TestBed.inject(DownloadService);
   });
 

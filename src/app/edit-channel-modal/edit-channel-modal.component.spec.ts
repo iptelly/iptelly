@@ -1,4 +1,5 @@
 import { ComponentFixture, TestBed } from "@angular/core/testing";
+import { appTestModule } from "../../testing/test-module";
 
 import { EditChannelModalComponent } from "./edit-channel-modal.component";
 
@@ -7,9 +8,7 @@ describe("EditChannelModalComponent", () => {
   let fixture: ComponentFixture<EditChannelModalComponent>;
 
   beforeEach(async () => {
-    await TestBed.configureTestingModule({
-      declarations: [EditChannelModalComponent],
-    }).compileComponents();
+    await TestBed.configureTestingModule(appTestModule).compileComponents();
 
     fixture = TestBed.createComponent(EditChannelModalComponent);
     component = fixture.componentInstance;

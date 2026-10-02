@@ -1,4 +1,5 @@
 import { ComponentFixture, TestBed } from "@angular/core/testing";
+import { appTestModule } from "../../../../testing/test-module";
 
 import { SortItemComponent } from "./sort-item.component";
 
@@ -7,9 +8,7 @@ describe("SortItemComponent", () => {
   let fixture: ComponentFixture<SortItemComponent>;
 
   beforeEach(async () => {
-    await TestBed.configureTestingModule({
-      declarations: [SortItemComponent],
-    }).compileComponents();
+    await TestBed.configureTestingModule(appTestModule).compileComponents();
 
     fixture = TestBed.createComponent(SortItemComponent);
     component = fixture.componentInstance;

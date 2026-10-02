@@ -1,4 +1,5 @@
 import { ComponentFixture, TestBed } from "@angular/core/testing";
+import { appTestModule } from "../../testing/test-module";
 
 import { EditGroupModalComponent } from "./edit-group-modal.component";
 
@@ -7,9 +8,7 @@ describe("EditGroupModalComponent", () => {
   let fixture: ComponentFixture<EditGroupModalComponent>;
 
   beforeEach(async () => {
-    await TestBed.configureTestingModule({
-      declarations: [EditGroupModalComponent],
-    }).compileComponents();
+    await TestBed.configureTestingModule(appTestModule).compileComponents();
 
     fixture = TestBed.createComponent(EditGroupModalComponent);
     component = fixture.componentInstance;

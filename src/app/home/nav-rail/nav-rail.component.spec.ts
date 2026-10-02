@@ -1,4 +1,5 @@
 import { ComponentFixture, TestBed } from "@angular/core/testing";
+import { appTestModule } from "../../../testing/test-module";
 
 import { NavRailComponent } from "./nav-rail.component";
 
@@ -7,9 +8,7 @@ describe("NavRailComponent", () => {
   let fixture: ComponentFixture<NavRailComponent>;
 
   beforeEach(async () => {
-    await TestBed.configureTestingModule({
-      declarations: [NavRailComponent],
-    }).compileComponents();
+    await TestBed.configureTestingModule(appTestModule).compileComponents();
 
     fixture = TestBed.createComponent(NavRailComponent);
     component = fixture.componentInstance;

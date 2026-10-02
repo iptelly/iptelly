@@ -1,4 +1,5 @@
 import { ComponentFixture, TestBed } from "@angular/core/testing";
+import { appTestModule } from "../../../testing/test-module";
 
 import { PlaylistSidebarComponent } from "./playlist-sidebar.component";
 
@@ -7,9 +8,7 @@ describe("PlaylistSidebarComponent", () => {
   let fixture: ComponentFixture<PlaylistSidebarComponent>;
 
   beforeEach(async () => {
-    await TestBed.configureTestingModule({
-      declarations: [PlaylistSidebarComponent],
-    }).compileComponents();
+    await TestBed.configureTestingModule(appTestModule).compileComponents();
 
     fixture = TestBed.createComponent(PlaylistSidebarComponent);
     component = fixture.componentInstance;

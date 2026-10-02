@@ -1,4 +1,5 @@
 import { ComponentFixture, TestBed } from "@angular/core/testing";
+import { appTestModule } from "../../testing/test-module";
 
 import { WhatsNewModalComponent } from "./whats-new-modal.component";
 
@@ -7,9 +8,7 @@ describe("WhatsNewModalComponent", () => {
   let fixture: ComponentFixture<WhatsNewModalComponent>;
 
   beforeEach(async () => {
-    await TestBed.configureTestingModule({
-      declarations: [WhatsNewModalComponent],
-    }).compileComponents();
+    await TestBed.configureTestingModule(appTestModule).compileComponents();
 
     fixture = TestBed.createComponent(WhatsNewModalComponent);
     component = fixture.componentInstance;

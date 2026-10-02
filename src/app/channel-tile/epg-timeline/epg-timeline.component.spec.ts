@@ -1,4 +1,5 @@
 import { ComponentFixture, TestBed } from "@angular/core/testing";
+import { appTestModule } from "../../../testing/test-module";
 
 import { EpgTimelineComponent } from "./epg-timeline.component";
 
@@ -7,9 +8,7 @@ describe("EpgTimelineComponent", () => {
   let fixture: ComponentFixture<EpgTimelineComponent>;
 
   beforeEach(async () => {
-    await TestBed.configureTestingModule({
-      declarations: [EpgTimelineComponent],
-    }).compileComponents();
+    await TestBed.configureTestingModule(appTestModule).compileComponents();
 
     fixture = TestBed.createComponent(EpgTimelineComponent);
     component = fixture.componentInstance;
