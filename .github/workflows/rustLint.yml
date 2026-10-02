@@ -3,6 +3,10 @@ name: Rust Lint
 on:
   pull_request:
     branches: ["main"]
+  # PRs can only restore caches saved by main (or by themselves), so this
+  # run after each merge is what keeps a warm cache for new PRs.
+  push:
+    branches: ["main"]
 
 jobs:
   rust-lint:
@@ -13,6 +17,9 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           components: rustfmt
+          # The crate lives in src-tauri, not the repo root, so without
+          # this the cache can't find Cargo.toml and never caches the build.
+          cache-workspaces: src-tauri -> target
 
       # Runs before the slow system-deps install so formatting fails fast,
       # and needs no build.
@@ -20,19 +27,20 @@ jobs:
         working-directory: src-tauri
         run: cargo fmt --check
 
+      # Tauri's Linux crates (gtk, webkit2gtk, appindicator, ...) link
+      # against these system libraries, so cargo test can't build without
+      # them. Caching skips apt update and the downloads on later runs.
       - name: Install deps linux
-        run: |
-          sudo apt update
-          sudo apt install libwebkit2gtk-4.1-dev \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libxdo-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
+        uses: awalsh128/cache-apt-pkgs-action@v1
+        with:
+          packages: >-
+            libwebkit2gtk-4.1-dev
+            libxdo-dev
+            libssl-dev
+            libayatana-appindicator3-dev
+            librsvg2-dev
             libgtk-3-dev
+          version: 1.0
 
       # -D warnings turns every plain rustc warning (unused imports, unused
       # variables, dead code, ...) into a build failure, across every target
