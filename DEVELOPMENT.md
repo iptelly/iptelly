@@ -107,7 +107,7 @@ npx tauri build --bundles deb,rpm   # what CI builds on Linux
 ```
 
 Output lands in `src-tauri/target/release/bundle/<type>/`, e.g.
-`src-tauri/target/release/bundle/rpm/IPTelly-2.0.0-1.x86_64.rpm`. The plain, unbundled
+`src-tauri/target/release/bundle/rpm/IPTelly-0.0.0-1.x86_64.rpm`. The plain, unbundled
 binary itself is at `src-tauri/target/release/iptelly` if you just want to run it directly
 without installing a package.
 
@@ -119,6 +119,18 @@ sudo dnf install ./src-tauri/target/release/bundle/rpm/IPTelly-*.rpm
 ```
 
 Use `dnf reinstall` instead to replace a build of the same version that's already installed.
+Local builds are always version `0.0.0` (see [Versioning](#versioning)), so this is the
+usual case once you've installed one.
+
+### Versioning
+
+The version in `package.json`, `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json` is
+a `0.0.0` placeholder; don't bump it in a PR. The real version is entered when running the
+**Build and Upload** workflow (Actions tab → Build and Upload → Run workflow), which
+writes it into those three files on the build runner only. It must be plain
+`MAJOR.MINOR.PATCH` (e.g. `2.1.0`), because the Windows MSI bundler rejects pre-release
+suffixes. The workflow only runs from `main`. Once every platform builds, the workflow tags the commit it built as `v<version>`
+(e.g. `v2.1.0`); a version whose tag already exists is rejected up front.
 
 On Windows/macOS, `npx tauri build` produces the platform's native installer (`.msi` on
 Windows via WiX, `.dmg`/`.app` on macOS) the same way.

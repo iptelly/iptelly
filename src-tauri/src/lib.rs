@@ -172,6 +172,13 @@ pub fn run() {
             app.manage(Mutex::new(AppState {
                 ..Default::default()
             }));
+            // The version is only set at release time (see DEVELOPMENT.md's
+            // Versioning section), so it's added to the title here rather
+            // than hardcoded in tauri.conf.json.
+            if let Some(window) = app.get_webview_window("main") {
+                let title = format!("IPTelly (v{})", app.package_info().version);
+                let _ = window.set_title(&title);
+            }
             // Cleans up any download left stuck 'downloading'/'queued' by
             // the app closing (or crashing) mid-transfer last time - see
             // reconcile_interrupted_downloads's own comment for why this is

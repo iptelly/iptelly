@@ -1,6 +1,6 @@
 {
   "productName": "IPTelly",
-  "version": "2.0.0",
+  "version": "0.0.0",
   "identifier": "dev.iptelly.iptelly",
   "build": {
     "frontendDist": "../dist/iptelly/browser",
@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "IPTelly (v2.0.0)",
+        "title": "IPTelly",
         "width": 800,
         "height": 600,
         "resizable": true,
