@@ -23,3 +23,18 @@ jobs:
       # writing anything, and fails on any error-level finding.
       - name: biome ci
         run: npx biome ci
+
+  audit:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Fails on any high or critical advisory in the production dependencies
+      # (what ships in the app). Dev dependencies (the Angular build tooling)
+      # are skipped. npm audit only reads the lockfile, so no npm ci is needed.
+      - name: npm audit
+        run: npm audit --omit=dev --audit-level=high

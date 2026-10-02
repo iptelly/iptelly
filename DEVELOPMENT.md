@@ -134,7 +134,13 @@ cd src-tauri && RUSTFLAGS="-D warnings" cargo test --no-default-features
                                                        # backend tests pass, no warnings
 cd .. && npx ng build --configuration development     # frontend compiles
 npm run lint                                           # frontend lint + formatting
+npm audit --omit=dev --audit-level=high                # no high/critical advisories in shipped deps
 ```
+
+CI's `audit` job (in `.github/workflows/frontendLint.yml`) runs the same `npm audit` and
+fails on any high or critical advisory in the production dependencies. Dev dependencies
+(the Angular build tooling) aren't checked; run `npm audit` without `--omit=dev` to see
+those too.
 
 The `RUSTFLAGS="-D warnings"` run is what CI (`.github/workflows/rustLint.yml`) enforces
 on every push/PR - it turns plain rustc warnings (unused imports, unused variables, dead
