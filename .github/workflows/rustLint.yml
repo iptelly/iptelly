@@ -13,6 +13,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: rustfmt
+
+      # Runs before the slow system-deps install so formatting fails fast,
+      # and needs no build.
+      - name: cargo fmt --check
+        working-directory: src-tauri
+        run: cargo fmt --check
 
       - name: Install deps linux
         run: |
