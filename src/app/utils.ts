@@ -19,11 +19,17 @@ export const getDateFormatted = (): string => {
   return new Date().toISOString().replace(/T|:/g, "-").split(".")[0];
 };
 
+// Only the last path segment can hold the file's extension - dots in the
+// host, query string or fragment don't count. PHP endpoints (e.g. Xtream's
+// get.php) serve the stream rather than a file of that type, so they fall
+// back to mp4 like URLs with no extension at all.
 export const getExtension = (url: string): string => {
-  const split = url.split(".");
-  const last = split[split.length - 1];
-  if (split.length == 1 || last.startsWith("php?")) return "mp4";
-  else return last;
+  const path = url.replace(/^[a-z][a-z\d+.-]*:\/\/[^/?#]*/i, "").split(/[?#]/)[0];
+  const fileName = path.substring(path.lastIndexOf("/") + 1);
+  const dot = fileName.lastIndexOf(".");
+  const extension = dot === -1 ? "" : fileName.substring(dot + 1);
+  if (!extension || extension.toLowerCase() === "php") return "mp4";
+  return extension;
 };
 
 export const formatBytes = (bytes?: number): string => {

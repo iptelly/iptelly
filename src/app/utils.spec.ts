@@ -85,8 +85,23 @@ describe("utils", () => {
       expect(getExtension("stream")).toBe("mp4");
     });
 
-    it("defaults to mp4 for php query URLs", () => {
+    it("defaults to mp4 when the path has no extension", () => {
+      expect(getExtension("http://example.com/stream")).toBe("mp4");
+      expect(getExtension("http://example.com:8080/live/u/p/123")).toBe("mp4");
+      expect(getExtension("http://example.com")).toBe("mp4");
+      expect(getExtension("http://example.com/")).toBe("mp4");
+      expect(getExtension("http://192.168.1.10/movies.dir/stream")).toBe("mp4");
+    });
+
+    it("defaults to mp4 for php endpoints", () => {
       expect(getExtension("http://example.com/get.php?username=a&password=b")).toBe("mp4");
+      expect(getExtension("http://example.com/stream.php")).toBe("mp4");
+    });
+
+    it("ignores the query string and fragment", () => {
+      expect(getExtension("http://example.com/movie.mkv?token=a.b")).toBe("mkv");
+      expect(getExtension("http://example.com/movie.mp4#t=1.5")).toBe("mp4");
+      expect(getExtension("http://example.com/play?file=movie.avi")).toBe("mp4");
     });
   });
 

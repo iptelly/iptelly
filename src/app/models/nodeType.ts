@@ -15,6 +15,6 @@ export function fromMediaType(type: MediaType) {
     case MediaType.season:
       return NodeType.Season;
     default:
-      throw new Error("Invalid type: " + MediaType.livestream.toString());
+      throw new Error("Invalid type: " + MediaType[type]);
   }
 }

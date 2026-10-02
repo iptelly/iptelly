@@ -9,7 +9,7 @@ describe("fromMediaType", () => {
   });
 
   it("throws for media types that cannot be browsed into", () => {
-    expect(() => fromMediaType(MediaType.livestream)).toThrowError();
-    expect(() => fromMediaType(MediaType.movie)).toThrowError();
+    expect(() => fromMediaType(MediaType.livestream)).toThrowError("Invalid type: livestream");
+    expect(() => fromMediaType(MediaType.movie)).toThrowError("Invalid type: movie");
   });
 });
