@@ -1,9 +1,9 @@
 {
-  "productName": "Fred TV",
+  "productName": "IPTelly",
   "version": "2.0.0",
-  "identifier": "dev.fredol.open-tv",
+  "identifier": "dev.iptelly.iptelly",
   "build": {
-    "frontendDist": "../dist/open-tv/browser",
+    "frontendDist": "../dist/iptelly/browser",
     "devUrl": "http://localhost:4200",
     "beforeDevCommand": "npm run start",
     "beforeBuildCommand": "ng build --configuration=production"
@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "Fred TV (v2.0.0)",
+        "title": "IPTelly (v2.0.0)",
         "width": 800,
         "height": 600,
         "resizable": true,

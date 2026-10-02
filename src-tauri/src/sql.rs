@@ -63,7 +63,7 @@ fn get_and_create_sqlite_db_path() -> String {
     if let Ok(path) = std::env::var("OPEN_TV_DB_PATH") {
         return path;
     }
-    let mut path = ProjectDirs::from("dev", "fredol", "open-tv")
+    let mut path = ProjectDirs::from("dev", "iptelly", "iptelly")
         .expect("Could not determine the app data directory")
         .data_dir()
         .to_owned();

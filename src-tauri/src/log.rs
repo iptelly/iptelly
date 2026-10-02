@@ -42,7 +42,7 @@ fn init_logger() -> bool {
 }
 
 fn get_and_create_log_path() -> Result<String> {
-    let mut path = ProjectDirs::from("dev", "fredol", "open-tv")
+    let mut path = ProjectDirs::from("dev", "iptelly", "iptelly")
         .context("Could not determine the app cache directory")?
         .cache_dir()
         .to_owned();

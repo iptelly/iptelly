@@ -1,8 +1,8 @@
 [package]
-name = "open_tv"
+name = "iptelly"
 version = "2.0.0"
 description = "Fast And Powerful IPTV App"
-authors = ["Frédéric Lachapelle"]
+authors = ["jeffsmith82"]
 license = ""
 repository = ""
 edition = "2024"
@@ -11,7 +11,7 @@ rust-version = "1.91.1"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
-name = "open_tv_lib"
+name = "iptelly_lib"
 crate-type = ["staticlib", "cdylib", "lib"]
 
 [[bench]]

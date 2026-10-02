@@ -22,7 +22,7 @@ export class ImportModalComponent {
       multiple: false,
       directory: false,
       canCreateDirectories: false,
-      title: "Select Fred TV export file",
+      title: "Select IPTelly export file",
       filters: [{ name: "extension", extensions: ["otv", "otvg"] }],
     });
     if (file == null) {

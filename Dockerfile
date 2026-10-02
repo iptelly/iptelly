@@ -35,15 +35,15 @@ ENV WEBKIT_DISABLE_DMABUF_RENDERER=1
 
 WORKDIR /tmp
 
-COPY --from=builder /app/src-tauri/target/release/bundle/deb/*.deb ./open-tv.deb
+COPY --from=builder /app/src-tauri/target/release/bundle/deb/*.deb ./iptelly.deb
 
-RUN apt update && apt install -y ./open-tv.deb \
+RUN apt update && apt install -y ./iptelly.deb \
   mesa-utils \
   libgl1-mesa-dri \
   mpv \
   ffmpeg \
   yt-dlp \
   && apt clean && rm -rf /var/lib/apt/lists/* \
-  && rm open-tv.deb
+  && rm iptelly.deb
 
-CMD ["open_tv"]
+CMD ["iptelly"]

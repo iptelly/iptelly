@@ -121,7 +121,7 @@ pub const ADULT_PIN_HASH: &str = "adultPinHash";
 // targeted attacker (anyone with direct DB access has already bypassed the
 // whole point of this feature) - just to avoid a plain, precomputable
 // SHA-256 of a short numeric PIN sitting in the settings table as-is.
-const ADULT_PIN_PEPPER: &str = "open-tv-adult-pin";
+const ADULT_PIN_PEPPER: &str = "iptelly-adult-pin";
 
 fn hash_adult_pin(pin: &str) -> String {
     let mut hasher = Sha256::new();
@@ -174,7 +174,7 @@ pub fn get_default_record_path() -> Result<String> {
         .video_dir()
         .context("No videos dir in ~, please set a recording path in Settings")?
         .to_owned();
-    path.push("open-tv");
+    path.push("iptelly");
     std::fs::create_dir_all(&path)?;
     Ok(path.to_string_lossy().to_string())
 }

@@ -1,6 +1,6 @@
 <nav class="nav-rail">
   <div class="rail-logo">
-    <img src="assets/app-icon.png" alt="Fred TV" />
+    <img src="assets/app-icon.png" alt="IPTelly" />
   </div>
   <button *ngFor="let entry of items; let i = index" [id]="'viewMode-' + i" type="button" class="rail-item"
     [ngbTooltip]="entry.label" placement="right" [ngClass]="{ active: active == entry.item }"

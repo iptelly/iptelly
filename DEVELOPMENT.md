@@ -1,12 +1,12 @@
-# Developing Fred TV
+# Developing IPTelly
 
-This document explains how to check out, build, and run Fred TV locally. It's aimed at
+This document explains how to check out, build, and run IPTelly locally. It's aimed at
 people contributing code, not end users - if you just want to use the app, see the
 [README](README.md) for install links instead.
 
 ## Overview
 
-Fred TV is a [Tauri v2](https://v2.tauri.app/) desktop app:
+IPTelly is a [Tauri v2](https://v2.tauri.app/) desktop app:
 
 - **Backend**: Rust, in `src-tauri/` (SQLite for storage, `mpv`/`vlc` spawned as external
   player processes).
@@ -39,11 +39,11 @@ Fred TV is a [Tauri v2](https://v2.tauri.app/) desktop app:
 ## Getting the source
 
 ```
-git clone https://github.com/Fredolx/open-tv.git
+git clone https://github.com/iptelly/iptelly.git
 cd open-tv
 ```
 
-If you're working from a fork, clone your fork instead and add `Fredolx/open-tv` as an
+If you're working from a fork, clone your fork instead and add this repo as an
 `upstream` remote so you can keep up with changes there.
 
 ## Package manager: pnpm vs npm
@@ -79,8 +79,8 @@ the terminal for compile errors.
 
 Useful things while developing:
 
-- **The SQLite database** lives at (platform data dir)`/dev.fredol.open-tv/db.sqlite` -
-  e.g. `~/.local/share/dev.fredol.open-tv/db.sqlite` on Linux. Handy to inspect directly
+- **The SQLite database** lives at (platform data dir)`/dev.iptelly.iptelly/db.sqlite` -
+  e.g. `~/.local/share/dev.iptelly.iptelly/db.sqlite` on Linux. Handy to inspect directly
   with `sqlite3` when debugging data issues.
 - **Quick backend-only check** (faster than a full `tauri dev` cycle when you just want to
   know if Rust changes compile): `cd src-tauri && cargo check --no-default-features`.
@@ -106,7 +106,7 @@ pnpm tauri build --bundles appimage # just the AppImage
 ```
 
 Output lands in `src-tauri/target/release/bundle/<type>/`. The plain, unbundled binary
-itself is at `src-tauri/target/release/open_tv` if you just want to run it directly
+itself is at `src-tauri/target/release/iptelly` if you just want to run it directly
 without installing a package.
 
 On Windows/macOS, `pnpm tauri build` produces the platform's native installer (`.msi` on

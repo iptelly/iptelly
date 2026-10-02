@@ -9,7 +9,7 @@ import { Settings } from "./models/settings";
   styleUrl: "./app.component.css",
 })
 export class AppComponent implements OnInit {
-  title = "open-tv";
+  title = "iptelly";
 
   constructor(private theme: ThemeService) {}
 

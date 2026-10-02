@@ -12,7 +12,7 @@ use std::hint::black_box;
 use std::time::Duration;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use open_tv_lib::{media_type, source_type, sql, types::Source, xtream};
+use iptelly_lib::{media_type, source_type, sql, types::Source, xtream};
 
 const CHANNEL_COUNT: usize = 500_000;
 // The real database (601,032 channels) has only 3,489 categories across its

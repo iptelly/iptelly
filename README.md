@@ -1,27 +1,8 @@
-# Fred TV (Formerly Open TV)
+# IPTelly
 
-Completely rewritten to accommodate new features and to be even speedier, Fred TV has been carefully crafted to deliver the best IPTV experience.
+IPTelly is a fast and powerful IPTV player for desktop, carefully crafted to deliver the best IPTV experience. It's a fork of [open-tv](https://github.com/Fredolx/open-tv), rebranded and maintained independently.
 
-<a href="https://apps.microsoft.com/detail/9PBWX3RKR1QX?launch=true&mode=mini">
-	<img src="https://get.microsoft.com/images/en-us%20dark.svg" width="350"/>
-</a>
-<a href="https://flathub.org/apps/dev.fredol.open-tv">
-  <img src="https://dl.flathub.org/assets/badges/flathub-badge-en.svg" width="300"/>
-</a>
-<a href="https://aur.archlinux.org/packages/open-tv-bin">
-  <img src="https://raw.githubusercontent.com/Fredolx/open-tv/refs/heads/main/readme_imgs/aur-open-tv.svg" width="350" />
-</a>
-<a href="https://apps.apple.com/ca/app/open-tv-open-source-iptv/id6742751800">
-  <img src="https://raw.githubusercontent.com/Fredolx/open-tv/refs/heads/main/readme_imgs/app-store.svg" width=300 />
-</a>
-<a href="https://play.google.com/store/apps/details?id=dev.fredol.open_tv">
-  <img src="https://raw.githubusercontent.com/Fredolx/open-tv/refs/heads/main/readme_imgs/gplay.png">
-</a>
-
-# This project NEEDS your help. Please consider donating on [Github](https://github.com/sponsors/Fredolx), [Paypal](https://paypal.me/fredolx) or directly by [crypto](#donate-crypto-thank-you)
-I've been developing and maintaining this project alone and for entirely for free over the past 2 years. I am in dire need of support to continue developing this project. I've never added annoying donation pop-ups or anything of the sort to make sure you have the fastest and cleanest IPTV experience and I'm committed to keep this project FREE & OPEN-SOURCE. To keep that commitment, I need your support!
-
-![Image of the app](https://github.com/Fredolx/open-tv/blob/main/screenshots/demo1.png)
+*(Screenshot coming soon.)*
 
 ## Features:
 - Import your IPTV channels from any source (M3U File, M3U link, Xtream) 🗃️
@@ -58,8 +39,8 @@ choco install mpv ffmpeg yt-dlp # Windows alternative
 ```
 
 ## Docker
-You can install Fred TV using Docker. It wouldn't necessarily be the recommended way to install it, but it's now possible.
-You should always install Fred TV from either Releases or Flatpak on Linux.
+You can install IPTelly using Docker. It wouldn't necessarily be the recommended way to install it, but it's now possible.
+You should always install IPTelly from either Releases or Flatpak on Linux.
 
 For Nvidia GPUs:
 ```
@@ -68,9 +49,9 @@ docker run --rm -it \
   --env="DISPLAY" \
   --volume="/tmp/.X11-unix:/tmp/.X11-unix:rw" \
   --volume="$HOME/.Xauthority:/root/.Xauthority:rw" \
-  --volume="$HOME/.local/share/open-tv:/root/.local/share/open-tv" \
+  --volume="$HOME/.local/share/dev.iptelly.iptelly:/root/.local/share/dev.iptelly.iptelly" \
   --gpus all \
-  ghcr.io/fredolx/open-tv:latest
+  ghcr.io/iptelly/iptelly:latest
 ```
 For everyone else (Intel, AMD):
 ```
@@ -79,13 +60,13 @@ docker run --rm -it \
   --env="DISPLAY" \
   --volume="/tmp/.X11-unix:/tmp/.X11-unix:rw" \
   --volume="$HOME/.Xauthority:/root/.Xauthority:rw" \
-  --volume="$HOME/.local/share/open-tv:/root/.local/share/open-tv" \
+  --volume="$HOME/.local/share/dev.iptelly.iptelly:/root/.local/share/dev.iptelly.iptelly" \
   --device /dev/dri \
-  ghcr.io/fredolx/open-tv:latest
+  ghcr.io/iptelly/iptelly:latest
 ```
 
 ## Development
-Want to build Fred TV from source or contribute code? See [DEVELOPMENT.md](DEVELOPMENT.md)
+Want to build IPTelly from source or contribute code? See [DEVELOPMENT.md](DEVELOPMENT.md)
 for how to check out the source, run it in dev mode, and build it locally.
 
 ## Feedback
@@ -104,7 +85,7 @@ Feel free to submit any kind of feedback by creating a new issue.
 * Arrow keys/Tab/Shift+Tab: Navigation
 
 If you have a tv remote or air mouse that has slightly different bindings for general nav (back, up, down, left, right),
-please open an issue and I will add them if it's feasible. Otherwise, you can still use hwdb to make them match Fred TV's bindings.
+please open an issue and we will add them if it's feasible. Otherwise, you can still use hwdb to make them match IPTelly's bindings.
 
 ## Settings explained
 
@@ -118,37 +99,8 @@ Why disabling:
   - If you have a good internet/provider and want lower latency
   - Can prevent some weird bugs/slowdowns
 
-## Donate Crypto (Thank you!)
-BTC:
-```
-bc1q7v27u4mrxhtqzl97pcp4vl52npss760epsheu3
-```
-
-ETH:
-```
-0x171D5B628eff75c98c141aD5584FffA209274365
-```
-
-LTC:
-```
-ltc1qzxgp2grt9ayvpv0dur7lgzgf88yp09h2ytmga0
-```
-
-BCH:
-```
-bitcoincash:qz4mauqyytkvhp9yze0qhgn2nnlv4z5glckyysxg2n
-```
-
-SOL:
-```
-AM7roSrxBKrS5mG7q6aXnQHZKh3ArtBxvG3x1B1VjKhj
-```
-
-BNB:
-```
-0x0C8C5217a8044b3736aD82CCFB9f099597b65253
-```
-
 ## Disclaimer
 
-Fred TV is an independent open-source project created to provide a fast and powerful IPTV experience. The name "Fred TV" is used solely to represent this specific software and its purpose as described in the project documentation. Any other software, applications, or products bearing the same or similar name are unrelated to this project. Any resemblance to other software or applications is purely coincidental and unintended. We do not intend to cause confusion or imply affiliation with any other products or organizations that may share a similar name.
+IPTelly is an independent open-source project created to provide a fast and powerful IPTV experience. The name "IPTelly" is used solely to represent this specific software and its purpose as described in the project documentation. Any other software, applications, or products bearing the same or similar name are unrelated to this project. Any resemblance to other software or applications is purely coincidental and unintended. We do not intend to cause confusion or imply affiliation with any other products or organizations that may share a similar name.
+
+IPTelly is licensed under GPLv2, same as the [open-tv](https://github.com/Fredolx/open-tv) project it was forked from.

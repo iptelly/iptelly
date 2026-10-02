@@ -1,14 +1,14 @@
 ---
 name: Bug report
-about: Create a report to help Fred TV improve
+about: Create a report to help IPTelly improve
 title: "[BUG]"
 labels: ''
-assignees: Fredolx
+assignees: ''
 
 ---
 
 **Describe the bug**
-A clear and concise description of what the bug is. If it's a complex bug, please provide step-by-step instructions to reproduce it. Feel free to mail your playlist with credentials to my e-mail if it's a parsing issue: frederic.lachapelle7@gmail.com
+A clear and concise description of what the bug is. If it's a complex bug, please provide step-by-step instructions to reproduce it.
 
 **Screenshots/Videos**
 If applicable, add screenshots/videos to help explain your problem.

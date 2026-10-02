@@ -122,7 +122,7 @@ pub fn prune_old_epg(source: Source) -> Result<()> {
 }
 
 fn get_tmp_path() -> Result<String> {
-    let mut path = directories::ProjectDirs::from("dev", "fredol", "open-tv")
+    let mut path = directories::ProjectDirs::from("dev", "iptelly", "iptelly")
         .context("Could not determine the app cache directory")?
         .cache_dir()
         .to_owned();

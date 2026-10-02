@@ -10,7 +10,7 @@ use std::hint::black_box;
 use std::time::Duration;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use open_tv_lib::m3u::get_channel_from_lines;
+use iptelly_lib::m3u::get_channel_from_lines;
 
 const FIXTURE: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),

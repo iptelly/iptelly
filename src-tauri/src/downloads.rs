@@ -39,7 +39,7 @@ fn build_channel_client(channel: &Channel, source: &crate::types::Source) -> Res
         }
     }
     // Unlike get_user_agent_from_source() (used for Xtream API calls), this
-    // deliberately does NOT fall back to DEFAULT_USER_AGENT ("Fred TV") -
+    // deliberately does NOT fall back to DEFAULT_USER_AGENT ("IPTelly") -
     // mpv playback (see mpv.rs's set_headers) only sends --user-agent when
     // one is explicitly configured, otherwise sending nothing and letting
     // mpv/ffmpeg use its own default, so downloads match that "send

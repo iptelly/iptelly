@@ -34,7 +34,7 @@ const MACOS_POTENTIAL_PATHS: [&str; 3] = [
     "/usr/local/bin",    // Homebrew on AMD64 Mac
 ];
 
-const DEFAULT_USER_AGENT: &str = "Fred TV";
+const DEFAULT_USER_AGENT: &str = "IPTelly";
 
 static ILLEGAL_CHARS_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"[<>:"/\\|?*\x00-\x1F]"#).unwrap());
@@ -351,7 +351,7 @@ pub fn create_nuke_request() -> Result<()> {
 }
 
 fn get_nuke_path() -> Result<PathBuf> {
-    let path = ProjectDirs::from("dev", "fredol", "open-tv").context("project dir not found")?;
+    let path = ProjectDirs::from("dev", "iptelly", "iptelly").context("project dir not found")?;
     let path = path.cache_dir();
     let path = path.join("nuke.txt");
     Ok(path)
@@ -363,7 +363,7 @@ pub fn check_nuke() -> Result<()> {
         return Ok(());
     }
     std::fs::remove_file(path)?;
-    let path = ProjectDirs::from("dev", "fredol", "open-tv").context("project dir not found")?;
+    let path = ProjectDirs::from("dev", "iptelly", "iptelly").context("project dir not found")?;
     let path = path.data_dir();
     let path = path.join(sql::DB_NAME);
     if path.exists() {

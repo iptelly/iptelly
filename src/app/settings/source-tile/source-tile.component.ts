@@ -29,7 +29,7 @@ export class SourceTileComponent {
   sourceTypeEnum = SourceType;
   editing = false;
   editableSource: Source = {};
-  defaultUserAgent = "Fred TV";
+  defaultUserAgent = "IPTelly";
 
   constructor(
     public memory: MemoryService,

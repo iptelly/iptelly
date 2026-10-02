@@ -5,25 +5,25 @@
       <Directory Id="DepsFolder" Name="deps">
         <Component Id="MpvComponent" Guid="*">
           <File Id="MpvExe" 
-                Source="C:\open-tv-deps\mpv.exe" 
+                Source="C:\iptelly-deps\mpv.exe" 
                 KeyPath="yes" 
           />
         </Component>
         <Component Id="FfmpegComponent" Guid="*">
           <File Id="FfmpegExe" 
-                Source="C:\open-tv-deps\ffmpeg.exe" 
+                Source="C:\iptelly-deps\ffmpeg.exe" 
                 KeyPath="yes" 
           />
         </Component>
         <Component Id="YtDlpComponent" Guid="*">
           <File Id="YtDlpExe" 
-                Source="C:\open-tv-deps\yt-dlp.exe" 
+                Source="C:\iptelly-deps\yt-dlp.exe" 
                 KeyPath="yes" 
           />
         </Component>
         <Component Id="VulkanComponent" Guid="*">
           <File Id="VulkanDLL" 
-                Source="C:\open-tv-deps\vulkan-1.dll" 
+                Source="C:\iptelly-deps\vulkan-1.dll" 
                 KeyPath="yes" 
           />
         </Component>

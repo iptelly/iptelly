@@ -400,7 +400,7 @@ export class SettingsComponent {
     const file = await save({
       canCreateDirectories: true,
       title: "Select where to save your exported data",
-      defaultPath: `open-tv_backup${APP_DATA_BACKUP}`,
+      defaultPath: `iptelly_backup${APP_DATA_BACKUP}`,
       filters: [{ name: "extension", extensions: ["otva"] }],
     });
     if (!file) return;
