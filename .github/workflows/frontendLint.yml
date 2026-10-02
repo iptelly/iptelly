@@ -24,6 +24,23 @@ jobs:
       - name: biome ci
         run: npx biome ci
 
+  test:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # Vitest in jsdom with Tauri IPC mocked (src/testing/setup.ts), so no
+      # browser or Rust build is needed.
+      - name: ng test
+        run: npx ng test --watch=false
+
   audit:
     runs-on: ubuntu-22.04
 

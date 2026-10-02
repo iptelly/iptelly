@@ -134,6 +134,7 @@ cd src-tauri && RUSTFLAGS="-D warnings" cargo test --no-default-features
                                                        # backend tests pass, no warnings
 cd .. && npx ng build --configuration development     # frontend compiles
 npm run lint                                           # frontend lint + formatting
+npx ng test --watch=false                              # frontend tests pass
 npm audit --omit=dev --audit-level=high                # no high/critical advisories in shipped deps
 ```
 
@@ -149,6 +150,28 @@ which a plain `cargo check`/`cargo build` never compiles at all.
 
 These are quick and catch the vast majority of mistakes before you get to a full
 `tauri build`, which is much slower.
+
+### Frontend tests (Vitest)
+
+Frontend specs (`src/**/*.spec.ts`) run on Vitest through Angular's
+`@angular/build:unit-test` builder, in Node with jsdom (no browser needed).
+
+```
+npm test                     # watch mode
+npx ng test --watch=false    # single run, as CI does
+```
+
+Two helpers in `src/testing/` keep specs short:
+
+- `test-module.ts` exports `appTestModule`, which declares every app component
+  (`APP_DECLARATIONS` from `app.module.ts`) along with the modules their templates use.
+  Pass it to `TestBed.configureTestingModule(appTestModule)`, then set any required
+  inputs with `fixture.componentRef.setInput(...)` before the first `detectChanges()`.
+- `setup.ts` runs before every test. It mocks Tauri IPC with `@tauri-apps/api/mocks`,
+  so `invoke()` returns empty results instead of failing, and stubs the browser
+  observers jsdom lacks. Override a command in a single spec by calling `mockIPC` again.
+
+CI's `test` job runs the single-run command on every push/PR.
 
 ### Frontend linting and formatting (Biome)
 
