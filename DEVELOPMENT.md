@@ -17,8 +17,8 @@ IPTelly is a [Tauri v2](https://v2.tauri.app/) desktop app:
 1. **Rust** - install via [rustup](https://rustup.rs/). The project targets edition 2024
    and Rust 1.91.1+ (`src-tauri/Cargo.toml`'s `rust-version`); `rustup` will pick up
    whatever `stable` resolves to, which is fine.
-2. **Node.js 20+** and a package manager - see [Package manager: pnpm vs npm](#package-manager-pnpm-vs-npm)
-   below before you pick one.
+2. **Node.js 20+** with npm (bundled with Node) - see [Package manager](#package-manager)
+   below.
 3. **Platform build dependencies** for Tauri itself:
    - **Linux (Debian/Ubuntu)**:
      ```
@@ -40,35 +40,35 @@ IPTelly is a [Tauri v2](https://v2.tauri.app/) desktop app:
 
 ```
 git clone https://github.com/iptelly/iptelly.git
-cd open-tv
+cd iptelly
 ```
 
 If you're working from a fork, clone your fork instead and add this repo as an
 `upstream` remote so you can keep up with changes there.
 
-## Package manager: pnpm vs npm
+## Package manager
 
-Local development in this repo has been done with **pnpm** (faster installs, and what
-`pnpm-lock.yaml` reflects), but **CI and the release build workflow
-(`.github/workflows/buildAndUpload.yml`) use plain `npm install` / `npm run tauri build`**,
-which reads `package-lock.json` instead. Both lockfiles are committed and need to stay in
-sync with each other and with `src-tauri/Cargo.toml`'s `tauri`/`tauri-plugin-*` crate
-versions - `tauri build` hard-fails (not just warns) if the npm `@tauri-apps/*` packages
-and the Rust `tauri`/plugin crates drift onto different major.minor versions. If you bump
-any `@tauri-apps/*` package or any `tauri-plugin-*` crate, bump the other side to match and
-regenerate **both** lockfiles (`npm install` and `pnpm install`) before committing.
-
-For day-to-day dev work, either works - install pnpm via `corepack enable` or
-`npm install -g pnpm`, then:
+Use **npm**. CI and the release workflow (`.github/workflows/buildAndUpload.yml`), the
+`Dockerfile`, and `tauri.conf.json`'s `beforeDevCommand` all run npm, which reads
+`package-lock.json`. The commands below run the Tauri CLI through `npx`, which uses the
+version pinned in `node_modules` (no global install needed).
 
 ```
-pnpm install   # or: npm install
+npm install
 ```
+
+The npm `@tauri-apps/*` packages must stay on the same major.minor version as the Rust
+`tauri`/`tauri-plugin-*` crates in `src-tauri/Cargo.toml`. `tauri build` fails outright
+(not just a warning) if they drift apart. If you bump one side, bump the other to match and
+re-run `npm install` so `package-lock.json` is updated before committing.
+
+For a clean install that matches CI exactly (e.g. after switching branches, or if
+`node_modules` was created by another package manager), use `rm -rf node_modules && npm ci`.
 
 ## Running in dev mode
 
 ```
-pnpm tauri dev
+npx tauri dev
 ```
 
 This starts the Angular dev server (`ng serve`, with hot reload) and builds/launches the
@@ -84,7 +84,7 @@ Useful things while developing:
   with `sqlite3` when debugging data issues.
 - **Quick backend-only check** (faster than a full `tauri dev` cycle when you just want to
   know if Rust changes compile): `cd src-tauri && cargo check --no-default-features`.
-- **Quick frontend-only check**: `pnpm ng build --configuration development`.
+- **Quick frontend-only check**: `npx ng build --configuration development`.
 
 ## Building everything locally
 
@@ -92,7 +92,7 @@ A full production build (optimized Rust release binary + Angular production bund
 packaged for your OS):
 
 ```
-pnpm tauri build
+npx tauri build
 ```
 
 On Linux, this builds `deb`, `rpm`, and `AppImage` bundles by default (per
@@ -100,16 +100,27 @@ On Linux, this builds `deb`, `rpm`, and `AppImage` bundles by default (per
 types (faster, useful when iterating on packaging):
 
 ```
-pnpm tauri build --bundles rpm      # just the RPM
-pnpm tauri build --bundles deb      # just the .deb
-pnpm tauri build --bundles appimage # just the AppImage
+npx tauri build --bundles rpm       # just the RPM
+npx tauri build --bundles deb       # just the .deb
+npx tauri build --bundles appimage  # just the AppImage
+npx tauri build --bundles deb,rpm   # what CI builds on Linux
 ```
 
-Output lands in `src-tauri/target/release/bundle/<type>/`. The plain, unbundled binary
-itself is at `src-tauri/target/release/iptelly` if you just want to run it directly
+Output lands in `src-tauri/target/release/bundle/<type>/`, e.g.
+`src-tauri/target/release/bundle/rpm/IPTelly-2.0.0-1.x86_64.rpm`. The plain, unbundled
+binary itself is at `src-tauri/target/release/iptelly` if you just want to run it directly
 without installing a package.
 
-On Windows/macOS, `pnpm tauri build` produces the platform's native installer (`.msi` on
+To install the RPM you just built (Fedora; `ffmpeg` needs RPM Fusion enabled, since the
+package depends on it):
+
+```
+sudo dnf install ./src-tauri/target/release/bundle/rpm/IPTelly-*.rpm
+```
+
+Use `dnf reinstall` instead to replace a build of the same version that's already installed.
+
+On Windows/macOS, `npx tauri build` produces the platform's native installer (`.msi` on
 Windows via WiX, `.dmg`/`.app` on macOS) the same way.
 
 ## Verifying before committing
@@ -121,7 +132,7 @@ There's a small backend test suite (`src-tauri/src/**/test_*` modules, plus
 cd src-tauri && cargo check --no-default-features    # backend compiles
 cd src-tauri && RUSTFLAGS="-D warnings" cargo test --no-default-features
                                                        # backend tests pass, no warnings
-cd .. && pnpm ng build --configuration development    # frontend compiles
+cd .. && npx ng build --configuration development     # frontend compiles
 ```
 
 The `RUSTFLAGS="-D warnings"` run is what CI (`.github/workflows/rustLint.yml`) enforces
