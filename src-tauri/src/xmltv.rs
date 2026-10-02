@@ -166,8 +166,12 @@ fn parse_programmes(
     from_ts: i64,
     to_ts: i64,
 ) -> Result<Vec<ParsedProgramme>> {
+    // Not trim_text(true): quick-xml reports entity references (&amp; etc.)
+    // as their own GeneralRef events, splitting the text around them, so
+    // trimming each piece would eat the spaces either side of the entity
+    // ("Fish &amp; Chips" -> "Fish&Chips"). Title/desc are trimmed as a
+    // whole when the programme ends instead.
     let mut xml_reader = Reader::from_reader(reader);
-    xml_reader.config_mut().trim_text(true);
 
     let mut programmes = Vec::new();
     let mut buf = Vec::new();
@@ -202,16 +206,27 @@ fn parse_programmes(
                     TextTarget::None => {}
                 }
             }
+            Event::GeneralRef(r) if current.is_some() => {
+                let target = match text_target {
+                    TextTarget::Title => Some(&mut current_title),
+                    TextTarget::Desc => Some(&mut current_desc),
+                    TextTarget::None => None,
+                };
+                if let Some(target) = target {
+                    push_entity(target, &r);
+                }
+            }
             Event::End(e) if e.name().as_ref() == "programme" => {
                 if let Some((tvg_id, start_timestamp, end_timestamp)) = current.take() {
-                    // mem::take instead of clone() - the accumulated title/desc
-                    // are moved out (leaving empty Strings behind, which the
-                    // next <programme>'s clear() calls above would do anyway),
-                    // avoiding a copy per programme kept.
+                    // take_trimmed instead of clone() - the accumulated
+                    // title/desc are moved out when already trimmed (the
+                    // usual case), leaving empty Strings behind, which the
+                    // next <programme>'s clear() calls above would do
+                    // anyway, avoiding a copy per programme kept.
                     programmes.push(ParsedProgramme {
                         tvg_id,
-                        title: std::mem::take(&mut current_title),
-                        description: std::mem::take(&mut current_desc),
+                        title: take_trimmed(&mut current_title),
+                        description: take_trimmed(&mut current_desc),
                         start_timestamp,
                         end_timestamp,
                     });
@@ -222,6 +237,29 @@ fn parse_programmes(
         buf.clear();
     }
     Ok(programmes)
+}
+
+fn push_entity(target: &mut String, entity: &quick_xml::events::BytesRef) {
+    if let Ok(Some(ch)) = entity.resolve_char_ref() {
+        target.push(ch);
+    } else if let Some(resolved) = quick_xml::escape::resolve_xml_entity(entity) {
+        target.push_str(resolved);
+    } else {
+        // Not a predefined XML entity (or an invalid character reference) -
+        // keep it as written rather than silently dropping it.
+        target.push('&');
+        target.push_str(entity);
+        target.push(';');
+    }
+}
+
+fn take_trimmed(text: &mut String) -> String {
+    let trimmed = text.trim();
+    if trimmed.len() == text.len() {
+        std::mem::take(text)
+    } else {
+        trimmed.to_string()
+    }
 }
 
 fn read_programme_attrs(
@@ -335,6 +373,54 @@ mod tests {
         assert_eq!(p.description, "The headlines");
         assert_eq!(p.start_timestamp, NOON);
         assert_eq!(p.end_timestamp, NOON + HOUR);
+    }
+
+    #[test]
+    fn resolves_entities_and_keeps_the_spaces_around_them() {
+        let xml = tv(&[programme(
+            "bbc1.uk",
+            "20260101120000 +0000",
+            "20260101130000 +0000",
+            "<title>Fish &amp; Chips</title><desc>&lt;Live&gt; &quot;now&quot; &apos;ok&apos;</desc>",
+        )]);
+        let p = &parse(&xml, &["bbc1.uk"])[0];
+        assert_eq!(p.title, "Fish & Chips");
+        assert_eq!(p.description, "<Live> \"now\" 'ok'");
+    }
+
+    #[test]
+    fn resolves_character_references() {
+        let xml = tv(&[programme(
+            "bbc1.uk",
+            "20260101120000 +0000",
+            "20260101130000 +0000",
+            "<title>Caf&#233; &#x2014; Rock&#x27;n&#x27;Roll</title>",
+        )]);
+        assert_eq!(parse(&xml, &["bbc1.uk"])[0].title, "Café — Rock'n'Roll");
+    }
+
+    #[test]
+    fn keeps_unknown_entities_as_written() {
+        let xml = tv(&[programme(
+            "bbc1.uk",
+            "20260101120000 +0000",
+            "20260101130000 +0000",
+            "<title>A&nbsp;B</title>",
+        )]);
+        assert_eq!(parse(&xml, &["bbc1.uk"])[0].title, "A&nbsp;B");
+    }
+
+    #[test]
+    fn trims_whitespace_around_title_and_desc() {
+        let xml = tv(&[programme(
+            "bbc1.uk",
+            "20260101120000 +0000",
+            "20260101130000 +0000",
+            "<title>\n      News &amp; Weather\n    </title>\n    <desc>  Line one\nline two  </desc>",
+        )]);
+        let p = &parse(&xml, &["bbc1.uk"])[0];
+        assert_eq!(p.title, "News & Weather");
+        assert_eq!(p.description, "Line one\nline two");
     }
 
     #[test]
@@ -514,5 +600,21 @@ mod tests {
         assert!(first.description.starts_with("Brandon zügelt"));
         assert_eq!(first.start_timestamp, 1_790_841_761);
         assert_eq!(first.end_timestamp, 1_790_843_130);
+    }
+
+    #[test]
+    fn parses_entities_in_the_samsung_tv_plus_fixture() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/samsung_tvplus_epg.xml.gz"
+        );
+        let programmes = parse_programmes(
+            open_reader(path).unwrap(),
+            &ids(&["ATAJ700002OG"]),
+            0,
+            i64::MAX,
+        )
+        .unwrap();
+        assert!(programmes.iter().any(|p| p.title == "Macky & Shefat"));
     }
 }
