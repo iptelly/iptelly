@@ -2429,7 +2429,7 @@ checksum = "791930b43c0d5973160d90a8f3894509f2b273430f5c5c73b668636d0287c5c0"
 
 [[package]]
 name = "iptelly"
-version = "2.0.0"
+version = "0.0.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
