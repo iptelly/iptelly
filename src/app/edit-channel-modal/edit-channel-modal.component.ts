@@ -1,4 +1,4 @@
-import { Component, OnInit } from "@angular/core";
+import { ChangeDetectionStrategy, Component, OnInit } from "@angular/core";
 import { NgbActiveModal, NgbTypeaheadSelectItemEvent } from "@ng-bootstrap/ng-bootstrap";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import {
@@ -24,10 +24,11 @@ import { IdName } from "../models/idName";
 import { MediaType } from "../models/mediaType";
 
 @Component({
-    selector: "app-edit-channel-modal",
-    templateUrl: "./edit-channel-modal.component.html",
-    styleUrl: "./edit-channel-modal.component.css",
-    standalone: false
+  selector: "app-edit-channel-modal",
+  templateUrl: "./edit-channel-modal.component.html",
+  styleUrl: "./edit-channel-modal.component.css",
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
 })
 export class EditChannelModalComponent implements OnInit {
   channel: CustomChannel = {

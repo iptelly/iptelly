@@ -1,14 +1,15 @@
-import { Component } from "@angular/core";
+import { ChangeDetectionStrategy, Component } from "@angular/core";
 import { NgbActiveModal } from "@ng-bootstrap/ng-bootstrap";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { MemoryService } from "../memory.service";
 
 @Component({
-    selector: "app-import-modal",
-    templateUrl: "./import-modal.component.html",
-    styleUrl: "./import-modal.component.css",
-    standalone: false
+  selector: "app-import-modal",
+  templateUrl: "./import-modal.component.html",
+  styleUrl: "./import-modal.component.css",
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
 })
 export class ImportModalComponent {
   source_id?: number;

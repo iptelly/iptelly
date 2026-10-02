@@ -1,4 +1,10 @@
-import { Component, ElementRef, HostListener, OnInit } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  HostListener,
+  OnInit,
+} from "@angular/core";
 import { invoke } from "@tauri-apps/api/core";
 import { DownloadService } from "../download.service";
 import { ErrorService } from "../error.service";
@@ -8,10 +14,11 @@ import { DownloadHistoryItem } from "../models/downloadHistoryItem";
 import { formatBytes } from "../utils";
 
 @Component({
-    selector: "app-download-manager",
-    templateUrl: "./download-manager.component.html",
-    styleUrl: "./download-manager.component.css",
-    standalone: false
+  selector: "app-download-manager",
+  templateUrl: "./download-manager.component.html",
+  styleUrl: "./download-manager.component.css",
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
 })
 export class DownloadManagerComponent implements OnInit {
   constructor(

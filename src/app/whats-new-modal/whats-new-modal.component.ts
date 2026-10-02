@@ -1,12 +1,13 @@
-import { Component } from "@angular/core";
+import { ChangeDetectionStrategy, Component } from "@angular/core";
 import { NgbActiveModal } from "@ng-bootstrap/ng-bootstrap";
 import { MemoryService } from "../memory.service";
 
 @Component({
-    selector: "app-whats-new-modal",
-    templateUrl: "./whats-new-modal.component.html",
-    styleUrl: "./whats-new-modal.component.css",
-    standalone: false
+  selector: "app-whats-new-modal",
+  templateUrl: "./whats-new-modal.component.html",
+  styleUrl: "./whats-new-modal.component.css",
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
 })
 export class WhatsNewModalComponent {
   constructor(

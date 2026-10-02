@@ -1,4 +1,4 @@
-import { Component, OnInit } from "@angular/core";
+import { ChangeDetectionStrategy, Component, OnInit } from "@angular/core";
 import { NgbActiveModal } from "@ng-bootstrap/ng-bootstrap";
 import { invoke } from "@tauri-apps/api/core";
 import { ErrorService } from "../error.service";
@@ -6,10 +6,11 @@ import { MemoryService } from "../memory.service";
 import { Group } from "../models/group";
 
 @Component({
-    selector: "app-edit-group-modal",
-    templateUrl: "./edit-group-modal.component.html",
-    styleUrl: "./edit-group-modal.component.css",
-    standalone: false
+  selector: "app-edit-group-modal",
+  templateUrl: "./edit-group-modal.component.html",
+  styleUrl: "./edit-group-modal.component.css",
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
 })
 export class EditGroupModalComponent {
   editing: boolean = false;

@@ -1,4 +1,12 @@
-import { Component, ElementRef, EventEmitter, HostListener, Input, Output } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  EventEmitter,
+  HostListener,
+  Input,
+  Output,
+} from "@angular/core";
 import { NgbModal } from "@ng-bootstrap/ng-bootstrap";
 import { invoke } from "@tauri-apps/api/core";
 import { AdultPinModalComponent } from "../../adult-pin-modal/adult-pin-modal.component";
@@ -7,10 +15,11 @@ import { MemoryService } from "../../memory.service";
 import { RailItem } from "../../models/railItem";
 
 @Component({
-    selector: "app-nav-rail",
-    templateUrl: "./nav-rail.component.html",
-    styleUrl: "./nav-rail.component.css",
-    standalone: false
+  selector: "app-nav-rail",
+  templateUrl: "./nav-rail.component.html",
+  styleUrl: "./nav-rail.component.css",
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
 })
 export class NavRailComponent {
   readonly railItemEnum = RailItem;

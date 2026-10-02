@@ -3,7 +3,7 @@
     playing: starting,
     faded: fade,
     'list-layout': layout == 'list'
-}" [ngbTooltip]="epgHovering ? '' : channel?.name" triggers="hover" (click)="click()"
+}" [ngbTooltip]="epgHovering ? '' : $safeNavigationMigration(channel?.name)" triggers="hover" (click)="click()"
   class="channel d-inline-flex p-2 align-items-center" (contextmenu)="onRightClick($event)">
   <div class="image-container me-2">
     @if (channel?.image && showImage && !memory.LightweightMode) {

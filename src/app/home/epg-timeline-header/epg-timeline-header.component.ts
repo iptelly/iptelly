@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit } from "@angular/core";
+import { ChangeDetectionStrategy, Component, OnDestroy, OnInit } from "@angular/core";
 import { interval, Subscription } from "rxjs";
 import { MemoryService } from "../../memory.service";
 import {
@@ -11,10 +11,11 @@ import {
 const TICK_INTERVAL_SECONDS = 30 * 60;
 
 @Component({
-    selector: "app-epg-timeline-header",
-    templateUrl: "./epg-timeline-header.component.html",
-    styleUrl: "./epg-timeline-header.component.css",
-    standalone: false
+  selector: "app-epg-timeline-header",
+  templateUrl: "./epg-timeline-header.component.html",
+  styleUrl: "./epg-timeline-header.component.css",
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
 })
 export class EpgTimelineHeaderComponent implements OnInit, OnDestroy {
   now = Date.now() / 1000;

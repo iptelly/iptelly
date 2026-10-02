@@ -9,15 +9,15 @@ import { invoke } from "@tauri-apps/api/core";
 import { from, map, Observable, of, switchMap, timer } from "rxjs";
 
 @Directive({
-    selector: "[source-name-exists]",
-    providers: [
-        {
-            provide: NG_ASYNC_VALIDATORS,
-            useExisting: forwardRef(() => SourceNameExistsValidator),
-            multi: true,
-        },
-    ],
-    standalone: false
+  selector: "[source-name-exists]",
+  providers: [
+    {
+      provide: NG_ASYNC_VALIDATORS,
+      useExisting: forwardRef(() => SourceNameExistsValidator),
+      multi: true,
+    },
+  ],
+  standalone: false,
 })
 export class SourceNameExistsValidator implements AsyncValidator {
   constructor() {}

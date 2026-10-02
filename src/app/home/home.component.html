@@ -4,7 +4,7 @@
   <app-nav-rail [active]="currentRailItem" (select)="selectRail($event)"></app-nav-rail>
   @if (sidebarVisible()) {
     <app-playlist-sidebar [mediaType]="sidebarMediaType()"
-      [selectedSourceIds]="filters?.source_ids" [selectedGroupId]="filters?.group_id"
+      [selectedSourceIds]="$safeNavigationMigration(filters?.source_ids)" [selectedGroupId]="$safeNavigationMigration(filters?.group_id)"
     (sourceSelect)="onSourceSelect($event)" (widthChange)="sidebarWidthPx = $event"></app-playlist-sidebar>
   }
   @if (currentRailItem === railItemEnum.Downloads) {

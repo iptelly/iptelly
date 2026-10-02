@@ -1,4 +1,10 @@
-import { Component, ElementRef, HostListener, ViewChild } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  HostListener,
+  ViewChild,
+} from "@angular/core";
 import { Router } from "@angular/router";
 import { invoke } from "@tauri-apps/api/core";
 import { NavRailComponent } from "../home/nav-rail/nav-rail.component";
@@ -38,10 +44,11 @@ const TYPE_ORDER = [MediaType.livestream, MediaType.movie, MediaType.serie];
 const INDIVIDUAL_CHANNELS_SECTION = -1;
 
 @Component({
-    selector: "app-manage-categories",
-    templateUrl: "./manage-categories.component.html",
-    styleUrl: "./manage-categories.component.css",
-    standalone: false
+  selector: "app-manage-categories",
+  templateUrl: "./manage-categories.component.html",
+  styleUrl: "./manage-categories.component.css",
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
 })
 export class ManageCategoriesComponent {
   readonly railItemEnum = RailItem;

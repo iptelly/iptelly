@@ -1,4 +1,4 @@
-import { Component, OnInit } from "@angular/core";
+import { ChangeDetectionStrategy, Component, OnInit } from "@angular/core";
 import { NgbActiveModal } from "@ng-bootstrap/ng-bootstrap";
 import { invoke } from "@tauri-apps/api/core";
 import { MemoryService } from "../memory.service";
@@ -6,10 +6,11 @@ import { Channel } from "../models/channel";
 import { EPG } from "../models/epg";
 
 @Component({
-    selector: "app-epg-modal",
-    templateUrl: "./epg-modal.component.html",
-    styleUrl: "./epg-modal.component.css",
-    standalone: false
+  selector: "app-epg-modal",
+  templateUrl: "./epg-modal.component.html",
+  styleUrl: "./epg-modal.component.css",
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
 })
 export class EpgModalComponent implements OnInit {
   name?: string;

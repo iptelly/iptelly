@@ -1,4 +1,4 @@
-import { Component } from "@angular/core";
+import { ChangeDetectionStrategy, Component } from "@angular/core";
 import { NgbActiveModal, NgbTypeaheadSelectItemEvent } from "@ng-bootstrap/ng-bootstrap";
 import { invoke } from "@tauri-apps/api/core";
 import { debounceTime, distinctUntilChanged, filter, from, map, Observable, switchMap } from "rxjs";
@@ -9,10 +9,11 @@ import { Group } from "../models/group";
 import { IdName } from "../models/idName";
 
 @Component({
-    selector: "app-delete-group-modal",
-    templateUrl: "./delete-group-modal.component.html",
-    styleUrl: "./delete-group-modal.component.css",
-    standalone: false
+  selector: "app-delete-group-modal",
+  templateUrl: "./delete-group-modal.component.html",
+  styleUrl: "./delete-group-modal.component.css",
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
 })
 export class DeleteGroupModalComponent {
   loading: boolean = false;

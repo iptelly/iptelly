@@ -24,11 +24,11 @@ import {
 } from "../../models/epgTimelineWindow";
 
 @Component({
-    selector: "app-epg-timeline",
-    templateUrl: "./epg-timeline.component.html",
-    styleUrl: "./epg-timeline.component.css",
-    changeDetection: ChangeDetectionStrategy.OnPush,
-    standalone: false
+  selector: "app-epg-timeline",
+  templateUrl: "./epg-timeline.component.html",
+  styleUrl: "./epg-timeline.component.css",
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  standalone: false,
 })
 export class EpgTimelineComponent implements AfterViewInit, OnChanges, OnDestroy {
   @Input() channel?: Channel;

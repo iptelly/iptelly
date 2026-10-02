@@ -1,13 +1,14 @@
-import { Component } from "@angular/core";
+import { ChangeDetectionStrategy, Component } from "@angular/core";
 import { NgbActiveModal } from "@ng-bootstrap/ng-bootstrap";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { ToastrService } from "ngx-toastr";
 
 @Component({
-    selector: "app-error-modal",
-    templateUrl: "./error-modal.component.html",
-    styleUrl: "./error-modal.component.css",
-    standalone: false
+  selector: "app-error-modal",
+  templateUrl: "./error-modal.component.html",
+  styleUrl: "./error-modal.component.css",
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
 })
 export class ErrorModalComponent {
   error?: string;

@@ -1,4 +1,4 @@
-import { Component, Input, NgZone, OnDestroy } from "@angular/core";
+import { ChangeDetectionStrategy, Component, Input, NgZone, OnDestroy } from "@angular/core";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { Subscription, take } from "rxjs";
@@ -13,10 +13,11 @@ import { MediaType } from "../../models/mediaType";
 import { getDateFormatted, getExtension, sanitizeFileName } from "../../utils";
 
 @Component({
-    selector: "app-epg-modal-item",
-    templateUrl: "./epg-modal-item.component.html",
-    styleUrl: "./epg-modal-item.component.css",
-    standalone: false
+  selector: "app-epg-modal-item",
+  templateUrl: "./epg-modal-item.component.html",
+  styleUrl: "./epg-modal-item.component.css",
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
 })
 export class EpgModalItemComponent implements OnDestroy {
   constructor(

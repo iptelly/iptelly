@@ -1,4 +1,4 @@
-import { Component, NgZone, OnDestroy, OnInit } from "@angular/core";
+import { ChangeDetectionStrategy, Component, NgZone, OnDestroy, OnInit } from "@angular/core";
 import { NgbActiveModal } from "@ng-bootstrap/ng-bootstrap";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
@@ -10,10 +10,11 @@ import { NetworkInfo } from "../models/networkInfo";
 import { sanitizeFileName } from "../utils";
 
 @Component({
-    selector: "app-restream-modal",
-    templateUrl: "./restream-modal.component.html",
-    styleUrl: "./restream-modal.component.css",
-    standalone: false
+  selector: "app-restream-modal",
+  templateUrl: "./restream-modal.component.html",
+  styleUrl: "./restream-modal.component.css",
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
 })
 export class RestreamModalComponent implements OnInit, OnDestroy {
   channel?: Channel;

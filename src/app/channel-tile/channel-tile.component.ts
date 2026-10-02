@@ -36,11 +36,11 @@ import { getDateFormatted, getExtension, sanitizeFileName } from "../utils";
 import { EpgTimelineComponent } from "./epg-timeline/epg-timeline.component";
 
 @Component({
-    selector: "app-channel-tile",
-    templateUrl: "./channel-tile.component.html",
-    styleUrl: "./channel-tile.component.css",
-    changeDetection: ChangeDetectionStrategy.OnPush,
-    standalone: false
+  selector: "app-channel-tile",
+  templateUrl: "./channel-tile.component.html",
+  styleUrl: "./channel-tile.component.css",
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  standalone: false,
 })
 export class ChannelTileComponent implements OnDestroy, AfterViewInit {
   constructor(

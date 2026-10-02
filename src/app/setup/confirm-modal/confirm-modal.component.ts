@@ -1,11 +1,12 @@
-import { Component } from "@angular/core";
+import { ChangeDetectionStrategy, Component } from "@angular/core";
 import { NgbActiveModal } from "@ng-bootstrap/ng-bootstrap";
 
 @Component({
-    selector: "app-confirm-modal",
-    templateUrl: "./confirm-modal.component.html",
-    styleUrl: "./confirm-modal.component.css",
-    standalone: false
+  selector: "app-confirm-modal",
+  templateUrl: "./confirm-modal.component.html",
+  styleUrl: "./confirm-modal.component.css",
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
 })
 export class ConfirmModalComponent {
   constructor(public activeModal: NgbActiveModal) {}

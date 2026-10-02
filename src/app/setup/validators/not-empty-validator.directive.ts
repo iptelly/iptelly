@@ -2,15 +2,15 @@ import { Directive, forwardRef, Input, OnChanges, SimpleChanges } from "@angular
 import { AbstractControl, NG_VALIDATORS, ValidationErrors, Validator } from "@angular/forms";
 
 @Directive({
-    selector: "[empty]",
-    providers: [
-        {
-            provide: NG_VALIDATORS,
-            useExisting: forwardRef(() => NotEmptyValidatorDirective),
-            multi: true,
-        },
-    ],
-    standalone: false
+  selector: "[empty]",
+  providers: [
+    {
+      provide: NG_VALIDATORS,
+      useExisting: forwardRef(() => NotEmptyValidatorDirective),
+      multi: true,
+    },
+  ],
+  standalone: false,
 })
 export class NotEmptyValidatorDirective implements Validator, OnChanges {
   @Input("emptyDisabled")

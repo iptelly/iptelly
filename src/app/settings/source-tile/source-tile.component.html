@@ -2,7 +2,7 @@
   <h4>{{source?.name}}</h4>
   @if (source?.last_updated) {
     <div class="last-updated">
-      Refreshed: {{source?.last_updated! * 1000 | timeAgo}}
+      Refreshed: {{$safeNavigationMigration(source?.last_updated)! * 1000 | timeAgo}}
     </div>
   }
   <!-- Placed here (rather than after the action buttons below) so keyboard

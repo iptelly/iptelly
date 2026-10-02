@@ -1,10 +1,11 @@
-import { Component, Input } from "@angular/core";
+import { ChangeDetectionStrategy, Component, Input } from "@angular/core";
 
 @Component({
-    selector: "app-loading",
-    templateUrl: "./loading.component.html",
-    styleUrl: "./loading.component.css",
-    standalone: false
+  selector: "app-loading",
+  templateUrl: "./loading.component.html",
+  styleUrl: "./loading.component.css",
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
 })
 export class LoadingComponent {
   @Input()

@@ -1,4 +1,4 @@
-import { Component, ElementRef, Input } from "@angular/core";
+import { ChangeDetectionStrategy, Component, ElementRef, Input } from "@angular/core";
 import { NgbModal } from "@ng-bootstrap/ng-bootstrap";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
@@ -12,10 +12,11 @@ import { SourceType } from "../../models/sourceType";
 import { sanitizeFileName } from "../../utils";
 
 @Component({
-    selector: "app-source-tile",
-    templateUrl: "./source-tile.component.html",
-    styleUrl: "./source-tile.component.css",
-    standalone: false
+  selector: "app-source-tile",
+  templateUrl: "./source-tile.component.html",
+  styleUrl: "./source-tile.component.css",
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
 })
 export class SourceTileComponent {
   @Input("source")

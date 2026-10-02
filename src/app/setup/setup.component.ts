@@ -1,4 +1,4 @@
-import { Component, HostListener } from "@angular/core";
+import { ChangeDetectionStrategy, Component, HostListener } from "@angular/core";
 import { Router } from "@angular/router";
 import { NgbModal } from "@ng-bootstrap/ng-bootstrap";
 import { invoke } from "@tauri-apps/api/core";
@@ -12,10 +12,11 @@ import { SourceType } from "../models/sourceType";
 import { ConfirmModalComponent } from "./confirm-modal/confirm-modal.component";
 
 @Component({
-    selector: "app-setup",
-    templateUrl: "./setup.component.html",
-    styleUrl: "./setup.component.css",
-    standalone: false
+  selector: "app-setup",
+  templateUrl: "./setup.component.html",
+  styleUrl: "./setup.component.css",
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
 })
 export class SetupComponent {
   constructor(

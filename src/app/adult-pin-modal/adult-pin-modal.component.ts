@@ -1,13 +1,14 @@
-import { Component, ElementRef, ViewChild } from "@angular/core";
+import { ChangeDetectionStrategy, Component, ElementRef, ViewChild } from "@angular/core";
 import { NgbActiveModal } from "@ng-bootstrap/ng-bootstrap";
 import { invoke } from "@tauri-apps/api/core";
 import { ErrorService } from "../error.service";
 
 @Component({
-    selector: "app-adult-pin-modal",
-    templateUrl: "./adult-pin-modal.component.html",
-    styleUrl: "./adult-pin-modal.component.css",
-    standalone: false
+  selector: "app-adult-pin-modal",
+  templateUrl: "./adult-pin-modal.component.html",
+  styleUrl: "./adult-pin-modal.component.css",
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
 })
 export class AdultPinModalComponent {
   @ViewChild("pinInput") pinInput!: ElementRef;

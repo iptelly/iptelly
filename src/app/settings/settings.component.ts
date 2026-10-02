@@ -1,4 +1,10 @@
-import { Component, ElementRef, HostListener, ViewChild } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  HostListener,
+  ViewChild,
+} from "@angular/core";
 import { Router } from "@angular/router";
 import { NgbModal } from "@ng-bootstrap/ng-bootstrap";
 import { invoke } from "@tauri-apps/api/core";
@@ -19,10 +25,11 @@ import { Source } from "../models/source";
 import { ThemeService } from "../theme.service";
 
 @Component({
-    selector: "app-settings",
-    templateUrl: "./settings.component.html",
-    styleUrl: "./settings.component.css",
-    standalone: false
+  selector: "app-settings",
+  templateUrl: "./settings.component.html",
+  styleUrl: "./settings.component.css",
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
 })
 export class SettingsComponent {
   readonly railItemEnum = RailItem;
