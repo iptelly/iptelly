@@ -21,7 +21,10 @@ const FIXTURE: &str = concat!(
 );
 
 fn test_db_path() -> std::path::PathBuf {
-    std::env::temp_dir().join(format!("open_tv_m3u_parser_test_{}.sqlite", std::process::id()))
+    std::env::temp_dir().join(format!(
+        "open_tv_m3u_parser_test_{}.sqlite",
+        std::process::id()
+    ))
 }
 
 // Deliberately independent of iptelly_lib::m3u's own parsing - reimplements
@@ -75,7 +78,10 @@ fn every_channel_in_the_playlist_ends_up_in_the_database() {
 
     let playlist_text = std::fs::read_to_string(FIXTURE).expect("fixture playlist should exist");
     let expected = expected_urls(&playlist_text);
-    assert!(!expected.is_empty(), "sanity check: fixture should contain channels");
+    assert!(
+        !expected.is_empty(),
+        "sanity check: fixture should contain channels"
+    );
 
     iptelly_lib::sql::create_or_initialize_db().expect("failed to initialize test database");
     m3u::read_m3u8(fixture_source(), false).expect("parsing the fixture playlist should succeed");

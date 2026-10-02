@@ -37,9 +37,14 @@ pub async fn run(
     let token = CancellationToken::new();
     let channel_id = channel.id.context("no channel id")?;
     if let Some(source_id) = source.as_ref().and_then(|s| s.id) {
-        _ = crate::utils::insert_play_token(source_id, channel_id.to_string(), token.clone(), state)
-            .await
-            .map_err(|e| log::log(format!("{:?}", e)));
+        _ = crate::utils::insert_play_token(
+            source_id,
+            channel_id.to_string(),
+            token.clone(),
+            state,
+        )
+        .await
+        .map_err(|e| log::log(format!("{:?}", e)));
     }
     // Drains stdout continuously in the background instead of only after
     // cmd.wait() resolves - a pipe has a limited buffer (~64KB on Linux),

@@ -7,7 +7,7 @@ use tauri::{AppHandle, Manager, State};
 use tokio::sync::Mutex;
 use types::{
     AppState, Channel, CustomChannel, CustomChannelExtraData, EPG, EPGNotify, Filters, Group,
-    IdName, NetworkInfo, SeasonDownloadInfo, Settings, SeriesEpisode, Source,
+    IdName, NetworkInfo, SeasonDownloadInfo, SeriesEpisode, Settings, Source,
 };
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 use {
@@ -309,8 +309,8 @@ async fn search(
     filters: Filters,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<Vec<Channel>, String> {
-    let hide_adult = settings::has_adult_pin().map_err(map_err_frontend)?
-        && !state.lock().await.adult_unlocked;
+    let hide_adult =
+        settings::has_adult_pin().map_err(map_err_frontend)? && !state.lock().await.adult_unlocked;
     sql::search(filters, hide_adult).map_err(map_err_frontend)
 }
 
@@ -325,10 +325,7 @@ fn set_adult_pin(pin: Option<String>) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn verify_adult_pin(
-    pin: String,
-    state: State<'_, Mutex<AppState>>,
-) -> Result<bool, String> {
+async fn verify_adult_pin(pin: String, state: State<'_, Mutex<AppState>>) -> Result<bool, String> {
     let correct = settings::verify_adult_pin(&pin).map_err(map_err_frontend)?;
     if correct {
         state.lock().await.adult_unlocked = true;
@@ -665,7 +662,10 @@ async fn epg_dispatch(
     end_timestamp: i64,
 ) -> anyhow::Result<Vec<EPG>> {
     let source_id = channel.source_id.context("no source id")?;
-    let tvg_id = channel.tvg_id.clone().context("No EPG data for this channel")?;
+    let tvg_id = channel
+        .tvg_id
+        .clone()
+        .context("No EPG data for this channel")?;
     let normalized = utils::normalize_tvg_id(&tvg_id);
     let (min_ts, max_ts) = epg_read_bounds(source_id)?;
     let from_ts = start_timestamp.max(min_ts);
@@ -675,7 +675,10 @@ async fn epg_dispatch(
 
 async fn epg_dispatch_full(channel: Channel) -> anyhow::Result<Vec<EPG>> {
     let source_id = channel.source_id.context("no source id")?;
-    let tvg_id = channel.tvg_id.clone().context("No EPG data for this channel")?;
+    let tvg_id = channel
+        .tvg_id
+        .clone()
+        .context("No EPG data for this channel")?;
     let normalized = utils::normalize_tvg_id(&tvg_id);
     let (from_ts, to_ts) = epg_read_bounds(source_id)?;
     sql::get_epg_for_channel(source_id, &normalized, from_ts, to_ts)
@@ -775,7 +778,8 @@ fn clear_cancelled_downloads() -> Result<(), String> {
     // 'paused' included since the Cancelled view now shows those too (see
     // reconcile_interrupted_downloads) - "Clear all" there should clear
     // everything actually visible in that list.
-    sql::clear_download_history_by_status(&["cancelled", "failed", "paused"]).map_err(map_err_frontend)
+    sql::clear_download_history_by_status(&["cancelled", "failed", "paused"])
+        .map_err(map_err_frontend)
 }
 
 #[tauri::command(async)]

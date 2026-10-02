@@ -602,7 +602,8 @@ const CHANNEL_INSERT_BATCH_SIZE: usize = 500;
 
 pub(crate) fn insert_channels_batch(tx: &Transaction, channels: &[Channel]) -> Result<()> {
     for chunk in channels.chunks(CHANNEL_INSERT_BATCH_SIZE) {
-        let placeholders = vec!["(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"; chunk.len()].join(", ");
+        let placeholders =
+            vec!["(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"; chunk.len()].join(", ");
         let sql = format!(
             r#"
 INSERT INTO channels (name, group_id, image, url, source_id, media_type, series_id, favorite, stream_id, tv_archive, tvg_id, season_id, episode_num, is_adult)
@@ -637,8 +638,7 @@ DO UPDATE SET
             params.push(&channel.episode_num);
             params.push(&channel.is_adult);
         }
-        tx.prepare_cached(&sql)?
-            .execute(params_from_iter(params))?;
+        tx.prepare_cached(&sql)?.execute(params_from_iter(params))?;
     }
     Ok(())
 }
@@ -675,8 +675,7 @@ pub(crate) fn insert_epg_programmes_batch(
             params.push(&p.end_timestamp);
             params.push(&cached_at);
         }
-        tx.prepare_cached(&sql)?
-            .execute(params_from_iter(params))?;
+        tx.prepare_cached(&sql)?.execute(params_from_iter(params))?;
     }
     Ok(())
 }
@@ -937,7 +936,9 @@ pub fn clear_download_history_by_status(statuses: &[&str]) -> Result<()> {
     Ok(())
 }
 
-fn row_to_download_history_item(row: &Row) -> std::result::Result<DownloadHistoryItem, rusqlite::Error> {
+fn row_to_download_history_item(
+    row: &Row,
+) -> std::result::Result<DownloadHistoryItem, rusqlite::Error> {
     Ok(DownloadHistoryItem {
         id: row.get("id")?,
         channel_id: row.get("channel_id")?,
@@ -1696,8 +1697,12 @@ fn row_to_channel(row: &Row) -> std::result::Result<Channel, rusqlite::Error> {
 // history row's channel_id.
 pub fn get_channel_by_id(id: i64) -> Result<Channel> {
     let sql = get_conn()?;
-    sql.query_row("SELECT * FROM channels WHERE id = ?", params![id], row_to_channel)
-        .map_err(Into::into)
+    sql.query_row(
+        "SELECT * FROM channels WHERE id = ?",
+        params![id],
+        row_to_channel,
+    )
+    .map_err(Into::into)
 }
 
 pub fn delete_channels_by_source(tx: &Transaction, source_id: i64) -> Result<()> {
@@ -2526,7 +2531,11 @@ fn row_to_channel_preserve(row: &Row) -> Result<ChannelPreserve, rusqlite::Error
     let user_agent: Option<String> = row.get("user_agent")?;
     let http_origin: Option<String> = row.get("http_origin")?;
     let ignore_ssl: Option<bool> = row.get("ignore_ssl")?;
-    let headers = if referrer.is_none() && user_agent.is_none() && http_origin.is_none() && ignore_ssl.is_none() {
+    let headers = if referrer.is_none()
+        && user_agent.is_none()
+        && http_origin.is_none()
+        && ignore_ssl.is_none()
+    {
         None
     } else {
         Some(ChannelHttpHeaders {
@@ -2746,4 +2755,3 @@ pub fn update_source_last_updated(source_id: i64) -> Result<()> {
     )?;
     Ok(())
 }
-

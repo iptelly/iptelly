@@ -17,7 +17,10 @@ const CHANNEL_COUNT: usize = 6;
 const CATEGORY_COUNT: usize = 2;
 
 fn test_db_path() -> std::path::PathBuf {
-    std::env::temp_dir().join(format!("open_tv_app_data_test_{}.sqlite", std::process::id()))
+    std::env::temp_dir().join(format!(
+        "open_tv_app_data_test_{}.sqlite",
+        std::process::id()
+    ))
 }
 
 fn export_file_path() -> std::path::PathBuf {
@@ -128,15 +131,17 @@ fn export_then_import_restores_everything_it_backed_up() {
     let (fav_id, hidden_channel_id, watched_id, hidden_group_id): (i64, i64, i64, i64) = {
         let conn = sql::get_conn().unwrap();
         let get_channel_id = |name: &str| -> i64 {
-            conn.query_row(
-                "SELECT id FROM channels WHERE name = ?",
-                [name],
-                |r| r.get(0),
-            )
+            conn.query_row("SELECT id FROM channels WHERE name = ?", [name], |r| {
+                r.get(0)
+            })
             .unwrap()
         };
         let group_id: i64 = conn
-            .query_row("SELECT id FROM groups WHERE name = ?", ["Category 1"], |r| r.get(0))
+            .query_row(
+                "SELECT id FROM groups WHERE name = ?",
+                ["Category 1"],
+                |r| r.get(0),
+            )
             .unwrap();
         (
             get_channel_id("Channel 0"),
@@ -198,7 +203,11 @@ fn export_then_import_restores_everything_it_backed_up() {
     let restored_channel = sql::get_channel_by_id(fav_id).unwrap();
     assert!(restored_channel.favorite, "favourite should be restored");
     let restored_hidden = sql::get_channel_by_id(hidden_channel_id).unwrap();
-    assert_eq!(restored_hidden.hidden, Some(true), "hidden channel should be restored");
+    assert_eq!(
+        restored_hidden.hidden,
+        Some(true),
+        "hidden channel should be restored"
+    );
     let conn = sql::get_conn().unwrap();
     let last_watched: Option<i64> = conn
         .query_row(
@@ -232,7 +241,10 @@ fn export_then_import_restores_everything_it_backed_up() {
     assert_eq!(restored_download.name, download.name);
     assert_eq!(restored_download.path, download.path);
     assert_eq!(restored_download.status, download.status);
-    assert_eq!(restored_download.downloaded_bytes, download.downloaded_bytes);
+    assert_eq!(
+        restored_download.downloaded_bytes,
+        download.downloaded_bytes
+    );
 
     // Reproduces the real bug a user hit: importing a backup onto a source
     // whose channels don't exist yet (e.g. right after a fresh install, or
@@ -264,10 +276,8 @@ fn export_then_import_restores_everything_it_backed_up() {
     })
     .unwrap();
 
-    let m3u_path = std::env::temp_dir().join(format!(
-        "open_tv_app_data_test_{}.m3u8",
-        std::process::id()
-    ));
+    let m3u_path =
+        std::env::temp_dir().join(format!("open_tv_app_data_test_{}.m3u8", std::process::id()));
     std::fs::write(
         &m3u_path,
         "#EXTM3U\n#EXTINF:-1,Fresh Channel\nhttp://example.com/fresh.ts\n",
@@ -298,7 +308,10 @@ fn export_then_import_restores_everything_it_backed_up() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(still_pending, 0, "staged data should be consumed, not left to reapply forever");
+    assert_eq!(
+        still_pending, 0,
+        "staged data should be consumed, not left to reapply forever"
+    );
     drop(conn);
 
     let _ = std::fs::remove_file(&m3u_path);

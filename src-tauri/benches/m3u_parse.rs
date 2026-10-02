@@ -72,7 +72,9 @@ fn ensure_large_synthetic_playlist() {
             "#EXTINF:-1 tvg-id=\"CH{i:06}\"{tvg_name} tvg-logo=\"https://img.example.com/logos/{i:06}.png\" \
              group-title=\"Category {category:05}\",Channel {i:06}\n"
         ));
-        out.push_str(&format!("https://stream.example.com/channel/{i:06}/index.m3u8\n"));
+        out.push_str(&format!(
+            "https://stream.example.com/channel/{i:06}/index.m3u8\n"
+        ));
     }
     std::fs::write(LARGE_FIXTURE, out).expect("failed to write synthetic playlist fixture");
 }

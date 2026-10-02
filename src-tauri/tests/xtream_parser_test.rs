@@ -15,7 +15,10 @@ const CHANNEL_COUNT: usize = 3_000;
 const CATEGORY_COUNT: usize = 150;
 
 fn test_db_path() -> std::path::PathBuf {
-    std::env::temp_dir().join(format!("open_tv_xtream_parser_test_{}.sqlite", std::process::id()))
+    std::env::temp_dir().join(format!(
+        "open_tv_xtream_parser_test_{}.sqlite",
+        std::process::id()
+    ))
 }
 
 fn generate_categories_json() -> String {

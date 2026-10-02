@@ -7,11 +7,7 @@ use flate2::read::GzDecoder;
 use quick_xml::Reader;
 use quick_xml::events::Event;
 
-use crate::{
-    log, sql,
-    types::Source,
-    utils::get_user_agent_from_source,
-};
+use crate::{log, sql, types::Source, utils::get_user_agent_from_source};
 
 // Default when a source hasn't set its own epg_retention_days - how far
 // back past programmes are kept, so they stay available to browse/catch

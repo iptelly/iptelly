@@ -77,7 +77,11 @@ fn get_play_args(channel: &Channel, source: &Option<Source>) -> Result<Vec<Strin
     Ok(args)
 }
 
-fn set_headers(headers: Option<ChannelHttpHeaders>, args: &mut Vec<String>, source: &Option<Source>) {
+fn set_headers(
+    headers: Option<ChannelHttpHeaders>,
+    args: &mut Vec<String>,
+    source: &Option<Source>,
+) {
     let headers = headers.unwrap_or_default();
     if let Some(referrer) = headers.referrer {
         args.push(format!("{ARG_REFERRER}{referrer}"));

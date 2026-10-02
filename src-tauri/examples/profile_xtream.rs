@@ -110,14 +110,13 @@ fn main() {
         start.elapsed() / REPEATS
     );
 
-    let flamegraph_path = std::env::var("FLAMEGRAPH_OUTPUT")
-        .unwrap_or_else(|_| "xtream_flamegraph.svg".to_string());
+    let flamegraph_path =
+        std::env::var("FLAMEGRAPH_OUTPUT").unwrap_or_else(|_| "xtream_flamegraph.svg".to_string());
     match guard.report().build() {
         Ok(report) => {
-            let file = std::fs::File::create(&flamegraph_path).expect("failed to create flamegraph file");
-            report
-                .flamegraph(file)
-                .expect("failed to write flamegraph");
+            let file =
+                std::fs::File::create(&flamegraph_path).expect("failed to create flamegraph file");
+            report.flamegraph(file).expect("failed to write flamegraph");
             println!("Wrote flamegraph to {flamegraph_path}");
         }
         Err(e) => eprintln!("Failed to build profiler report: {e:?}"),

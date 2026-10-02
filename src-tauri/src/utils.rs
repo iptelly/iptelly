@@ -126,7 +126,6 @@ pub fn get_local_time(timestamp: i64) -> Result<DateTime<Local>> {
     Ok(DateTime::<Local>::from(datetime))
 }
 
-
 pub async fn remove_from_play_stop(
     state: State<'_, Mutex<AppState>>,
     source_id: &i64,
@@ -232,7 +231,11 @@ pub(crate) fn get_download_path(file_name: String) -> Result<String> {
 // Season" loops, which build this same structure client-side per episode
 // (see channel-tile.component.ts) since get_download_base_path() is
 // exposed to them for exactly that.
-pub(crate) fn get_series_download_path(series_name: &str, season_name: &str, file_name: &str) -> Result<String> {
+pub(crate) fn get_series_download_path(
+    series_name: &str,
+    season_name: &str,
+    file_name: &str,
+) -> Result<String> {
     let mut path = Path::new(&get_download_base_path()?).to_path_buf();
     path.push(sanitize(series_name.to_string()));
     path.push(sanitize(season_name.to_string()));
@@ -296,9 +299,9 @@ pub fn get_network_interfaces() -> Result<Vec<NetworkInterface>> {
 /// if the address changes (e.g. a VPN reconnects with a new IP), requests will
 /// fail until the user re-selects the new address in Settings.
 fn bind_to_address(builder: ClientBuilder, address: &str) -> Result<ClientBuilder> {
-    let ip: IpAddr = address
-        .parse()
-        .with_context(|| format!("Invalid IP address '{address}' in Settings > Network interface"))?;
+    let ip: IpAddr = address.parse().with_context(|| {
+        format!("Invalid IP address '{address}' in Settings > Network interface")
+    })?;
     Ok(builder.local_address(ip))
 }
 

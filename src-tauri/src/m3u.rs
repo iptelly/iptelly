@@ -267,7 +267,9 @@ pub fn get_channel_from_lines(
     if second.is_empty() {
         bail!("second line is empty");
     }
-    let tvg_id = ID_REGEX.captures(&first).and_then(extract_non_empty_capture);
+    let tvg_id = ID_REGEX
+        .captures(&first)
+        .and_then(extract_non_empty_capture);
     let name = NAME_REGEX
         .captures(&first)
         .and_then(extract_non_empty_capture)
@@ -376,7 +378,10 @@ mod test_m3u {
         assert_eq!(channel.name, "Channel Name");
         assert_eq!(channel.tvg_id, Some("chan.id".to_string()));
         assert_eq!(channel.group, Some("Sports".to_string()));
-        assert_eq!(channel.image, Some("http://myurl.local/logo.png".to_string()));
+        assert_eq!(
+            channel.image,
+            Some("http://myurl.local/logo.png".to_string())
+        );
         assert_eq!(
             channel.url,
             Some("http://myurl.local/1234/1234/1234.ts".to_string())
@@ -402,13 +407,22 @@ mod test_m3u {
 
     #[test]
     fn test_get_media_type() {
-        assert_eq!(get_media_type("http://x/movie.mp4".to_string()), media_type::MOVIE);
-        assert_eq!(get_media_type("http://x/movie.mkv".to_string()), media_type::MOVIE);
+        assert_eq!(
+            get_media_type("http://x/movie.mp4".to_string()),
+            media_type::MOVIE
+        );
+        assert_eq!(
+            get_media_type("http://x/movie.mkv".to_string()),
+            media_type::MOVIE
+        );
         assert_eq!(
             get_media_type("http://x/stream.ts".to_string()),
             media_type::LIVESTREAM
         );
-        assert_eq!(get_media_type("http://x/stream".to_string()), media_type::LIVESTREAM);
+        assert_eq!(
+            get_media_type("http://x/stream".to_string()),
+            media_type::LIVESTREAM
+        );
     }
 
     #[test]
@@ -435,7 +449,10 @@ mod test_m3u {
         assert_eq!(headers.user_agent, Some("SomeAgent/1.0".to_string()));
 
         let mut headers = ChannelHttpHeaders::default();
-        assert!(!set_http_headers("#EXTVLCOPT:some-other-option=value", &mut headers));
+        assert!(!set_http_headers(
+            "#EXTVLCOPT:some-other-option=value",
+            &mut headers
+        ));
         assert_eq!(headers, ChannelHttpHeaders::default());
     }
 
@@ -446,7 +463,10 @@ mod test_m3u {
         assert_eq!(extract_non_empty_capture(caps), None);
 
         let caps = re.captures(r#"x="real-value""#).unwrap();
-        assert_eq!(extract_non_empty_capture(caps), Some("real-value".to_string()));
+        assert_eq!(
+            extract_non_empty_capture(caps),
+            Some("real-value".to_string())
+        );
     }
 
     #[test]

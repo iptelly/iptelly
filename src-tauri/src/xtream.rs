@@ -75,7 +75,9 @@ where
 {
     let value = serde_json::Value::deserialize(deserializer)?;
     match value {
-        serde_json::Value::Array(_) => serde_json::from_value(value).map_err(serde::de::Error::custom),
+        serde_json::Value::Array(_) => {
+            serde_json::from_value(value).map_err(serde::de::Error::custom)
+        }
         _ => Ok(Vec::new()),
     }
 }
@@ -88,7 +90,9 @@ where
 {
     let value = serde_json::Value::deserialize(deserializer)?;
     match value {
-        serde_json::Value::Object(_) => serde_json::from_value(value).map_err(serde::de::Error::custom),
+        serde_json::Value::Object(_) => {
+            serde_json::from_value(value).map_err(serde::de::Error::custom)
+        }
         _ => Ok(HashMap::new()),
     }
 }
@@ -319,7 +323,9 @@ where
         ));
     }
     if text.is_empty() {
-        return Err(anyhow!("Xtream API returned an empty body for {context_label}."));
+        return Err(anyhow!(
+            "Xtream API returned an empty body for {context_label}."
+        ));
     }
     serde_json::from_str(&text).map_err(|e| {
         anyhow!(
@@ -407,7 +413,8 @@ fn convert_xtream_live_to_channel(
     category_name: Option<String>,
 ) -> Result<Channel> {
     let stream_id = get_serde_json_u64(&stream.stream_id);
-    let tvg_id = get_serde_json_string(&stream.epg_channel_id).filter(|id| !id.is_empty() && id != "0");
+    let tvg_id =
+        get_serde_json_string(&stream.epg_channel_id).filter(|id| !id.is_empty() && id != "0");
     Ok(Channel {
         id: None,
         group: category_name.map(|x| x.trim().to_string()),
@@ -511,7 +518,9 @@ pub async fn get_episodes(channel: Channel) -> Result<()> {
 // Ensures the series' episodes are populated (get_episodes is idempotent -
 // skips the network call if already fetched) then returns all of them
 // across every season in one flat list, for "Download Series".
-pub async fn get_series_episodes_for_download(channel: Channel) -> Result<Vec<crate::types::SeriesEpisode>> {
+pub async fn get_series_episodes_for_download(
+    channel: Channel,
+) -> Result<Vec<crate::types::SeriesEpisode>> {
     let series_id: u64 = channel
         .url
         .clone()
@@ -863,8 +872,14 @@ mod test_xtream {
 
     #[test]
     fn test_get_serde_json_string() {
-        assert_eq!(get_serde_json_string(&json!("hello")), Some("hello".to_string()));
-        assert_eq!(get_serde_json_string(&json!(" padded ")), Some("padded".to_string()));
+        assert_eq!(
+            get_serde_json_string(&json!("hello")),
+            Some("hello".to_string())
+        );
+        assert_eq!(
+            get_serde_json_string(&json!(" padded ")),
+            Some("padded".to_string())
+        );
         // Panels are inconsistent about sending category/stream ids as a
         // real JSON number instead of a string - both must resolve to the
         // same thing.
@@ -983,7 +998,10 @@ mod test_xtream {
 
     #[test]
     fn test_get_media_type_string() {
-        assert_eq!(get_media_type_string(media_type::LIVESTREAM).unwrap(), "live");
+        assert_eq!(
+            get_media_type_string(media_type::LIVESTREAM).unwrap(),
+            "live"
+        );
         assert_eq!(get_media_type_string(media_type::MOVIE).unwrap(), "movie");
         assert_eq!(get_media_type_string(media_type::SERIE).unwrap(), "series");
         assert!(get_media_type_string(media_type::GROUP).is_err());
@@ -1038,7 +1056,10 @@ mod test_xtream {
     fn test_get_cat_name() {
         let mut cats = HashMap::new();
         cats.insert("5".to_string(), "Sports".to_string());
-        assert_eq!(get_cat_name(&cats, Some("5".to_string())), Some("Sports".to_string()));
+        assert_eq!(
+            get_cat_name(&cats, Some("5".to_string())),
+            Some("Sports".to_string())
+        );
         assert_eq!(get_cat_name(&cats, Some("missing".to_string())), None);
         assert_eq!(get_cat_name(&cats, None), None);
     }

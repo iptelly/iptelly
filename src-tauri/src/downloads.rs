@@ -1,10 +1,10 @@
 use crate::log::log;
+use crate::sql;
 use crate::types::{AppState, Channel, DownloadControl, DownloadHistoryItem, DownloadProgress};
 use crate::utils::{
     get_download_path, get_filename, get_series_download_path, handle_max_streams,
     insert_play_token, new_http_client_builder, remove_from_play_stop,
 };
-use crate::sql;
 use anyhow::{Context, Result, anyhow, bail};
 use reqwest::header::{HeaderMap, HeaderValue};
 use std::path::Path;
@@ -21,7 +21,10 @@ fn now() -> i64 {
 // Shared by start() (the real download) and probe_remote_size() (the
 // already-downloaded verification check below) - same headers/UA/SSL
 // handling either way, since it's the same channel being requested.
-fn build_channel_client(channel: &Channel, source: &crate::types::Source) -> Result<reqwest::Client> {
+fn build_channel_client(
+    channel: &Channel,
+    source: &crate::types::Source,
+) -> Result<reqwest::Client> {
     let headers = sql::get_channel_headers_by_id(channel.id.context("no channel id?")?)?;
     let mut client = new_http_client_builder()?;
     let mut headers_map = HeaderMap::new();
@@ -45,7 +48,9 @@ fn build_channel_client(channel: &Channel, source: &crate::types::Source) -> Res
     // mpv/ffmpeg use its own default, so downloads match that "send
     // nothing unless configured" behavior instead of always sending
     // something a provider might not recognize.
-    let user_agent = headers.and_then(|f| f.user_agent).or(source.stream_user_agent.clone());
+    let user_agent = headers
+        .and_then(|f| f.user_agent)
+        .or(source.stream_user_agent.clone());
     if let Some(user_agent) = user_agent {
         client = client.user_agent(user_agent);
     }
@@ -200,7 +205,11 @@ pub async fn start(
     // anyway (common even for "from byte 0"), append-opening a file that no
     // longer exists would fail with ENOENT without this.
     let mut file = if resuming {
-        tokio::fs::OpenOptions::new().append(true).create(true).open(&path).await?
+        tokio::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(&path)
+            .await?
     } else {
         tokio::fs::File::create(&path).await?
     };
@@ -213,7 +222,11 @@ pub async fn start(
         path: path.clone(),
         status: "downloading".to_string(),
         downloaded_bytes: downloaded as i64,
-        total_bytes: if total_size > 0 { Some(total_size as i64) } else { None },
+        total_bytes: if total_size > 0 {
+            Some(total_size as i64)
+        } else {
+            None
+        },
         created_at: now(),
         updated_at: now(),
     });
@@ -274,7 +287,11 @@ pub async fn start(
                 path,
                 status: "completed".to_string(),
                 downloaded_bytes: downloaded as i64,
-                total_bytes: if total_size > 0 { Some(total_size as i64) } else { None },
+                total_bytes: if total_size > 0 {
+                    Some(total_size as i64)
+                } else {
+                    None
+                },
                 created_at: now(),
                 updated_at: now(),
             });
@@ -289,7 +306,11 @@ pub async fn start(
                 path,
                 status: "paused".to_string(),
                 downloaded_bytes: downloaded as i64,
-                total_bytes: if total_size > 0 { Some(total_size as i64) } else { None },
+                total_bytes: if total_size > 0 {
+                    Some(total_size as i64)
+                } else {
+                    None
+                },
                 created_at: now(),
                 updated_at: now(),
             });
@@ -305,7 +326,11 @@ pub async fn start(
                 path,
                 status: "cancelled".to_string(),
                 downloaded_bytes: 0,
-                total_bytes: if total_size > 0 { Some(total_size as i64) } else { None },
+                total_bytes: if total_size > 0 {
+                    Some(total_size as i64)
+                } else {
+                    None
+                },
                 created_at: now(),
                 updated_at: now(),
             });
@@ -320,7 +345,11 @@ pub async fn start(
                 path,
                 status: "failed".to_string(),
                 downloaded_bytes: downloaded as i64,
-                total_bytes: if total_size > 0 { Some(total_size as i64) } else { None },
+                total_bytes: if total_size > 0 {
+                    Some(total_size as i64)
+                } else {
+                    None
+                },
                 created_at: now(),
                 updated_at: now(),
             });
@@ -352,7 +381,10 @@ pub async fn pause(state: State<'_, Mutex<AppState>>, download_id: &str) -> Resu
 // nothing left to signal. Fall back to discarding it directly in that case:
 // delete the partial file and mark its history row cancelled.
 pub async fn cancel(state: State<'_, Mutex<AppState>>, download_id: &str) -> Result<()> {
-    if send_control(state, download_id, DownloadControl::Cancel).await.is_ok() {
+    if send_control(state, download_id, DownloadControl::Cancel)
+        .await
+        .is_ok()
+    {
         return Ok(());
     }
     if let Some(row) = sql::get_download_row(download_id)? {
@@ -377,7 +409,8 @@ async fn send_control(
         .download_controls
         .get(download_id)
         .context("no such active download")?;
-    tx.send(control).map_err(|_| anyhow!("download already finished"))?;
+    tx.send(control)
+        .map_err(|_| anyhow!("download already finished"))?;
     Ok(())
 }
 
