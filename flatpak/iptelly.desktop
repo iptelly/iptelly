@@ -1,10 +1,12 @@
 [Desktop Entry]
-Categories=AudioVideo
+Categories=AudioVideo;Video;Player;TV;
 Comment=Fast And Powerful IPTV App
 Exec=iptelly
+GenericName=IPTV Player
 Icon=dev.iptelly.iptelly
-Keywords=iptelly;tv;iptv;
+Keywords=iptelly;tv;iptv;m3u;xtream;epg;live;stream;player;
 Name=IPTelly
+SingleMainWindow=true
 StartupWMClass=iptelly
 Terminal=false
 Type=Application
