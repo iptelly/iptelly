@@ -18,7 +18,7 @@
       (click)="selectAllSources()">
       All playlists
     </div>
-    @for (source of sources; track source) {
+    @for (source of sources; track source.id) {
       <div class="playlist-group">
         <div class="playlist-item" tabindex="0" [attr.data-source-id]="source.id"
           [ngClass]="{ active: isSourceSelected(source) }" (click)="selectSource(source)" [ngbTooltip]="source.name"
@@ -34,7 +34,7 @@
             @if (loadingSource.has(source.id!)) {
               <div class="category-item loading">Loading...</div>
             }
-            @for (group of categoriesBySource.get(source.id!); track group) {
+            @for (group of categoriesBySource.get(source.id!); track group.id) {
               <div class="category-item" tabindex="0"
                 [ngClass]="{ active: isCategorySelected(group) }" (click)="selectCategory(group)"
                 (contextmenu)="onCategoryRightClick($event, group)" [ngbTooltip]="group.name" placement="right"

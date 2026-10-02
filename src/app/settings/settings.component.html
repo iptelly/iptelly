@@ -141,7 +141,7 @@
           <select [(ngModel)]="settings.network_interface" (ngModelChange)="updateSettings()" class="form-control"
             style="width: auto; min-width: 16rem">
             <option [ngValue]="undefined">System default</option>
-            @for (iface of networkInterfaces; track iface) {
+            @for (iface of networkInterfaces; track iface.name) {
               <option [ngValue]="iface.ip">{{ iface.name }} ({{ iface.ip }})</option>
             }
           </select>

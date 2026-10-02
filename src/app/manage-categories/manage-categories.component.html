@@ -7,7 +7,7 @@
       <div class="col-md-4 col-12">
         <select id="playlist-select" class="form-select" [class.editing]="selectEditing" [(ngModel)]="selectedSourceId"
           (ngModelChange)="onSourceChange()">
-          @for (source of sources; track source) {
+          @for (source of sources; track source.id) {
             <option [ngValue]="source.id">{{ source.name }}</option>
           }
         </select>
@@ -34,7 +34,7 @@
 
     @if (!loading) {
       <div class="category-list">
-        @for (section of sections; track section) {
+        @for (section of sections; track section.mediaType) {
           <div class="type-section">
             <div class="type-header" tabindex="0" role="button" (click)="toggleType(section.mediaType)"
               (keydown.enter)="onHeaderKeydown(section.mediaType, $event)"
@@ -46,7 +46,7 @@
             </div>
             @if (isExpanded(section.mediaType)) {
               <div class="category-rows">
-                @for (row of section.rows; track row) {
+                @for (row of section.rows; track row.group.id) {
                   <div class="category-row" [class.selected]="isSelected(row.group)">
                     <input type="checkbox" class="form-check-input me-2" [checked]="isSelected(row.group)"
                       (click)="onRowClick(row, $event)" />
@@ -79,7 +79,7 @@
           </div>
           @if (isExpanded(individualChannelsSection)) {
             <div class="category-rows">
-              @for (row of hiddenChannelRows; track row) {
+              @for (row of hiddenChannelRows; track row.channel.id) {
                 <div class="category-row" [class.selected]="isChannelSelected(row.channel)">
                   <input type="checkbox" class="form-check-input me-2" [checked]="isChannelSelected(row.channel)"
                     (click)="onChannelRowClick(row, $event)" />

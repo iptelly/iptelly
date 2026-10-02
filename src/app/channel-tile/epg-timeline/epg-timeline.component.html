@@ -1,6 +1,6 @@
 <div class="epg-timeline">
   @if (fetched && epgs.length > 0) {
-    @for (epg of epgs; track epg; let i = $index) {
+    @for (epg of epgs; track epg.start_timestamp; let i = $index) {
       <div class="epg-block" [ngbTooltip]="tooltip(epg)" container="body"
         [ngClass]="{ 'now-playing': isNowPlaying(epg), focused: i === focusedIndex }" [style.left.%]="leftPercent(epg)"
         [style.width.%]="widthPercent(epg)" (click)="onProgrammeClick(epg, $event)">

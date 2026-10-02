@@ -112,7 +112,7 @@
       </div>
     }
     <div class="mx-auto embedded-list d-grid gap-3">
-      @for (download of getDownloads(); track download) {
+      @for (download of getDownloads(); track download.id) {
         <div class="embedded-item">
           <ng-container *ngTemplateOutlet="downloadRow; context: { $implicit: download }"></ng-container>
         </div>
@@ -127,7 +127,7 @@
       </div>
     }
     <div class="mx-auto embedded-list d-grid gap-2">
-      @for (item of getCompleted(); track item) {
+      @for (item of getCompleted(); track item.id) {
         <div class="embedded-item history-item">
           <ng-container *ngTemplateOutlet="historyRow; context: { $implicit: item }"></ng-container>
         </div>
@@ -142,7 +142,7 @@
       </div>
     }
     <div class="mx-auto embedded-list d-grid gap-2">
-      @for (item of getCancelled(); track item) {
+      @for (item of getCancelled(); track item.id) {
         <div class="embedded-item history-item">
           <ng-container *ngTemplateOutlet="historyRow; context: { $implicit: item }"></ng-container>
         </div>
