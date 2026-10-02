@@ -4,9 +4,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { ErrorService } from "../error.service";
 
 @Component({
-  selector: "app-adult-pin-modal",
-  templateUrl: "./adult-pin-modal.component.html",
-  styleUrl: "./adult-pin-modal.component.css",
+    selector: "app-adult-pin-modal",
+    templateUrl: "./adult-pin-modal.component.html",
+    styleUrl: "./adult-pin-modal.component.css",
+    standalone: false
 })
 export class AdultPinModalComponent {
   @ViewChild("pinInput") pinInput!: ElementRef;

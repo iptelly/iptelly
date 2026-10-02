@@ -6,9 +6,10 @@ import { Channel } from "../models/channel";
 import { EPG } from "../models/epg";
 
 @Component({
-  selector: "app-epg-modal",
-  templateUrl: "./epg-modal.component.html",
-  styleUrl: "./epg-modal.component.css",
+    selector: "app-epg-modal",
+    templateUrl: "./epg-modal.component.html",
+    styleUrl: "./epg-modal.component.css",
+    standalone: false
 })
 export class EpgModalComponent implements OnInit {
   name?: string;

@@ -24,9 +24,10 @@ import { IdName } from "../models/idName";
 import { MediaType } from "../models/mediaType";
 
 @Component({
-  selector: "app-edit-channel-modal",
-  templateUrl: "./edit-channel-modal.component.html",
-  styleUrl: "./edit-channel-modal.component.css",
+    selector: "app-edit-channel-modal",
+    templateUrl: "./edit-channel-modal.component.html",
+    styleUrl: "./edit-channel-modal.component.css",
+    standalone: false
 })
 export class EditChannelModalComponent implements OnInit {
   channel: CustomChannel = {

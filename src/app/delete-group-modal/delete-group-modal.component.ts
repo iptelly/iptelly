@@ -9,9 +9,10 @@ import { Group } from "../models/group";
 import { IdName } from "../models/idName";
 
 @Component({
-  selector: "app-delete-group-modal",
-  templateUrl: "./delete-group-modal.component.html",
-  styleUrl: "./delete-group-modal.component.css",
+    selector: "app-delete-group-modal",
+    templateUrl: "./delete-group-modal.component.html",
+    styleUrl: "./delete-group-modal.component.css",
+    standalone: false
 })
 export class DeleteGroupModalComponent {
   loading: boolean = false;

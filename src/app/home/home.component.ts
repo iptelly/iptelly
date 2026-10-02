@@ -51,37 +51,32 @@ import { NavRailComponent } from "./nav-rail/nav-rail.component";
 import { PlaylistSidebarComponent } from "./playlist-sidebar/playlist-sidebar.component";
 
 @Component({
-  selector: "app-home",
-  templateUrl: "./home.component.html",
-  styleUrl: "./home.component.css",
-  animations: [
-    trigger("fadeInOut", [
-      transition(":enter", [
-        style({ opacity: 0, height: 0, padding: "0", margin: "0" }),
-        animate("250ms", style({ opacity: 1, height: "*", padding: "*", margin: "*" })),
-      ]),
-      transition(":leave", [
-        style({ opacity: 1, height: "*", padding: "*", margin: "*" }),
-        animate("250ms", style({ opacity: 0, height: 0, padding: "0", margin: "0" })),
-      ]),
-    ]),
-    trigger("fade", [
-      state(
-        "visible",
-        style({
-          opacity: 1,
-        }),
-      ),
-      state(
-        "hidden",
-        style({
-          opacity: 0,
-        }),
-      ),
-      transition("visible => hidden", [animate("250ms ease-out")]),
-      transition("hidden => visible", [animate("250ms ease-in")]),
-    ]),
-  ],
+    selector: "app-home",
+    templateUrl: "./home.component.html",
+    styleUrl: "./home.component.css",
+    animations: [
+        trigger("fadeInOut", [
+            transition(":enter", [
+                style({ opacity: 0, height: 0, padding: "0", margin: "0" }),
+                animate("250ms", style({ opacity: 1, height: "*", padding: "*", margin: "*" })),
+            ]),
+            transition(":leave", [
+                style({ opacity: 1, height: "*", padding: "*", margin: "*" }),
+                animate("250ms", style({ opacity: 0, height: 0, padding: "0", margin: "0" })),
+            ]),
+        ]),
+        trigger("fade", [
+            state("visible", style({
+                opacity: 1,
+            })),
+            state("hidden", style({
+                opacity: 0,
+            })),
+            transition("visible => hidden", [animate("250ms ease-out")]),
+            transition("hidden => visible", [animate("250ms ease-in")]),
+        ]),
+    ],
+    standalone: false
 })
 export class HomeComponent implements AfterViewInit, OnDestroy {
   channels: Channel[] = [];

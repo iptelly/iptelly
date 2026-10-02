@@ -3,9 +3,10 @@ import { NgbActiveModal } from "@ng-bootstrap/ng-bootstrap";
 import { MemoryService } from "../memory.service";
 
 @Component({
-  selector: "app-whats-new-modal",
-  templateUrl: "./whats-new-modal.component.html",
-  styleUrl: "./whats-new-modal.component.css",
+    selector: "app-whats-new-modal",
+    templateUrl: "./whats-new-modal.component.html",
+    styleUrl: "./whats-new-modal.component.css",
+    standalone: false
 })
 export class WhatsNewModalComponent {
   constructor(

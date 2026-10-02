@@ -2,9 +2,10 @@ import { Component, ElementRef, HostListener } from "@angular/core";
 import { DownloadCategory, DownloadService } from "../../download.service";
 
 @Component({
-  selector: "app-download-sidebar",
-  templateUrl: "./download-sidebar.component.html",
-  styleUrl: "./download-sidebar.component.css",
+    selector: "app-download-sidebar",
+    templateUrl: "./download-sidebar.component.html",
+    styleUrl: "./download-sidebar.component.css",
+    standalone: false
 })
 export class DownloadSidebarComponent {
   readonly categories: { value: DownloadCategory; label: string }[] = [

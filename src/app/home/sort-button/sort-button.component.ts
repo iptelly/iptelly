@@ -4,9 +4,10 @@ import { MemoryService } from "../../memory.service";
 import { SORT_TYPES, SortType } from "../../models/sortType";
 
 @Component({
-  selector: "app-sort-button",
-  templateUrl: "./sort-button.component.html",
-  styleUrl: "./sort-button.component.css",
+    selector: "app-sort-button",
+    templateUrl: "./sort-button.component.html",
+    styleUrl: "./sort-button.component.css",
+    standalone: false
 })
 export class SortButtonComponent {
   constructor(private memory: MemoryService) {}

@@ -10,9 +10,10 @@ import { NetworkInfo } from "../models/networkInfo";
 import { sanitizeFileName } from "../utils";
 
 @Component({
-  selector: "app-restream-modal",
-  templateUrl: "./restream-modal.component.html",
-  styleUrl: "./restream-modal.component.css",
+    selector: "app-restream-modal",
+    templateUrl: "./restream-modal.component.html",
+    styleUrl: "./restream-modal.component.css",
+    standalone: false
 })
 export class RestreamModalComponent implements OnInit, OnDestroy {
   channel?: Channel;

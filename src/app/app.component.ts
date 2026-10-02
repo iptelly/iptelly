@@ -4,9 +4,10 @@ import { Settings } from "./models/settings";
 import { ThemeService } from "./theme.service";
 
 @Component({
-  selector: "app-root",
-  templateUrl: "./app.component.html",
-  styleUrl: "./app.component.css",
+    selector: "app-root",
+    templateUrl: "./app.component.html",
+    styleUrl: "./app.component.css",
+    standalone: false
 })
 export class AppComponent implements OnInit {
   title = "iptelly";

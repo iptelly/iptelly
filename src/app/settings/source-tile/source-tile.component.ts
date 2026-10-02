@@ -12,9 +12,10 @@ import { SourceType } from "../../models/sourceType";
 import { sanitizeFileName } from "../../utils";
 
 @Component({
-  selector: "app-source-tile",
-  templateUrl: "./source-tile.component.html",
-  styleUrl: "./source-tile.component.css",
+    selector: "app-source-tile",
+    templateUrl: "./source-tile.component.html",
+    styleUrl: "./source-tile.component.css",
+    standalone: false
 })
 export class SourceTileComponent {
   @Input("source")

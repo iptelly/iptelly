@@ -6,9 +6,10 @@ import { MemoryService } from "../memory.service";
 import { Group } from "../models/group";
 
 @Component({
-  selector: "app-edit-group-modal",
-  templateUrl: "./edit-group-modal.component.html",
-  styleUrl: "./edit-group-modal.component.css",
+    selector: "app-edit-group-modal",
+    templateUrl: "./edit-group-modal.component.html",
+    styleUrl: "./edit-group-modal.component.css",
+    standalone: false
 })
 export class EditGroupModalComponent {
   editing: boolean = false;

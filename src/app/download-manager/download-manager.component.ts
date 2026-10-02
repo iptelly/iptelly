@@ -8,9 +8,10 @@ import { DownloadHistoryItem } from "../models/downloadHistoryItem";
 import { formatBytes } from "../utils";
 
 @Component({
-  selector: "app-download-manager",
-  templateUrl: "./download-manager.component.html",
-  styleUrl: "./download-manager.component.css",
+    selector: "app-download-manager",
+    templateUrl: "./download-manager.component.html",
+    styleUrl: "./download-manager.component.css",
+    standalone: false
 })
 export class DownloadManagerComponent implements OnInit {
   constructor(

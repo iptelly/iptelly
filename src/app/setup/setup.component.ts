@@ -12,9 +12,10 @@ import { SourceType } from "../models/sourceType";
 import { ConfirmModalComponent } from "./confirm-modal/confirm-modal.component";
 
 @Component({
-  selector: "app-setup",
-  templateUrl: "./setup.component.html",
-  styleUrl: "./setup.component.css",
+    selector: "app-setup",
+    templateUrl: "./setup.component.html",
+    styleUrl: "./setup.component.css",
+    standalone: false
 })
 export class SetupComponent {
   constructor(

@@ -4,9 +4,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { ErrorService } from "../error.service";
 
 @Component({
-  selector: "app-confirm-delete-modal",
-  templateUrl: "./confirm-delete-modal.component.html",
-  styleUrl: "./confirm-delete-modal.component.css",
+    selector: "app-confirm-delete-modal",
+    templateUrl: "./confirm-delete-modal.component.html",
+    styleUrl: "./confirm-delete-modal.component.css",
+    standalone: false
 })
 export class ConfirmDeleteModalComponent {
   constructor(

@@ -19,9 +19,10 @@ import { Source } from "../models/source";
 import { ThemeService } from "../theme.service";
 
 @Component({
-  selector: "app-settings",
-  templateUrl: "./settings.component.html",
-  styleUrl: "./settings.component.css",
+    selector: "app-settings",
+    templateUrl: "./settings.component.html",
+    styleUrl: "./settings.component.css",
+    standalone: false
 })
 export class SettingsComponent {
   readonly railItemEnum = RailItem;

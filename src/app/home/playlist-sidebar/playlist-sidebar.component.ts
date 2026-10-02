@@ -28,9 +28,10 @@ const MAX_WIDTH_PX = 416; // 26rem
 const PAGE_SIZE = 36; // must match src-tauri/src/sql.rs PAGE_SIZE
 
 @Component({
-  selector: "app-playlist-sidebar",
-  templateUrl: "./playlist-sidebar.component.html",
-  styleUrl: "./playlist-sidebar.component.css",
+    selector: "app-playlist-sidebar",
+    templateUrl: "./playlist-sidebar.component.html",
+    styleUrl: "./playlist-sidebar.component.css",
+    standalone: false
 })
 export class PlaylistSidebarComponent implements OnInit, OnChanges, AfterViewInit, OnDestroy {
   @Input() mediaType?: MediaType;

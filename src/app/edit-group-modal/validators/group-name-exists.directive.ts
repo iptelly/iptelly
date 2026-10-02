@@ -9,14 +9,15 @@ import { invoke } from "@tauri-apps/api/core";
 import { from, map, Observable, of, switchMap, timer } from "rxjs";
 
 @Directive({
-  selector: "[group-name-exists]",
-  providers: [
-    {
-      provide: NG_ASYNC_VALIDATORS,
-      useExisting: forwardRef(() => GroupNameExistsValidator),
-      multi: true,
-    },
-  ],
+    selector: "[group-name-exists]",
+    providers: [
+        {
+            provide: NG_ASYNC_VALIDATORS,
+            useExisting: forwardRef(() => GroupNameExistsValidator),
+            multi: true,
+        },
+    ],
+    standalone: false
 })
 export class GroupNameExistsValidator implements AsyncValidator {
   @Input()

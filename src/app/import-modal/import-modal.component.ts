@@ -5,9 +5,10 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { MemoryService } from "../memory.service";
 
 @Component({
-  selector: "app-import-modal",
-  templateUrl: "./import-modal.component.html",
-  styleUrl: "./import-modal.component.css",
+    selector: "app-import-modal",
+    templateUrl: "./import-modal.component.html",
+    styleUrl: "./import-modal.component.css",
+    standalone: false
 })
 export class ImportModalComponent {
   source_id?: number;

@@ -13,9 +13,10 @@ import { MediaType } from "../../models/mediaType";
 import { getDateFormatted, getExtension, sanitizeFileName } from "../../utils";
 
 @Component({
-  selector: "app-epg-modal-item",
-  templateUrl: "./epg-modal-item.component.html",
-  styleUrl: "./epg-modal-item.component.css",
+    selector: "app-epg-modal-item",
+    templateUrl: "./epg-modal-item.component.html",
+    styleUrl: "./epg-modal-item.component.css",
+    standalone: false
 })
 export class EpgModalItemComponent implements OnDestroy {
   constructor(

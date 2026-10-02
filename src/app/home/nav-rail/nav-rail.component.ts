@@ -7,9 +7,10 @@ import { MemoryService } from "../../memory.service";
 import { RailItem } from "../../models/railItem";
 
 @Component({
-  selector: "app-nav-rail",
-  templateUrl: "./nav-rail.component.html",
-  styleUrl: "./nav-rail.component.css",
+    selector: "app-nav-rail",
+    templateUrl: "./nav-rail.component.html",
+    styleUrl: "./nav-rail.component.css",
+    standalone: false
 })
 export class NavRailComponent {
   readonly railItemEnum = RailItem;
