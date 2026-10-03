@@ -49,8 +49,9 @@ Angular component it replaces, under `src/app/`.
   - [x] Loads the next page of 36 when you scroll near the end.
   - [x] Posters and logos load in the background and are cached on disk.
   - [x] Empty-state messages.
-- [ ] List layout with an EPG timeline for live channels (`epg-timeline`,
-      `epg-timeline-header`).
+- [x] List layout with an EPG timeline for live channels (`epg-timeline`,
+      `epg-timeline-header`), panned 3 hours at a time.
+- [ ] EPG keyboard guide mode (Right arrow on a row to step through its programmes).
 - [ ] Favourites view: a second section for favourite movies and series.
 - [x] Drill into a series, then a season, then a category. A back row returns you.
 - [x] Clicking a tile plays it. Clicking again while it starts cancels the play. Playing
@@ -89,7 +90,7 @@ Angular component it replaces, under `src/app/`.
 - [x] Manage Categories (`manage-categories/`), including Shift+click range selection.
 - [x] Downloads (`download-manager/`, `home/download-sidebar/`), including queued downloads
       of whole series and seasons.
-- [ ] EPG dialog (`epg-modal/`): catch-up playback and download, and reminders.
+- [x] EPG dialog (`epg-modal/`): catch-up playback and download, and reminders.
 - [ ] Re-stream dialog (`restream-modal/`).
 - [ ] Custom channel and category dialogs (`edit-channel-modal`, `edit-group-modal`,
       `delete-group-modal`, `import-modal`).
@@ -99,3 +100,5 @@ Angular component it replaces, under `src/app/`.
 - `edit-channel-modal` sends `channel_exists` its name and URL arguments swapped.
 - In Settings, the re-stream port and zoom are only saved when you leave the page.
 - Deleting a source has no confirmation. The Slint app asks first.
+- The EPG reminder bell does nothing when the tray icon is off, which is always the case on
+  Linux. The Slint app always allows reminders, and shows them as a toast for now.

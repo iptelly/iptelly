@@ -1,17 +1,18 @@
 import { Theme } from "theme.slint";
 import {
-    HomeState, SetupState, SettingsState, CategoriesState, DownloadsState, DialogState, DialogKind,
-    ChannelItem, SidebarRow, SourceItem, SourceAction, CategoryRow, DownloadRow, DownloadAction,
-    Rail,
+    HomeState, SetupState, SettingsState, CategoriesState, DownloadsState, EpgState, DialogState,
+    DialogKind, ChannelItem, SidebarRow, SourceItem, SourceAction, CategoryRow, DownloadRow,
+    DownloadAction, EpgBlock, EpgTick, Rail,
 } from "state.slint";
 import { HomeView } from "home.slint";
 import { SetupView } from "setup.slint";
 import { DialogOverlay } from "dialog.slint";
+import { EpgDialog } from "epg.slint";
 
 export {
-    Theme, HomeState, SetupState, SettingsState, CategoriesState, DownloadsState, DialogState,
-    DialogKind, ChannelItem, SidebarRow, SourceItem, SourceAction, CategoryRow, DownloadRow,
-    DownloadAction, Rail,
+    Theme, HomeState, SetupState, SettingsState, CategoriesState, DownloadsState, EpgState,
+    DialogState, DialogKind, ChannelItem, SidebarRow, SourceItem, SourceAction, CategoryRow,
+    DownloadRow, DownloadAction, EpgBlock, EpgTick, Rail,
 }
 
 export enum Page { loading, setup, home }
@@ -34,6 +35,7 @@ export component AppWindow inherits Window {
     if page == Page.home: HomeView { }
     if page == Page.setup: SetupView { }
 
+    if EpgState.open: EpgDialog { }
     if DialogState.kind != DialogKind.none: DialogOverlay { }
 
     if toast != "": Rectangle {

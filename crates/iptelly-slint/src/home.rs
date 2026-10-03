@@ -449,7 +449,7 @@ fn update_filters(f: impl FnOnce(&mut Filters)) {
     });
 }
 
-fn channel_at(index: usize) -> Option<Channel> {
+pub fn channel_at(index: usize) -> Option<Channel> {
     with_home(|home| home.channels.get(index).cloned())
 }
 
@@ -510,6 +510,13 @@ fn load(window: &AppWindow, more: bool) {
             if !more {
                 state.set_scroll_reset(state.get_scroll_reset() + 1);
                 state.set_empty_text(empty_text(&filters).into());
+                // Live channels only get the list layout with EPG timelines.
+                let live_only = filters.media_types.as_deref() == Some(&[media_type::LIVESTREAM]);
+                state.set_list_mode(live_only);
+                state.set_show_epg(live_only && !lightweight());
+            }
+            if state.get_list_mode() && state.get_show_epg() {
+                crate::epg::fetch(channels.clone());
             }
             request_images(&channels);
             refresh_download_progress(window);
@@ -549,7 +556,31 @@ fn item_for(home: &Home, channel: &Channel) -> ChannelItem {
         faded: false,
         downloading: false,
         progress: 0.0,
+        epg: ModelRc::default(),
+        epg_loaded: false,
     }
+}
+
+pub fn loaded_channels() -> Vec<Channel> {
+    with_home(|home| home.channels.clone())
+}
+
+/// Shows a channel's programmes on its row.
+pub fn set_epg(id: i64, blocks: ModelRc<crate::EpgBlock>) {
+    if let Some(index) = index_of(id) {
+        update_item(index, |item| {
+            item.epg = blocks;
+            item.epg_loaded = true;
+        });
+    }
+}
+
+fn lightweight() -> bool {
+    with_home(|home| {
+        home.settings
+            .as_ref()
+            .is_some_and(|s| s.lightweight_mode == Some(true))
+    })
 }
 
 /// Updates the tiles' download progress bars from the active downloads
@@ -665,12 +696,7 @@ fn download_all(channel: Channel) {
 }
 
 fn request_images(channels: &[Channel]) {
-    let lightweight = with_home(|home| {
-        home.settings
-            .as_ref()
-            .is_some_and(|s| s.lightweight_mode == Some(true))
-    });
-    if lightweight {
+    if lightweight() {
         return;
     }
     for url in channels.iter().filter_map(|c| c.image.clone()) {

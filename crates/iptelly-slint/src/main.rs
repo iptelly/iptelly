@@ -4,6 +4,7 @@
 mod categories;
 mod dialog;
 mod downloads;
+mod epg;
 mod events;
 mod home;
 mod images;
@@ -59,6 +60,7 @@ fn main() -> Result<()> {
     settings_page::setup(&window);
     categories::setup(&window);
     downloads::setup(&window);
+    epg::setup(&window);
     dialog::setup(&window);
     start();
 

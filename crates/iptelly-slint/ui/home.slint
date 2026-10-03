@@ -4,6 +4,7 @@ import { HomeState, ChannelItem, SidebarRow, Rail } from "state.slint";
 import { SettingsView } from "settings.slint";
 import { CategoriesView } from "categories.slint";
 import { DownloadSidebar, DownloadManager } from "downloads.slint";
+import { EpgTimeline, EpgHeader } from "epg.slint";
 
 component RailButton inherits Rectangle {
     in property <string> icon;
@@ -190,11 +191,20 @@ component IconButton inherits Rectangle {
     }
 }
 
+// Width of a list-layout row's channel details; the EPG timeline fills the
+// rest. EpgHeader's ruler is offset by this plus the row's padding.
+global ListLayout {
+    out property <length> info-width: 300px;
+    out property <length> timeline-x: 8px + info-width + 10px;
+}
+
 component Tile inherits Rectangle {
     in property <ChannelItem> item;
     in property <int> index;
+    // One channel per row with its EPG, instead of a grid card.
+    in property <bool> list;
 
-    height: 88px;
+    height: list ? 72px : 88px;
     border-radius: Theme.radius-md;
     background: item.starting ? Theme.accent.with-alpha(0.35) : touch.has-hover ? Theme.surface-3 : Theme.surface-2;
     opacity: item.faded ? 0.4 : 1;
@@ -264,44 +274,55 @@ component Tile inherits Rectangle {
             HorizontalLayout {
                 padding: 8px;
                 spacing: 10px;
-                if item.has-logo: Image {
-                    source: item.logo;
-                    width: 50px;
-                    image-fit: contain;
+                HorizontalLayout {
+                    spacing: 10px;
+                    min-width: root.list ? ListLayout.info-width : 0;
+                    max-width: root.list ? ListLayout.info-width : 100000px;
+                    if item.has-logo: Image {
+                        source: item.logo;
+                        width: 50px;
+                        image-fit: contain;
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 4px;
+                        Text {
+                            text: item.name;
+                            wrap: word-wrap;
+                            overflow: elide;
+                            max-height: 40px;
+                            font-size: 14px;
+                            color: Theme.text-primary;
+                        }
+                        Text {
+                            text: item.source-name;
+                            overflow: elide;
+                            font-size: 12px;
+                            color: Theme.text-secondary;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 6px;
+                        if item.archive: Icon {
+                            data: Icons.archive;
+                            width: 16px;
+                            height: 16px;
+                            color: Theme.text-secondary;
+                        }
+                        if item.favorite: Icon {
+                            data: Icons.star;
+                            width: 16px;
+                            height: 16px;
+                            color: Theme.favorite;
+                        }
+                    }
                 }
-                VerticalLayout {
-                    alignment: center;
-                    spacing: 4px;
-                    Text {
-                        text: item.name;
-                        wrap: word-wrap;
-                        overflow: elide;
-                        max-height: 40px;
-                        font-size: 14px;
-                        color: Theme.text-primary;
-                    }
-                    Text {
-                        text: item.source-name;
-                        overflow: elide;
-                        font-size: 12px;
-                        color: Theme.text-secondary;
-                    }
-                }
-                VerticalLayout {
-                    alignment: center;
-                    spacing: 6px;
-                    if item.archive: Icon {
-                        data: Icons.archive;
-                        width: 16px;
-                        height: 16px;
-                        color: Theme.text-secondary;
-                    }
-                    if item.favorite: Icon {
-                        data: Icons.star;
-                        width: 16px;
-                        height: 16px;
-                        color: Theme.favorite;
-                    }
+                if root.list && HomeState.show-epg: EpgTimeline {
+                    horizontal-stretch: 1;
+                    blocks: item.epg;
+                    loaded: item.epg-loaded;
+                    row-index: index;
                 }
             }
         }
@@ -309,8 +330,8 @@ component Tile inherits Rectangle {
 }
 
 component ChannelGrid inherits Rectangle {
-    property <length> spacing: 12px;
-    property <int> columns: max(1, floor((self.width - 16px) / 300px));
+    property <length> spacing: HomeState.list-mode ? 6px : 12px;
+    property <int> columns: HomeState.list-mode ? 1 : max(1, floor((self.width - 16px) / 300px));
     property <int> rows: ceil(HomeState.channels.length / columns);
 
     opacity: HomeState.channels-visible ? 1 : 0;
@@ -332,10 +353,11 @@ component ChannelGrid inherits Rectangle {
             padding-right: 12px;
             for col in root.columns: Rectangle {
                 horizontal-stretch: 1;
-                height: 88px;
+                height: HomeState.list-mode ? 72px : 88px;
                 if row * root.columns + col < HomeState.channels.length: Tile {
                     item: HomeState.channels[row * root.columns + col];
                     index: row * root.columns + col;
+                    list: HomeState.list-mode;
                 }
             }
         }
@@ -457,6 +479,11 @@ export component HomeView inherits Rectangle {
                     text: "Clear history";
                     clicked => { HomeState.clear-history(); }
                 }
+            }
+
+            if HomeState.list-mode && HomeState.show-epg: EpgHeader {
+                timeline-x: ListLayout.timeline-x;
+                padding-right: 36px;
             }
 
             ChannelGrid {

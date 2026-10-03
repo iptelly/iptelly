@@ -192,6 +192,7 @@ fn redraw(window: &AppWindow) {
     state.set_completed_count(counts[1] as i32);
     state.set_cancelled_count(counts[2] as i32);
     crate::home::refresh_download_progress(window);
+    crate::epg::refresh_download(window);
 }
 
 fn active_row(a: &Active) -> DownloadRow {
