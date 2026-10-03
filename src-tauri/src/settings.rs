@@ -46,7 +46,13 @@ pub fn get_settings() -> Result<Settings> {
         always_ask_save: map.get(ALWAYS_ASK_SAVE).and_then(|s| s.parse().ok()),
         enable_gpu: map.get(ENABLE_GPU).and_then(|s| s.parse().ok()),
         theme: map.get(THEME).map(|s| s.to_string()),
-        player: map.get(PLAYER).map(|s| s.to_string()),
+        // VLC isn't bundled in the Flatpak (only mpv, via the io.mpv.Mpv
+        // base app), so a stored "vlc" choice falls back to mpv there.
+        player: if crate::utils::is_flatpak() {
+            Some("mpv".to_string())
+        } else {
+            map.get(PLAYER).map(|s| s.to_string())
+        },
         vlc_params: map.get(VLC_PARAMS).map(|s| s.to_string()),
         network_interface: map.get(NETWORK_INTERFACE).map(|s| s.to_string()),
         lightweight_mode: map.get(LIGHTWEIGHT_MODE).and_then(|s| s.parse().ok()),

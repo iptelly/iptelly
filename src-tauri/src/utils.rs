@@ -243,6 +243,11 @@ pub(crate) fn get_series_download_path(
     Ok(path.to_string_lossy().to_string())
 }
 
+// Flatpak creates this file in every sandbox.
+pub fn is_flatpak() -> bool {
+    Path::new("/.flatpak-info").exists()
+}
+
 pub fn get_bin(bin: &str) -> String {
     if OS == "linux" || which(bin).is_ok() {
         return bin.to_string();
