@@ -1,6 +1,7 @@
 import { LineEdit, ListView, Button } from "std-widgets.slint";
 import { Theme, Icons, Icon } from "theme.slint";
 import { HomeState, ChannelItem, SidebarRow, Rail } from "state.slint";
+import { SettingsView } from "settings.slint";
 
 component RailButton inherits Rectangle {
     in property <string> icon;
@@ -90,6 +91,11 @@ component NavRail inherits Rectangle {
             clicked => { HomeState.rail-selected(Rail.manage-categories); }
         }
         Rectangle { vertical-stretch: 1; }
+        if HomeState.adult-pin-set: RailButton {
+            icon: HomeState.adult-unlocked ? Icons.lock-open : Icons.lock-closed;
+            label: HomeState.adult-unlocked ? "Unlocked" : "Locked";
+            clicked => { HomeState.toggle-adult-lock(); }
+        }
         RailButton {
             icon: Icons.settings;
             label: "Settings";
@@ -365,7 +371,9 @@ export component HomeView inherits Rectangle {
         NavRail { }
         if HomeState.show-sidebar: PlaylistSidebar { }
 
-        if HomeState.rail == Rail.downloads || HomeState.rail == Rail.manage-categories || HomeState.rail == Rail.settings: Rectangle {
+        if HomeState.rail == Rail.settings: SettingsView { }
+
+        if HomeState.rail == Rail.downloads || HomeState.rail == Rail.manage-categories: Rectangle {
             Text {
                 text: "Not ported to the Slint UI yet - see crates/iptelly-slint/PORTING.md.";
                 color: Theme.text-secondary;

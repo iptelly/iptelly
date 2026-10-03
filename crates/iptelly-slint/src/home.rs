@@ -9,7 +9,7 @@ use std::time::Duration;
 use anyhow::Result;
 use iptelly_core::types::{Channel, Filters, Settings, Source};
 use iptelly_core::{
-    api, epg, media_type, mpv, sort_type, source_type, sql, utils, view_type, xtream,
+    api, epg, media_type, mpv, settings, sort_type, source_type, sql, utils, view_type, xtream,
 };
 use slint::{ComponentHandle, Image, Model, ModelRc, Timer, TimerMode, VecModel};
 
@@ -94,6 +94,13 @@ pub fn setup(window: &AppWindow) {
     state.on_rail_selected(move |rail| {
         if let Some(window) = weak.upgrade() {
             select_rail(&window, rail);
+        }
+    });
+
+    let weak = window.as_weak();
+    state.on_toggle_adult_lock(move || {
+        if let Some(window) = weak.upgrade() {
+            toggle_adult_lock(&window);
         }
     });
 
@@ -232,6 +239,13 @@ pub fn start(window: &AppWindow, settings: Settings, sources: Vec<Source>) {
     });
     window.global::<HomeState>().set_sort(sort as i32);
     window.set_page(Page::Home);
+    crate::spawn(
+        crate::blocking(settings::has_adult_pin),
+        |window, result| match result {
+            Ok(pin_set) => set_adult_pin(window, pin_set, false),
+            Err(e) => crate::show_error(window, &e),
+        },
+    );
 
     if first_start {
         if has_xtream {
@@ -259,6 +273,82 @@ pub fn start(window: &AppWindow, settings: Settings, sources: Vec<Source>) {
     select_rail(window, rail);
 }
 
+pub fn set_settings(settings: Settings) {
+    with_home(|home| home.settings = Some(settings));
+}
+
+/// Forgets which series' episodes were fetched, so they're fetched again
+/// (after the provider was refreshed).
+pub fn clear_series_cache() {
+    with_home(|home| home.series_refreshed.clear());
+}
+
+/// After a source was added, changed, enabled, disabled or deleted. The
+/// grid reloads when a rail item is next selected.
+pub fn reload_sources() {
+    crate::spawn(crate::blocking(sql::get_sources), |window, result| {
+        let sources = match result {
+            Ok(sources) => sources,
+            Err(e) => {
+                crate::show_error(window, &e);
+                return;
+            }
+        };
+        if sources.is_empty() {
+            crate::setup::show(window, false);
+            return;
+        }
+        with_home(|home| {
+            home.sources = sources.into_iter().filter(|s| s.enabled).collect();
+            home.sidebar = Sidebar {
+                model: home.sidebar.model.clone(),
+                ..Default::default()
+            };
+        });
+    });
+}
+
+pub fn set_adult_pin(window: &AppWindow, pin_set: bool, unlocked: bool) {
+    let state = window.global::<HomeState>();
+    state.set_adult_pin_set(pin_set);
+    state.set_adult_unlocked(unlocked);
+}
+
+fn toggle_adult_lock(window: &AppWindow) {
+    if window.global::<HomeState>().get_adult_unlocked() {
+        crate::spawn(
+            async {
+                api::lock_adult_content(&STATE).await;
+                Ok(())
+            },
+            |window, _| {
+                window.global::<HomeState>().set_adult_unlocked(false);
+                load(window, false);
+            },
+        );
+        return;
+    }
+    crate::dialog::ask_pin(
+        window,
+        "Enter PIN",
+        "Adult content is locked. Enter your PIN to show it.",
+        |_, pin| {
+            crate::spawn(
+                async move { api::verify_adult_pin(&pin, &STATE).await },
+                |window, result| match result {
+                    Ok(true) => {
+                        crate::dialog::close(window);
+                        window.global::<HomeState>().set_adult_unlocked(true);
+                        load(window, false);
+                    }
+                    Ok(false) => crate::dialog::pin_rejected(window),
+                    Err(e) => crate::show_error(window, &e),
+                },
+            );
+        },
+    );
+}
+
 fn rail_from_number(number: u8) -> Rail {
     match number {
         0 => Rail::Favourites,
@@ -272,11 +362,13 @@ fn rail_from_number(number: u8) -> Rail {
 fn select_rail(window: &AppWindow, rail: Rail) {
     let state = window.global::<HomeState>();
     state.set_rail(rail);
+    if rail == Rail::Settings {
+        state.set_show_sidebar(false);
+        crate::settings_page::show(window);
+        return;
+    }
     // Not ported yet: these show a placeholder (see PORTING.md).
-    if matches!(
-        rail,
-        Rail::Downloads | Rail::ManageCategories | Rail::Settings
-    ) {
+    if matches!(rail, Rail::Downloads | Rail::ManageCategories) {
         state.set_show_sidebar(false);
         return;
     }

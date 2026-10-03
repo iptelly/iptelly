@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use iptelly_core::types::Source;
-use iptelly_core::{api, m3u, settings, source_type, sql, xtream};
+use iptelly_core::{api, m3u, source_type, sql, xtream};
 use slint::{ComponentHandle, Timer, TimerMode};
 
 use crate::{AppWindow, Page, SetupState};
@@ -169,7 +169,7 @@ fn submit(window: &AppWindow) {
                 Ok(true) => {
                     crate::show_toast(window, &format!("\"{name}\" successfully added"));
                     clear_form(window);
-                    open_home();
+                    crate::start();
                 }
                 Err(e) => crate::show_error(window, &e),
             }
@@ -191,14 +191,4 @@ fn clear_form(window: &AppWindow) {
     }
     state.set_use_tvg_id(false);
     state.set_name_taken(false);
-}
-
-fn open_home() {
-    crate::spawn(
-        crate::blocking(|| Ok((settings::get_settings()?, sql::get_sources()?))),
-        |window, result| match result {
-            Ok((settings, sources)) => crate::home::start(window, settings, sources),
-            Err(e) => crate::show_error(window, &e),
-        },
-    );
 }

@@ -1,9 +1,11 @@
 // Prevents an extra console window on Windows in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod dialog;
 mod events;
 mod home;
 mod images;
+mod settings_page;
 mod setup;
 
 use std::cell::RefCell;
@@ -49,16 +51,20 @@ fn main() -> Result<()> {
     WINDOW.set(window.as_weak()).ok();
     home::setup(&window);
     setup::setup(&window);
+    settings_page::setup(&window);
+    dialog::setup(&window);
+    start();
 
+    window.run()?;
+    Ok(())
+}
+
+/// Loads the settings and sources and opens the home screen, or setup if
+/// there are no sources. Runs at startup, after adding the first source and
+/// after importing app data.
+pub fn start() {
     spawn(
-        async {
-            blocking(|| {
-                let settings = settings::get_settings()?;
-                let sources = sql::get_sources()?;
-                Ok((settings, sources))
-            })
-            .await
-        },
+        blocking(|| Ok((settings::get_settings()?, sql::get_sources()?))),
         |window, result| match result {
             Ok((settings, sources)) => {
                 window
@@ -76,9 +82,11 @@ fn main() -> Result<()> {
             }
         },
     );
+}
 
-    window.run()?;
-    Ok(())
+/// The main window. Only valid on the UI thread.
+pub fn window() -> Option<AppWindow> {
+    WINDOW.get()?.upgrade()
 }
 
 /// Runs `future` on the tokio runtime, then hands its result to `then` on

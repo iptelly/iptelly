@@ -18,6 +18,7 @@ anyhow = "1.0"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
 sha2 = "0.11.0"
 directories = "6.0.0"
+chrono = "0.4"
 # GTK3 rather than rfd's xdg-portal backend only because tauri-plugin-dialog
 # (src-tauri) enables gtk3, workspace builds merge the two, and rfd refuses
 # both at once. Switch to xdg-portal once src-tauri is removed. GTK's own

@@ -1,9 +1,16 @@
 import { Theme } from "theme.slint";
-import { HomeState, SetupState, ChannelItem, SidebarRow, Rail } from "state.slint";
+import {
+    HomeState, SetupState, SettingsState, DialogState, DialogKind, ChannelItem, SidebarRow,
+    SourceItem, SourceAction, Rail,
+} from "state.slint";
 import { HomeView } from "home.slint";
 import { SetupView } from "setup.slint";
+import { DialogOverlay } from "dialog.slint";
 
-export { Theme, HomeState, SetupState, ChannelItem, SidebarRow, Rail }
+export {
+    Theme, HomeState, SetupState, SettingsState, DialogState, DialogKind, ChannelItem,
+    SidebarRow, SourceItem, SourceAction, Rail,
+}
 
 export enum Page { loading, setup, home }
 
@@ -24,6 +31,8 @@ export component AppWindow inherits Window {
 
     if page == Page.home: HomeView { }
     if page == Page.setup: SetupView { }
+
+    if DialogState.kind != DialogKind.none: DialogOverlay { }
 
     if toast != "": Rectangle {
         y: parent.height - self.height - 24px;

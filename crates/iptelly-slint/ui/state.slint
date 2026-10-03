@@ -50,8 +50,11 @@ export global HomeState {
     in-out property <int> view-type;
     // Incremented by Rust to scroll the grid back to the top.
     in-out property <int> scroll-reset;
+    in-out property <bool> adult-pin-set;
+    in-out property <bool> adult-unlocked;
 
     callback rail-selected(Rail);
+    callback toggle-adult-lock();
     callback search-edited(string);
     callback toggle-keywords();
     callback sort-selected(int);
@@ -66,6 +69,110 @@ export global HomeState {
     callback tile-hide(int);
     callback tile-remove-history(int);
     callback tile-copy-url(int);
+}
+
+export struct SourceItem {
+    name: string,
+    // SourceType numbers: M3U=0, M3U link=1, Xtream=2, Custom=3.
+    source-type: int,
+    type-name: string,
+    url: string,
+    user-agent: string,
+    stream-user-agent: string,
+    max-streams: string,
+    username: string,
+    password: string,
+    expires: string,
+    timezone: string,
+    epg-url: string,
+    epg-retention: string,
+    use-tvg-id: bool,
+    refreshed: string,
+    enabled: bool,
+}
+
+export enum SourceAction {
+    toggle, edit, save, cancel, browse, refresh, refresh-epg, refresh-provider-epg,
+    prune-epg, backup-favs, restore-favs, share, delete,
+}
+
+export global SettingsState {
+    in-out property <bool> is-flatpak;
+    // The tray icon only exists on Windows and macOS.
+    in-out property <bool> has-tray;
+
+    in-out property <string> recording-path;
+    in-out property <string> mpv-params;
+    in-out property <string> vlc-params;
+    // ComboBox indexes: theme (modern, classic), player (mpv, vlc),
+    // default view (a Rail number) and default sort (a sort type).
+    in-out property <int> theme;
+    in-out property <int> player;
+    in-out property <int> default-view;
+    in-out property <int> default-sort;
+    in-out property <int> volume;
+    in-out property <string> restream-port;
+    // "System default" followed by each network interface.
+    in-out property <[string]> interfaces;
+    in-out property <int> interface;
+    in-out property <string> interface-warning;
+    in-out property <bool> stream-caching;
+    in-out property <bool> hwdec;
+    in-out property <bool> gpu;
+    in-out property <bool> always-ask-save;
+    in-out property <bool> refresh-on-start;
+    in-out property <bool> tray;
+    in-out property <bool> lightweight;
+
+    in-out property <bool> pin-set;
+    in-out property <string> new-pin;
+    in-out property <string> confirm-pin;
+    in-out property <string> pin-error;
+
+    in-out property <[SourceItem]> sources;
+    // Index of the source being edited, or -1. Its fields are in edit-*.
+    in-out property <int> editing: -1;
+    in-out property <string> edit-url;
+    in-out property <string> edit-user-agent;
+    in-out property <string> edit-stream-user-agent;
+    in-out property <string> edit-max-streams;
+    in-out property <string> edit-username;
+    in-out property <string> edit-password;
+    in-out property <string> edit-epg-url;
+    in-out property <string> edit-epg-retention;
+    in-out property <bool> edit-use-tvg-id;
+    // Set while a long operation runs; disables the buttons that start one.
+    in-out property <bool> busy;
+
+    // Any setting changed; saved after a short delay.
+    callback changed();
+    callback browse-recording-path();
+    callback refresh-interfaces();
+    callback set-pin();
+    callback remove-pin();
+    callback add-source();
+    callback refresh-all();
+    callback clear-history();
+    callback clear-epg-cache();
+    callback export-data();
+    callback import-data();
+    callback delete-everything();
+    callback source-action(int, SourceAction);
+}
+
+export enum DialogKind { none, confirm, pin }
+
+// A single modal dialog, drawn over the whole window.
+export global DialogState {
+    in-out property <DialogKind> kind;
+    in-out property <string> title;
+    in-out property <string> message;
+    in-out property <string> confirm-label: "OK";
+    in-out property <string> pin;
+    in-out property <string> pin-error;
+
+    callback confirmed();
+    callback cancelled();
 }
 
 export global SetupState {

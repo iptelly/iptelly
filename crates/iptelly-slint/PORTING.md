@@ -35,7 +35,7 @@ Angular component it replaces, under `src/app/`.
 
 - [x] Nav rail: Favourites, Channels, Movies, Series, History, Downloads, Manage
       Categories, Settings.
-- [ ] Adult content lock button on the nav rail (`adult-pin-modal`).
+- [x] Adult content lock button on the nav rail (`adult-pin-modal`).
 - [x] Playlist sidebar: All playlists, each source, and each source's categories, which
       expand and collapse. Selecting a category drills into it.
 - [ ] Hide a category from its context menu.
@@ -78,10 +78,14 @@ Angular component it replaces, under `src/app/`.
 - [x] Setup (`setup/`): M3U file, M3U URL, Xtream and Custom sources.
 - [ ] Setup: a warning for Xtream URLs whose path is `/`.
 - [ ] Setup: Custom import, Import backup, and the Delete everything button.
-- [ ] Settings (`settings/`): every setting, the adult PIN, export and import of app data,
-      Delete everything (`confirm-delete-modal`).
-- [ ] Source tiles (`settings/source-tile/`): edit, refresh, EPG, favourites
-      backup and restore, the custom-source actions.
+- [x] Settings (`settings/`): every setting, the adult PIN, export and import of app data,
+      Delete everything (`confirm-delete-modal`). Settings save as you change them.
+- [ ] Settings: UI zoom. There's no webview to zoom; it could set Slint's scale factor at
+      startup.
+- [x] Source tiles (`settings/source-tile/`): enable, edit, refresh, EPG, favourites
+      backup and restore, delete, and Share for custom sources.
+- [ ] Source tiles: Add channel, Add group and Import for custom sources (they need the
+      custom channel and category dialogs).
 - [ ] Manage Categories (`manage-categories/`).
 - [ ] Downloads (`download-manager/`, `home/download-sidebar/`), including queued downloads
       of whole series and seasons.
@@ -94,3 +98,4 @@ Angular component it replaces, under `src/app/`.
 
 - `edit-channel-modal` sends `channel_exists` its name and URL arguments swapped.
 - In Settings, the re-stream port and zoom are only saved when you leave the page.
+- Deleting a source has no confirmation. The Slint app asks first.
