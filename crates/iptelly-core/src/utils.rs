@@ -178,7 +178,7 @@ pub async fn insert_play_token(
     Ok(())
 }
 
-pub(crate) fn get_filename(channel_name: String, url: String) -> Result<String> {
+pub fn get_filename(channel_name: String, url: String) -> Result<String> {
     let extension = get_extension(url);
     let channel_name = sanitize(channel_name);
     let filename = format!("{channel_name}.{extension}").to_string();

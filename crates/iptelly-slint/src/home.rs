@@ -218,6 +218,27 @@ pub fn setup(window: &AppWindow) {
             Err(e) => crate::show_error(&window, &e.context("Failed to copy the URL")),
         }
     });
+
+    state.on_tile_record(|index| {
+        if let Some(channel) = channel_at(index as usize) {
+            record(channel);
+        }
+    });
+    state.on_tile_download(|index| {
+        if let Some(channel) = channel_at(index as usize) {
+            download_movie(channel);
+        }
+    });
+    state.on_tile_cancel_download(|index| {
+        if let Some(id) = channel_at(index as usize).and_then(|c| c.id) {
+            crate::downloads::cancel(id.to_string());
+        }
+    });
+    state.on_tile_download_all(|index| {
+        if let Some(channel) = channel_at(index as usize) {
+            download_all(channel);
+        }
+    });
 }
 
 /// Called once the sources and settings are known (at startup, or after
@@ -249,12 +270,14 @@ pub fn start(window: &AppWindow, settings: Settings, sources: Vec<Source>) {
 
     if first_start {
         if has_xtream {
-            let events = crate::events::new(window);
-            crate::spawn(epg::on_start_check_epg(&STATE, events), |window, result| {
-                if let Err(e) = result {
-                    crate::show_error(window, &e);
-                }
-            });
+            crate::spawn(
+                epg::on_start_check_epg(&STATE, crate::events()),
+                |window, result| {
+                    if let Err(e) = result {
+                        crate::show_error(window, &e);
+                    }
+                },
+            );
         }
         if refresh_on_start {
             crate::show_toast(
@@ -367,9 +390,14 @@ fn select_rail(window: &AppWindow, rail: Rail) {
         crate::settings_page::show(window);
         return;
     }
-    // Not ported yet: these show a placeholder (see PORTING.md).
-    if matches!(rail, Rail::Downloads | Rail::ManageCategories) {
+    if rail == Rail::ManageCategories {
         state.set_show_sidebar(false);
+        crate::categories::show(window);
+        return;
+    }
+    if rail == Rail::Downloads {
+        state.set_show_sidebar(false);
+        crate::downloads::refresh_history();
         return;
     }
     let (view, media_types) = match rail {
@@ -484,6 +512,7 @@ fn load(window: &AppWindow, more: bool) {
                 state.set_empty_text(empty_text(&filters).into());
             }
             request_images(&channels);
+            refresh_download_progress(window);
         },
     );
 }
@@ -518,7 +547,121 @@ fn item_for(home: &Home, channel: &Channel) -> ChannelItem {
         custom: source.is_some_and(|s| s.source_type == source_type::CUSTOM),
         starting: channel.id.is_some_and(|id| home.starting.contains(&id)),
         faded: false,
+        downloading: false,
+        progress: 0.0,
     }
+}
+
+/// Updates the tiles' download progress bars from the active downloads
+/// (a movie's download id is its channel id).
+pub fn refresh_download_progress(window: &AppWindow) {
+    let progress: HashMap<String, f64> = crate::downloads::progress_by_id().into_iter().collect();
+    window
+        .global::<HomeState>()
+        .set_batch_running(crate::downloads::batch_running());
+    with_home(|home| {
+        for (i, channel) in home.channels.iter().enumerate() {
+            let Some(mut item) = home.model.row_data(i) else {
+                continue;
+            };
+            let current = channel.id.and_then(|id| progress.get(&id.to_string()));
+            let downloading = current.is_some();
+            let value = current.map(|p| (p / 100.0) as f32).unwrap_or(0.0);
+            if item.downloading != downloading || item.progress != value {
+                item.downloading = downloading;
+                item.progress = value;
+                home.model.set_row_data(i, item);
+            }
+        }
+    });
+}
+
+pub fn always_ask_save() -> bool {
+    with_home(|home| {
+        home.settings
+            .as_ref()
+            .is_some_and(|s| s.always_ask_save == Some(true))
+    })
+}
+
+fn download_movie(channel: Channel) {
+    let Some(id) = channel.id else { return };
+    let ask = crate::downloads::ask_where_to_save();
+    crate::spawn(
+        async move {
+            let path = if ask {
+                let file_name = utils::get_filename(
+                    channel.name.clone(),
+                    channel.url.clone().unwrap_or_default(),
+                )?;
+                let picked = rfd::AsyncFileDialog::new()
+                    .set_title("Select where to download movie")
+                    .set_file_name(file_name)
+                    .save_file()
+                    .await;
+                let Some(picked) = picked else { return Ok(()) };
+                Some(picked.path().to_string_lossy().into_owned())
+            } else {
+                None
+            };
+            crate::downloads::download(id.to_string(), channel, path).await;
+            Ok(())
+        },
+        |window, result| {
+            if let Err(e) = result {
+                crate::show_error(window, &e);
+            }
+        },
+    );
+}
+
+// "Download Series" or "Download Season": every episode, queued.
+fn download_all(channel: Channel) {
+    let ask = crate::downloads::ask_where_to_save();
+    let what = if channel.media_type == media_type::SERIE {
+        "series"
+    } else {
+        "season"
+    };
+    crate::spawn(
+        async move {
+            let base = if ask {
+                let picked = rfd::AsyncFileDialog::new()
+                    .set_title(format!("Select where to download the {what}"))
+                    .pick_folder()
+                    .await;
+                let Some(picked) = picked else { return Ok(()) };
+                picked.path().to_string_lossy().into_owned()
+            } else {
+                crate::blocking(utils::get_download_base_path).await?
+            };
+            let (show, episodes) = if channel.media_type == media_type::SERIE {
+                let episodes = xtream::get_series_episodes_for_download(channel.clone()).await?;
+                let episodes = episodes
+                    .into_iter()
+                    .map(|e| (e.channel, e.season_name))
+                    .collect();
+                (channel.name, episodes)
+            } else {
+                let season = channel.name.clone();
+                let info =
+                    crate::blocking(move || xtream::get_season_episodes_for_download(channel))
+                        .await?;
+                let episodes = info
+                    .episodes
+                    .into_iter()
+                    .map(|e| (e, season.clone()))
+                    .collect();
+                (info.series_name, episodes)
+            };
+            crate::downloads::enqueue_series(base, show, episodes).await
+        },
+        move |window, result| {
+            if let Err(e) = result {
+                crate::show_error(window, &e.context(format!("Failed to download the {what}")));
+            }
+        },
+    );
 }
 
 fn request_images(channels: &[Channel]) {
@@ -682,6 +825,35 @@ fn refresh_back_title(window: &AppWindow) {
 }
 
 fn play(channel: Channel) {
+    start_player(channel, false, None);
+}
+
+fn record(channel: Channel) {
+    if !crate::downloads::ask_where_to_save() {
+        // The core records into the recording folder.
+        start_player(channel, true, None);
+        return;
+    }
+    let date = chrono::Local::now().format("%Y-%m-%d-%H-%M-%S");
+    let file_name = format!("{}_{date}.mp4", utils::sanitize(channel.name.clone()));
+    crate::spawn(
+        async move {
+            Ok(rfd::AsyncFileDialog::new()
+                .set_title("Select where to save recording")
+                .set_file_name(file_name)
+                .save_file()
+                .await
+                .map(|f| f.path().to_string_lossy().into_owned()))
+        },
+        move |_, result| {
+            if let Ok(Some(path)) = result {
+                start_player(channel, true, Some(path));
+            }
+        },
+    );
+}
+
+fn start_player(channel: Channel, record: bool, record_path: Option<String>) {
     let Some(id) = channel.id else { return };
     let already_starting = with_home(|home| !home.starting.insert(id));
     if already_starting {
@@ -703,7 +875,7 @@ fn play(channel: Channel) {
     crate::spawn(
         async move {
             // Returns once the player has exited.
-            api::play(channel, false, None, &STATE).await?;
+            api::play(channel, record, record_path, &STATE).await?;
             crate::blocking(move || sql::add_last_watched(id)).await
         },
         move |window, result| {

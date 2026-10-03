@@ -13,9 +13,9 @@ use crate::AppWindow;
 struct SlintEvents(Weak<AppWindow>);
 
 impl EventSink for SlintEvents {
-    // Nothing shows download progress until the downloads screen is ported
-    // (see PORTING.md).
-    fn download_progress(&self, _download_id: &str, _progress: DownloadProgress) {}
+    fn download_progress(&self, download_id: &str, progress: DownloadProgress) {
+        crate::downloads::on_progress(download_id, progress);
+    }
 
     fn restream_started(&self) {
         let _ = self.0.upgrade_in_event_loop(|window| {

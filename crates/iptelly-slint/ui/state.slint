@@ -17,6 +17,9 @@ export struct ChannelItem {
     starting: bool,
     // Unfavourited or hidden since the list loaded; it disappears on reload.
     faded: bool,
+    // A download of this item is queued, running or paused; progress is 0-1.
+    downloading: bool,
+    progress: float,
 }
 
 // One row of the playlist sidebar's flattened tree.
@@ -69,6 +72,13 @@ export global HomeState {
     callback tile-hide(int);
     callback tile-remove-history(int);
     callback tile-copy-url(int);
+    callback tile-record(int);
+    callback tile-download(int);
+    callback tile-cancel-download(int);
+    // A series or season: queues all its episodes.
+    callback tile-download-all(int);
+    // Whether a series or season queue is running (only one at a time).
+    in-out property <bool> batch-running;
 }
 
 export struct SourceItem {
@@ -158,6 +168,67 @@ export global SettingsState {
     callback import-data();
     callback delete-everything();
     callback source-action(int, SourceAction);
+}
+
+// One row of Manage Categories' flattened sections.
+export struct CategoryRow {
+    // 0 = section header, 1 = category, 2 = hidden channel, 3 = a message.
+    kind: int,
+    // 0-2 = channel/movie/series categories, 3 = individually hidden channels.
+    section: int,
+    name: string,
+    checked: bool,
+    hidden: bool,
+    expanded: bool,
+}
+
+export global CategoriesState {
+    in-out property <[string]> sources;
+    in-out property <int> source;
+    in-out property <string> filter;
+    in-out property <[CategoryRow]> rows;
+    in-out property <bool> any-selected;
+    in-out property <bool> any-channels-selected;
+    in-out property <bool> busy;
+
+    callback source-selected(int);
+    callback filter-edited(string);
+    // Row index, and whether Shift was held (selects the range from the
+    // last clicked row).
+    callback row-clicked(int, bool);
+    callback hide-selected();
+    callback unhide-selected();
+    callback unhide-channels();
+}
+
+export struct DownloadRow {
+    id: string,
+    name: string,
+    // "Queued", "45% (1.2 GB / 2.6 GB)", "Completed - 2.6 GB", ...
+    detail: string,
+    // 0-1, for active downloads.
+    progress: float,
+    // 0 = queued, 1 = downloading, 2 = paused, 3 = completed,
+    // 4 = cancelled, 5 = failed.
+    status: int,
+}
+
+export enum DownloadAction { pause, resume, restart, cancel, play, delete-file, delete-entry }
+
+export global DownloadsState {
+    // 0 = queued (active), 1 = downloaded, 2 = cancelled/failed/paused.
+    in-out property <int> category;
+    in-out property <[DownloadRow]> rows;
+    in-out property <int> queued-count;
+    in-out property <int> completed-count;
+    in-out property <int> cancelled-count;
+
+    callback category-selected(int);
+    callback action(string, DownloadAction);
+    callback pause-all();
+    callback cancel-all();
+    callback restart-all();
+    callback clear-all();
 }
 
 export enum DialogKind { none, confirm, pin }

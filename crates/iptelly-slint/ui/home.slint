@@ -2,6 +2,8 @@ import { LineEdit, ListView, Button } from "std-widgets.slint";
 import { Theme, Icons, Icon } from "theme.slint";
 import { HomeState, ChannelItem, SidebarRow, Rail } from "state.slint";
 import { SettingsView } from "settings.slint";
+import { CategoriesView } from "categories.slint";
+import { DownloadSidebar, DownloadManager } from "downloads.slint";
 
 component RailButton inherits Rectangle {
     in property <string> icon;
@@ -198,6 +200,15 @@ component Tile inherits Rectangle {
     opacity: item.faded ? 0.4 : 1;
     animate background { duration: 100ms; }
 
+    if item.downloading: Rectangle {
+        x: 0;
+        y: parent.height - self.height;
+        height: 4px;
+        width: parent.width * clamp(item.progress, 0, 1);
+        border-radius: 2px;
+        background: #2fb36b;
+    }
+
     // The TouchArea inside takes every mouse button, so the menu never sees
     // the right-click itself; the TouchArea opens it instead.
     menu := ContextMenuArea {
@@ -214,6 +225,26 @@ component Tile inherits Rectangle {
             if !item.custom && item.media-type != 4 && HomeState.view-type != 3: MenuItem {
                 title: item.hidden ? "Unhide" : "Hide";
                 activated => { HomeState.tile-hide(index); }
+            }
+            if item.media-type == 0: MenuItem {
+                title: "Record";
+                activated => { HomeState.tile-record(index); }
+            }
+            if item.media-type == 1 && !item.downloading: MenuItem {
+                title: "Download";
+                activated => { HomeState.tile-download(index); }
+            }
+            if item.media-type == 1 && item.downloading: MenuItem {
+                title: "Cancel download";
+                activated => { HomeState.tile-cancel-download(index); }
+            }
+            if item.media-type == 2 && !HomeState.batch-running: MenuItem {
+                title: "Download Series";
+                activated => { HomeState.tile-download-all(index); }
+            }
+            if item.media-type == 4 && !HomeState.batch-running: MenuItem {
+                title: "Download Season";
+                activated => { HomeState.tile-download-all(index); }
             }
             if item.media-type < 3: MenuItem {
                 title: "Copy URL";
@@ -370,16 +401,11 @@ export component HomeView inherits Rectangle {
     HorizontalLayout {
         NavRail { }
         if HomeState.show-sidebar: PlaylistSidebar { }
+        if HomeState.rail == Rail.downloads: DownloadSidebar { }
+        if HomeState.rail == Rail.downloads: DownloadManager { }
 
         if HomeState.rail == Rail.settings: SettingsView { }
-
-        if HomeState.rail == Rail.downloads || HomeState.rail == Rail.manage-categories: Rectangle {
-            Text {
-                text: "Not ported to the Slint UI yet - see crates/iptelly-slint/PORTING.md.";
-                color: Theme.text-secondary;
-                font-size: 16px;
-            }
-        }
+        if HomeState.rail == Rail.manage-categories: CategoriesView { }
 
         if HomeState.rail != Rail.downloads && HomeState.rail != Rail.manage-categories && HomeState.rail != Rail.settings: VerticalLayout {
             padding: 16px;

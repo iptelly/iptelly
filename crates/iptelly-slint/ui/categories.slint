@@ -1,0 +1,132 @@
+import { Button, ComboBox, LineEdit, ListView } from "std-widgets.slint";
+import { Theme, Icons, Icon } from "theme.slint";
+import { CategoriesState, CategoryRow } from "state.slint";
+
+component CheckMark inherits Rectangle {
+    in property <bool> checked;
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    border-width: checked ? 0 : 2px;
+    border-color: Theme.text-secondary;
+    background: checked ? Theme.accent : transparent;
+    if checked: Path {
+        commands: "M9,20.42L2.79,14.21L5.62,11.38L9,14.77L18.88,4.88L21.71,7.71L9,20.42Z";
+        viewbox-width: 24;
+        viewbox-height: 24;
+        fill: Theme.accent-contrast;
+        width: 14px;
+        height: 14px;
+    }
+}
+
+component RowView inherits Rectangle {
+    in property <CategoryRow> data;
+    in property <int> index;
+
+    height: data.kind == 0 ? 44px : 34px;
+    border-radius: Theme.radius-sm;
+    background: data.kind == 0 ? Theme.surface-1 : touch.has-hover && data.kind != 3 ? Theme.surface-2 : transparent;
+
+    touch := TouchArea {
+        enabled: data.kind != 3;
+        pointer-event(event) => {
+            if event.button == PointerEventButton.left && event.kind == PointerEventKind.up {
+                CategoriesState.row-clicked(index, event.modifiers.shift);
+            }
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: data.kind == 0 ? 8px : 36px;
+        // Leaves room for the list's scrollbar.
+        padding-right: 24px;
+        spacing: 10px;
+
+        if data.kind == 0: Icon {
+            data: root.data.expanded ? Icons.chevron-down : Icons.chevron-right;
+            y: (parent.height - self.height) / 2;
+            color: Theme.text-secondary;
+        }
+        if data.kind == 1 || data.kind == 2: CheckMark {
+            checked: data.checked;
+            y: (parent.height - self.height) / 2;
+        }
+        Text {
+            text: data.name;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+            font-weight: data.kind == 0 ? 600 : 400;
+            font-italic: data.kind == 3;
+            color: data.kind == 3 ? Theme.text-secondary : Theme.text-primary;
+        }
+        if data.kind == 1 && data.hidden: Rectangle {
+            width: badge.preferred-width + 16px;
+            height: 22px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 11px;
+            background: Theme.surface-3;
+            badge := Text {
+                text: "Hidden";
+                font-size: 12px;
+                color: Theme.text-secondary;
+            }
+        }
+        if data.kind == 0 && data.section == 3 && CategoriesState.any-channels-selected: Button {
+            text: "Unhide selected";
+            enabled: !CategoriesState.busy;
+            clicked => { CategoriesState.unhide-channels(); }
+        }
+    }
+}
+
+export component CategoriesView inherits Rectangle {
+    background: Theme.bg-base;
+
+    VerticalLayout {
+        padding: 24px;
+        spacing: 14px;
+
+        Text {
+            text: "Manage Categories";
+            font-size: 22px;
+            font-weight: 600;
+            horizontal-alignment: center;
+            color: Theme.text-primary;
+        }
+
+        HorizontalLayout {
+            spacing: 8px;
+            ComboBox {
+                min-width: 200px;
+                model: CategoriesState.sources;
+                current-index <=> CategoriesState.source;
+                selected => { CategoriesState.source-selected(self.current-index); }
+            }
+            LineEdit {
+                placeholder-text: "Filter categories...";
+                text <=> CategoriesState.filter;
+                edited(text) => { CategoriesState.filter-edited(text); }
+            }
+            Button {
+                text: "Hide selected";
+                enabled: CategoriesState.any-selected && !CategoriesState.busy;
+                clicked => { CategoriesState.hide-selected(); }
+            }
+            Button {
+                text: "Unhide selected";
+                enabled: CategoriesState.any-selected && !CategoriesState.busy;
+                clicked => { CategoriesState.unhide-selected(); }
+            }
+        }
+
+        ListView {
+            vertical-stretch: 1;
+            for row[i] in CategoriesState.rows: RowView {
+                data: row;
+                index: i;
+            }
+        }
+    }
+}

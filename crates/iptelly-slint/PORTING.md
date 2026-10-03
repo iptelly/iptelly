@@ -61,8 +61,8 @@ Angular component it replaces, under `src/app/`.
   - [x] Hide and unhide.
   - [x] Remove from history.
   - [x] Copy URL.
-  - [ ] Record.
-  - [ ] Download, Download series, Download season.
+  - [x] Record.
+  - [x] Download, Download series, Download season, and a progress bar on the tile.
   - [ ] Re-stream.
   - [ ] Edit, Share and Delete, for custom sources.
 - [ ] Keyboard navigation:
@@ -86,8 +86,8 @@ Angular component it replaces, under `src/app/`.
       backup and restore, delete, and Share for custom sources.
 - [ ] Source tiles: Add channel, Add group and Import for custom sources (they need the
       custom channel and category dialogs).
-- [ ] Manage Categories (`manage-categories/`).
-- [ ] Downloads (`download-manager/`, `home/download-sidebar/`), including queued downloads
+- [x] Manage Categories (`manage-categories/`), including Shift+click range selection.
+- [x] Downloads (`download-manager/`, `home/download-sidebar/`), including queued downloads
       of whole series and seasons.
 - [ ] EPG dialog (`epg-modal/`): catch-up playback and download, and reminders.
 - [ ] Re-stream dialog (`restream-modal/`).

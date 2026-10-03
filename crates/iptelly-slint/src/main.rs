@@ -1,7 +1,9 @@
 // Prevents an extra console window on Windows in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod categories;
 mod dialog;
+mod downloads;
 mod events;
 mod home;
 mod images;
@@ -13,6 +15,7 @@ use std::sync::{LazyLock, OnceLock};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use iptelly_core::events::Events;
 use iptelly_core::types::AppState;
 use iptelly_core::{log, settings, sql, utils};
 use slint::{ComponentHandle, Timer, Weak};
@@ -31,6 +34,7 @@ static RUNTIME: LazyLock<Runtime> =
 pub static STATE: LazyLock<Mutex<AppState>> = LazyLock::new(|| Mutex::new(AppState::default()));
 
 static WINDOW: OnceLock<Weak<AppWindow>> = OnceLock::new();
+static EVENTS: OnceLock<Events> = OnceLock::new();
 
 thread_local! {
     static TOAST_TIMER: RefCell<Timer> = RefCell::new(Timer::default());
@@ -49,9 +53,12 @@ fn main() -> Result<()> {
     let window = AppWindow::new()?;
     window.set_version(env!("CARGO_PKG_VERSION").into());
     WINDOW.set(window.as_weak()).ok();
+    EVENTS.set(events::new(&window)).ok();
     home::setup(&window);
     setup::setup(&window);
     settings_page::setup(&window);
+    categories::setup(&window);
+    downloads::setup(&window);
     dialog::setup(&window);
     start();
 
@@ -82,6 +89,14 @@ pub fn start() {
             }
         },
     );
+}
+
+/// Where the core sends download progress, restream and EPG events.
+pub fn events() -> Events {
+    EVENTS
+        .get()
+        .expect("events are set before the UI starts")
+        .clone()
 }
 
 /// The main window. Only valid on the UI thread.

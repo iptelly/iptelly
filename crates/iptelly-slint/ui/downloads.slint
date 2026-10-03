@@ -1,0 +1,188 @@
+import { Button, ListView } from "std-widgets.slint";
+import { Theme, Icons, Icon } from "theme.slint";
+import { DownloadsState, DownloadRow, DownloadAction } from "state.slint";
+
+component CategoryButton inherits Rectangle {
+    in property <string> label;
+    in property <int> count;
+    in property <int> category;
+    property <bool> active: DownloadsState.category == category;
+
+    height: 36px;
+    border-radius: Theme.radius-sm;
+    background: active ? Theme.accent.with-alpha(0.2) : touch.has-hover ? Theme.surface-2 : transparent;
+
+    touch := TouchArea {
+        clicked => {
+            DownloadsState.category = root.category;
+            DownloadsState.category-selected(root.category);
+        }
+    }
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        Text {
+            text: root.label;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            color: root.active ? Theme.accent-hover : Theme.text-primary;
+        }
+        Text {
+            text: root.count;
+            vertical-alignment: center;
+            color: Theme.text-secondary;
+        }
+    }
+}
+
+export component DownloadSidebar inherits Rectangle {
+    width: 216px;
+    background: Theme.surface-1;
+    border-width: 1px;
+    border-color: Theme.border-subtle;
+
+    VerticalLayout {
+        padding: 8px;
+        spacing: 4px;
+        alignment: start;
+        Text {
+            text: "Downloads";
+            font-size: 15px;
+            font-weight: 600;
+            color: Theme.text-primary;
+        }
+        CategoryButton { label: "Queued"; count: DownloadsState.queued-count; category: 0; }
+        CategoryButton { label: "Downloaded"; count: DownloadsState.completed-count; category: 1; }
+        CategoryButton { label: "Cancelled"; count: DownloadsState.cancelled-count; category: 2; }
+    }
+}
+
+component RowView inherits Rectangle {
+    in property <DownloadRow> data;
+
+    height: 64px;
+    border-radius: Theme.radius-md;
+    background: Theme.surface-2;
+
+    function act(action: DownloadAction) {
+        DownloadsState.action(data.id, action);
+    }
+
+    HorizontalLayout {
+        padding: 10px;
+        padding-left: 14px;
+        spacing: 8px;
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 4px;
+            horizontal-stretch: 1;
+            Text {
+                text: data.name;
+                overflow: elide;
+                color: Theme.text-primary;
+            }
+            Text {
+                text: data.detail;
+                font-size: 12px;
+                color: data.status == 5 ? Theme.danger : Theme.text-secondary;
+            }
+            if data.status <= 2: Rectangle {
+                height: 6px;
+                border-radius: 3px;
+                background: Theme.surface-3;
+                Rectangle {
+                    x: 0;
+                    width: parent.width * clamp(data.progress, 0, 1);
+                    border-radius: 3px;
+                    background: data.status == 1 ? #2fb36b : data.status == 2 ? #e0a030 : Theme.text-secondary;
+                }
+            }
+        }
+
+        if data.status == 1: Button {
+            text: "Pause";
+            clicked => { root.act(DownloadAction.pause); }
+        }
+        if data.status == 2: Button {
+            text: "Resume";
+            clicked => { root.act(DownloadAction.resume); }
+        }
+        if data.status <= 2 && DownloadsState.category == 0: Button {
+            text: "Cancel";
+            clicked => { root.act(DownloadAction.cancel); }
+        }
+        if data.status == 3: Button {
+            text: "Play";
+            clicked => { root.act(DownloadAction.play); }
+        }
+        if data.status == 3: Button {
+            text: "Delete";
+            clicked => { root.act(DownloadAction.delete-file); }
+        }
+        if (data.status == 4 || data.status == 5) && DownloadsState.category == 2: Button {
+            text: "Restart";
+            clicked => { root.act(DownloadAction.restart); }
+        }
+        if data.status == 2 && DownloadsState.category == 2: Button {
+            text: "Resume";
+            clicked => { root.act(DownloadAction.resume); }
+        }
+        if (data.status == 4 || data.status == 5) && DownloadsState.category == 2: Button {
+            text: "Delete";
+            clicked => { root.act(DownloadAction.delete-entry); }
+        }
+    }
+}
+
+export component DownloadManager inherits Rectangle {
+    background: Theme.bg-base;
+    property <int> category: DownloadsState.category;
+
+    VerticalLayout {
+        padding: 24px;
+        spacing: 14px;
+
+        HorizontalLayout {
+            spacing: 8px;
+            Text {
+                text: category == 0 ? "Queued" : category == 1 ? "Downloaded" : "Cancelled";
+                font-size: 22px;
+                font-weight: 600;
+                horizontal-stretch: 1;
+                color: Theme.text-primary;
+            }
+            if category == 0 && DownloadsState.rows.length > 0: Button {
+                text: "Pause all";
+                clicked => { DownloadsState.pause-all(); }
+            }
+            if category == 0 && DownloadsState.rows.length > 0: Button {
+                text: "Cancel all";
+                clicked => { DownloadsState.cancel-all(); }
+            }
+            if category == 2 && DownloadsState.rows.length > 0: Button {
+                text: "Restart all";
+                clicked => { DownloadsState.restart-all(); }
+            }
+            if category == 2 && DownloadsState.rows.length > 0: Button {
+                text: "Clear all";
+                clicked => { DownloadsState.clear-all(); }
+            }
+        }
+
+        if DownloadsState.rows.length == 0: Text {
+            text: category == 0 ? "No active downloads." : category == 1 ? "Nothing downloaded yet." : "Nothing cancelled, failed, or paused.";
+            color: Theme.text-secondary;
+            horizontal-alignment: center;
+        }
+
+        ListView {
+            vertical-stretch: 1;
+            for row in DownloadsState.rows: VerticalLayout {
+                padding-bottom: 8px;
+                padding-right: 12px;
+                RowView { data: row; }
+            }
+        }
+    }
+}

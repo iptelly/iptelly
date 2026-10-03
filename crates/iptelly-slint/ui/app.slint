@@ -1,15 +1,17 @@
 import { Theme } from "theme.slint";
 import {
-    HomeState, SetupState, SettingsState, DialogState, DialogKind, ChannelItem, SidebarRow,
-    SourceItem, SourceAction, Rail,
+    HomeState, SetupState, SettingsState, CategoriesState, DownloadsState, DialogState, DialogKind,
+    ChannelItem, SidebarRow, SourceItem, SourceAction, CategoryRow, DownloadRow, DownloadAction,
+    Rail,
 } from "state.slint";
 import { HomeView } from "home.slint";
 import { SetupView } from "setup.slint";
 import { DialogOverlay } from "dialog.slint";
 
 export {
-    Theme, HomeState, SetupState, SettingsState, DialogState, DialogKind, ChannelItem,
-    SidebarRow, SourceItem, SourceAction, Rail,
+    Theme, HomeState, SetupState, SettingsState, CategoriesState, DownloadsState, DialogState,
+    DialogKind, ChannelItem, SidebarRow, SourceItem, SourceAction, CategoryRow, DownloadRow,
+    DownloadAction, Rail,
 }
 
 export enum Page { loading, setup, home }
