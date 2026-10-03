@@ -5,7 +5,7 @@
 use std::env::consts::OS;
 use std::sync::{Mutex, MutexGuard, Once, PoisonError};
 
-use iptelly_lib::{settings, sql, types::Settings};
+use iptelly_core::{settings, sql, types::Settings};
 
 static INIT: Once = Once::new();
 static LOCK: Mutex<()> = Mutex::new(());

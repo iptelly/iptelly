@@ -3,7 +3,6 @@ use crate::{log, types::Channel};
 use anyhow::{Context, Result};
 
 use std::process::Stdio;
-use tauri::State;
 use tokio::sync::Mutex;
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
@@ -19,7 +18,7 @@ pub async fn run(
     args: Vec<String>,
     channel: &Channel,
     source: &Option<Source>,
-    state: &State<'_, Mutex<AppState>>,
+    state: &Mutex<AppState>,
 ) -> Result<()> {
     eprintln!("Running {bin_path} with args: {:?}", args);
 
@@ -88,7 +87,7 @@ pub async fn run(
     };
 
     if let Some(source_id) = source.as_ref().and_then(|s| s.id) {
-        _ = crate::utils::remove_from_play_stop(state.clone(), &source_id, &channel_id.to_string())
+        _ = crate::utils::remove_from_play_stop(state, &source_id, &channel_id.to_string())
             .await
             .map_err(|e| log::log(format!("{:?}", e)));
     }

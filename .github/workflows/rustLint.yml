@@ -17,15 +17,11 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           components: rustfmt
-          # The crate lives in src-tauri, not the repo root, so without
-          # this the cache can't find Cargo.toml and never caches the build.
-          cache-workspaces: src-tauri -> target
 
       # Runs before the slow system-deps install so formatting fails fast,
       # and needs no build.
       - name: cargo fmt --check
-        working-directory: src-tauri
-        run: cargo fmt --check
+        run: cargo fmt --all --check
 
       # Tauri's Linux crates (gtk, webkit2gtk, appindicator, ...) link
       # against these system libraries, so cargo test can't build without
@@ -49,7 +45,6 @@ jobs:
       # This runs cargo test rather than a plain build so it also fails on
       # a broken/failing test, not just on warnings.
       - name: cargo test (warnings as errors)
-        working-directory: src-tauri
-        run: cargo test --no-default-features
+        run: cargo test --workspace --no-default-features
         env:
           RUSTFLAGS: "-D warnings"

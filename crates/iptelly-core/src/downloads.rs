@@ -1,3 +1,4 @@
+use crate::events::Events;
 use crate::log::log;
 use crate::sql;
 use crate::types::{AppState, Channel, DownloadControl, DownloadHistoryItem, DownloadProgress};
@@ -8,7 +9,6 @@ use crate::utils::{
 use anyhow::{Context, Result, anyhow, bail};
 use reqwest::header::{HeaderMap, HeaderValue};
 use std::path::Path;
-use tauri::{AppHandle, Emitter, State};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{Mutex, watch};
 
@@ -111,8 +111,8 @@ async fn probe_remote_size(channel: &Channel) -> Result<Option<i64>> {
 }
 
 pub async fn start(
-    state: State<'_, Mutex<AppState>>,
-    app: AppHandle,
+    state: &Mutex<AppState>,
+    events: Events,
     channel: Channel,
     download_id: &str,
     path: Option<String>,
@@ -122,12 +122,12 @@ pub async fn start(
     let source = sql::get_source_from_id(source_id)
         .with_context(|| format!("failed to fetch source with id {}", source_id))?;
 
-    _ = handle_max_streams(&source, &state)
+    _ = handle_max_streams(&source, state)
         .await
         .map_err(|e| log(format!("{:?}", e)));
 
     let token = tokio_util::sync::CancellationToken::new();
-    _ = insert_play_token(source_id, download_id.to_string(), token.clone(), &state)
+    _ = insert_play_token(source_id, download_id.to_string(), token.clone(), state)
         .await
         .map_err(|e| log(format!("{:?}", e)));
 
@@ -245,7 +245,7 @@ pub async fn start(
                            let progress: f64 = (downloaded as f64 / total_size as f64) * 100.0;
                            let progress = (progress * 10.0).trunc() / 10.0;
                            if progress > send_threshold {
-                               let _ = app.emit(&format!("progress-{}", download_id), DownloadProgress {
+                               events.download_progress(download_id, DownloadProgress {
                                    progress,
                                    downloaded_bytes: downloaded as i64,
                                    total_bytes: total_size as i64,
@@ -370,7 +370,7 @@ fn upsert_row(item: &DownloadHistoryItem) {
     let _ = sql::upsert_download_row(item).map_err(|e| log(format!("{:?}", e)));
 }
 
-pub async fn pause(state: State<'_, Mutex<AppState>>, download_id: &str) -> Result<()> {
+pub async fn pause(state: &Mutex<AppState>, download_id: &str) -> Result<()> {
     send_control(state, download_id, DownloadControl::Pause).await
 }
 
@@ -380,7 +380,7 @@ pub async fn pause(state: State<'_, Mutex<AppState>>, download_id: &str) -> Resu
 // task has already exited and removed its control entry, so there's
 // nothing left to signal. Fall back to discarding it directly in that case:
 // delete the partial file and mark its history row cancelled.
-pub async fn cancel(state: State<'_, Mutex<AppState>>, download_id: &str) -> Result<()> {
+pub async fn cancel(state: &Mutex<AppState>, download_id: &str) -> Result<()> {
     if send_control(state, download_id, DownloadControl::Cancel)
         .await
         .is_ok()
@@ -400,7 +400,7 @@ pub async fn cancel(state: State<'_, Mutex<AppState>>, download_id: &str) -> Res
 }
 
 async fn send_control(
-    state: State<'_, Mutex<AppState>>,
+    state: &Mutex<AppState>,
     download_id: &str,
     control: DownloadControl,
 ) -> Result<()> {
@@ -414,7 +414,7 @@ async fn send_control(
     Ok(())
 }
 
-pub async fn pause_all(state: State<'_, Mutex<AppState>>) -> Result<()> {
+pub async fn pause_all(state: &Mutex<AppState>) -> Result<()> {
     let guard = state.lock().await;
     for tx in guard.download_controls.values() {
         let _ = tx.send(DownloadControl::Pause);
@@ -422,7 +422,7 @@ pub async fn pause_all(state: State<'_, Mutex<AppState>>) -> Result<()> {
     Ok(())
 }
 
-pub async fn cancel_all(state: State<'_, Mutex<AppState>>) -> Result<()> {
+pub async fn cancel_all(state: &Mutex<AppState>) -> Result<()> {
     let guard = state.lock().await;
     for tx in guard.download_controls.values() {
         let _ = tx.send(DownloadControl::Cancel);
@@ -431,15 +431,15 @@ pub async fn cancel_all(state: State<'_, Mutex<AppState>>) -> Result<()> {
 }
 
 pub async fn resume(
-    state: State<'_, Mutex<AppState>>,
-    app: AppHandle,
+    state: &Mutex<AppState>,
+    events: Events,
     download_id: String,
     channel: Channel,
 ) -> Result<()> {
     let row = sql::get_download_row(&download_id)?.context("no history for this download")?;
     start(
         state,
-        app,
+        events,
         channel,
         &download_id,
         Some(row.path),
@@ -539,15 +539,15 @@ pub fn enqueue(download_id: &str, channel: &Channel, path: &str) -> Result<()> {
     Ok(())
 }
 
-// Re-exported so lib.rs's existing `download` command keeps its current
-// call shape (state, app, channel, download_id, path) for a fresh, non-
+// Re-exported so the Tauri app's `download` command keeps its current
+// call shape (state, events, channel, download_id, path) for a fresh, non-
 // resuming download.
 pub async fn download(
-    state: State<'_, Mutex<AppState>>,
-    app: AppHandle,
+    state: &Mutex<AppState>,
+    events: Events,
     channel: Channel,
     download_id: &str,
     path: Option<String>,
 ) -> Result<()> {
-    start(state, app, channel, download_id, path, None).await
+    start(state, events, channel, download_id, path, None).await
 }

@@ -1,14 +1,24 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use anyhow::Context;
 use anyhow::Error;
 
-use tauri::{AppHandle, Manager, State};
-use tokio::sync::Mutex;
-use types::{
-    AppState, Channel, CustomChannel, CustomChannelExtraData, EPG, EPGNotify, Filters, Group,
-    IdName, NetworkInfo, SeasonDownloadInfo, SeriesEpisode, Settings, Source,
+use iptelly_core::{
+    api, app_data, downloads, epg,
+    events::{EventSink, Events},
+    log, m3u, mpv, restream, settings, share, sql,
+    types::{
+        self, AppState, Channel, CustomChannel, CustomChannelExtraData, DownloadProgress, EPG,
+        EPGNotify, Filters, Group, IdName, NetworkInfo, SeasonDownloadInfo, SeriesEpisode,
+        Settings, Source,
+    },
+    utils, xmltv, xtream,
 };
+use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_notification::NotificationExt;
+use tokio::sync::Mutex;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 use {
     std::sync::LazyLock,
@@ -18,30 +28,33 @@ use {
     },
 };
 
-pub mod app_data;
-pub mod bulk_action_type;
-pub mod downloads;
-pub mod epg;
-pub mod external_player;
-pub mod log;
-pub mod m3u;
-pub mod media_type;
-pub mod mpv;
-pub mod restream;
-pub mod settings;
-pub mod share;
-pub mod sort_type;
-pub mod source_type;
-pub mod sql;
-pub mod types;
-pub mod utils;
-pub mod view_type;
-pub mod vlc;
-pub mod xmltv;
-pub mod xtream;
+// Delivers the backend's events to the webview, under the event names the
+// Angular frontend listens for.
+struct TauriEvents(AppHandle);
 
-#[cfg(test)]
-mod test_db;
+impl EventSink for TauriEvents {
+    fn download_progress(&self, download_id: &str, progress: DownloadProgress) {
+        let _ = self.0.emit(&format!("progress-{download_id}"), progress);
+    }
+
+    fn restream_started(&self) {
+        let _ = self.0.emit("restream_started", true);
+    }
+
+    fn notify(&self, title: &str, body: &str) -> anyhow::Result<()> {
+        self.0
+            .notification()
+            .builder()
+            .title(title)
+            .body(body)
+            .show()?;
+        Ok(())
+    }
+}
+
+fn events(app: AppHandle) -> Events {
+    Arc::new(TauriEvents(app))
+}
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 static ENABLE_TRAY_ICON: LazyLock<bool> = LazyLock::new(|| {
@@ -285,21 +298,9 @@ async fn play(
     record_path: Option<String>,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
-    let player = settings::get_settings()
-        .map_err(map_err_frontend)?
-        .player
-        .unwrap_or_else(|| "mpv".to_string());
-    // Recording always goes through mpv regardless of the chosen player -
-    // it's the only one with a working --stream-record equivalent. Builtin
-    // never reaches this command at all (the frontend opens the in-app
-    // video player directly for that case instead of calling "play").
-    if record || player != "vlc" {
-        mpv::play(channel, record, record_path, state)
-            .await
-            .map_err(map_err_frontend)
-    } else {
-        vlc::play(channel, state).await.map_err(map_err_frontend)
-    }
+    api::play(channel, record, record_path, state.inner())
+        .await
+        .map_err(map_err_frontend)
 }
 
 #[tauri::command(async)]
@@ -322,9 +323,9 @@ async fn search(
     filters: Filters,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<Vec<Channel>, String> {
-    let hide_adult =
-        settings::has_adult_pin().map_err(map_err_frontend)? && !state.lock().await.adult_unlocked;
-    sql::search(filters, hide_adult).map_err(map_err_frontend)
+    api::search(filters, state.inner())
+        .await
+        .map_err(map_err_frontend)
 }
 
 #[tauri::command(async)]
@@ -339,16 +340,14 @@ fn set_adult_pin(pin: Option<String>) -> Result<(), String> {
 
 #[tauri::command]
 async fn verify_adult_pin(pin: String, state: State<'_, Mutex<AppState>>) -> Result<bool, String> {
-    let correct = settings::verify_adult_pin(&pin).map_err(map_err_frontend)?;
-    if correct {
-        state.lock().await.adult_unlocked = true;
-    }
-    Ok(correct)
+    api::verify_adult_pin(&pin, state.inner())
+        .await
+        .map_err(map_err_frontend)
 }
 
 #[tauri::command]
 async fn lock_adult_content(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
-    state.lock().await.adult_unlocked = false;
+    api::lock_adult_content(state.inner()).await;
     Ok(())
 }
 
@@ -520,7 +519,7 @@ fn delete_database() -> Result<(), String> {
 
 #[tauri::command(async)]
 fn add_custom_channel(channel: CustomChannel) -> Result<(), String> {
-    sql::do_tx(|tx| sql::add_custom_channel(tx, channel)).map_err(map_err_frontend)
+    api::add_custom_channel(channel).map_err(map_err_frontend)
 }
 
 #[tauri::command(async)]
@@ -543,9 +542,7 @@ fn get_custom_channel_extra_data(
 
 #[tauri::command(async)]
 fn add_custom_source(name: String) -> Result<(), String> {
-    sql::do_tx(|tx| sql::create_or_find_source_by_name(tx, &mut sql::get_custom_source(name)))
-        .map_err(map_err_frontend)?;
-    Ok(())
+    api::add_custom_source(name).map_err(map_err_frontend)
 }
 
 #[tauri::command(async)]
@@ -565,11 +562,7 @@ fn edit_custom_group(group: Group) -> Result<(), String> {
 
 #[tauri::command(async)]
 fn add_custom_group(group: Group) -> Result<(), String> {
-    sql::do_tx(|tx| {
-        sql::add_custom_group(tx, group)?;
-        Ok(())
-    })
-    .map_err(map_err_frontend)
+    api::add_custom_group(group).map_err(map_err_frontend)
 }
 
 #[tauri::command(async)]
@@ -620,81 +613,18 @@ fn update_source(source: Source) -> Result<(), String> {
     sql::update_source(source).map_err(map_err_frontend)
 }
 
-// Timeline display only ever needs a window of a few days around wherever
-// the timeline is currently panned to (see epgTimelineWindow.ts +
-// EPG_FETCH_LOOKBACK/LOOKAHEAD_SECONDS on the frontend) - not the whole
-// retention range, which is only needed by the EPG modal's prev/next
-// paging (get_epg_schedule below). Fetching the full range for every
-// channel tile as it scrolls into view was the main cost behind slow
-// scrolling through the channel grid.
 #[tauri::command]
 async fn get_epg(
     channel: Channel,
     start_timestamp: i64,
     end_timestamp: i64,
 ) -> Result<Vec<EPG>, String> {
-    epg_dispatch(channel, start_timestamp, end_timestamp)
-        .await
-        .map_err(map_err_frontend)
+    api::get_epg(channel, start_timestamp, end_timestamp).map_err(map_err_frontend)
 }
 
-// Full retention-window fetch, for the EPG modal's prev/next paging through
-// a single channel's whole kept schedule - only called once, when the
-// modal actually opens, rather than for every visible timeline row.
 #[tauri::command]
 async fn get_epg_schedule(channel: Channel) -> Result<Vec<EPG>, String> {
-    epg_dispatch_full(channel).await.map_err(map_err_frontend)
-}
-
-const EPG_READ_LOOKAHEAD_SECONDS: i64 = 7 * 24 * 60 * 60;
-
-// How far back/forward reads are allowed to reach - has to match how far
-// back was actually kept (see xmltv::refresh_epg_from_url/prune_old_epg)
-// - otherwise panning the timeline back further than retention would just
-// show nothing even for programmes that are genuinely still stored, and a
-// too-wide request would just waste work re-reading data that was pruned.
-fn epg_read_bounds(source_id: i64) -> anyhow::Result<(i64, i64)> {
-    let now = chrono::Utc::now().timestamp();
-    let source = sql::get_source_from_id(source_id)?;
-    let retention_days = source
-        .epg_retention_days
-        .map(|d| d as i64)
-        .unwrap_or(xmltv::DEFAULT_EPG_RETENTION_DAYS);
-    let lookback = retention_days * 24 * 60 * 60;
-    Ok((now - lookback, now + EPG_READ_LOOKAHEAD_SECONDS))
-}
-
-// Custom-guide and bulk-fetched Xtream EPG (see refresh_xtream_epg_only)
-// both land in the same epg_programmes table, keyed the same way
-// (normalized tvg_id), so there's only one read path now regardless of
-// source type - no per-channel live fetch here at all (see
-// build_timeshift_url for how catch-up URLs get built on demand instead).
-async fn epg_dispatch(
-    channel: Channel,
-    start_timestamp: i64,
-    end_timestamp: i64,
-) -> anyhow::Result<Vec<EPG>> {
-    let source_id = channel.source_id.context("no source id")?;
-    let tvg_id = channel
-        .tvg_id
-        .clone()
-        .context("No EPG data for this channel")?;
-    let normalized = utils::normalize_tvg_id(&tvg_id);
-    let (min_ts, max_ts) = epg_read_bounds(source_id)?;
-    let from_ts = start_timestamp.max(min_ts);
-    let to_ts = end_timestamp.min(max_ts);
-    sql::get_epg_for_channel(source_id, &normalized, from_ts, to_ts)
-}
-
-async fn epg_dispatch_full(channel: Channel) -> anyhow::Result<Vec<EPG>> {
-    let source_id = channel.source_id.context("no source id")?;
-    let tvg_id = channel
-        .tvg_id
-        .clone()
-        .context("No EPG data for this channel")?;
-    let normalized = utils::normalize_tvg_id(&tvg_id);
-    let (from_ts, to_ts) = epg_read_bounds(source_id)?;
-    sql::get_epg_for_channel(source_id, &normalized, from_ts, to_ts)
+    api::get_epg_schedule(channel).map_err(map_err_frontend)
 }
 
 #[tauri::command]
@@ -705,7 +635,7 @@ async fn download(
     download_id: String,
     path: Option<String>,
 ) -> Result<(), String> {
-    downloads::download(state, app, channel, &download_id, path)
+    downloads::download(state.inner(), events(app), channel, &download_id, path)
         .await
         .map_err(map_err_frontend)
 }
@@ -717,7 +647,7 @@ async fn resume_download(
     download_id: String,
     channel: Channel,
 ) -> Result<(), String> {
-    downloads::resume(state, app, download_id, channel)
+    downloads::resume(state.inner(), events(app), download_id, channel)
         .await
         .map_err(map_err_frontend)
 }
@@ -744,7 +674,7 @@ async fn abort_download(
     state: State<'_, Mutex<AppState>>,
     download_id: String,
 ) -> Result<(), String> {
-    downloads::cancel(state, &download_id)
+    downloads::cancel(state.inner(), &download_id)
         .await
         .map_err(map_err_frontend)
 }
@@ -754,19 +684,23 @@ async fn pause_download(
     state: State<'_, Mutex<AppState>>,
     download_id: String,
 ) -> Result<(), String> {
-    downloads::pause(state, &download_id)
+    downloads::pause(state.inner(), &download_id)
         .await
         .map_err(map_err_frontend)
 }
 
 #[tauri::command]
 async fn pause_all_downloads(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
-    downloads::pause_all(state).await.map_err(map_err_frontend)
+    downloads::pause_all(state.inner())
+        .await
+        .map_err(map_err_frontend)
 }
 
 #[tauri::command]
 async fn cancel_all_downloads(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
-    downloads::cancel_all(state).await.map_err(map_err_frontend)
+    downloads::cancel_all(state.inner())
+        .await
+        .map_err(map_err_frontend)
 }
 
 #[tauri::command(async)]
@@ -788,11 +722,7 @@ async fn delete_downloaded_file(download_id: String) -> Result<(), String> {
 
 #[tauri::command(async)]
 fn clear_cancelled_downloads() -> Result<(), String> {
-    // 'paused' included since the Cancelled view now shows those too (see
-    // reconcile_interrupted_downloads) - "Clear all" there should clear
-    // everything actually visible in that list.
-    sql::clear_download_history_by_status(&["cancelled", "failed", "paused"])
-        .map_err(map_err_frontend)
+    api::clear_cancelled_downloads().map_err(map_err_frontend)
 }
 
 #[tauri::command(async)]
@@ -806,7 +736,7 @@ async fn add_epg(
     app: AppHandle,
     epg: EPGNotify,
 ) -> Result<(), String> {
-    epg::add_epg(state, app, epg)
+    epg::add_epg(state.inner(), events(app), epg)
         .await
         .map_err(map_err_frontend)
 }
@@ -817,7 +747,7 @@ async fn remove_epg(
     app: AppHandle,
     epg_id: String,
 ) -> Result<(), String> {
-    epg::remove_epg(state, app, epg_id)
+    epg::remove_epg(state.inner(), events(app), epg_id)
         .await
         .map_err(map_err_frontend)
 }
@@ -832,7 +762,7 @@ async fn on_start_check_epg(
     state: State<'_, Mutex<AppState>>,
     app: AppHandle,
 ) -> Result<(), String> {
-    epg::on_start_check_epg(state, app)
+    epg::on_start_check_epg(state.inner(), events(app))
         .await
         .map_err(map_err_frontend)
 }
@@ -844,21 +774,21 @@ async fn start_restream(
     app: AppHandle,
     channel: Channel,
 ) -> Result<(), String> {
-    crate::restream::start_restream(port, state, app, channel)
+    restream::start_restream(port, state.inner(), events(app), channel)
         .await
         .map_err(map_err_frontend)
 }
 
 #[tauri::command]
 async fn stop_restream(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
-    crate::restream::stop_restream(state)
+    restream::stop_restream(state.inner())
         .await
         .map_err(map_err_frontend)
 }
 
 #[tauri::command]
 async fn watch_self(port: u16, state: State<'_, Mutex<AppState>>) -> Result<(), String> {
-    restream::watch_self(port, state)
+    restream::watch_self(port, state.inner())
         .await
         .map_err(map_err_frontend)
 }
@@ -914,7 +844,7 @@ async fn cancel_play(
     channel_id: i64,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
-    mpv::cancel_play(source_id, channel_id.to_string(), state)
+    mpv::cancel_play(source_id, channel_id.to_string(), state.inner())
         .await
         .map_err(map_err_frontend)
 }

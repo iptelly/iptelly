@@ -51,8 +51,8 @@ fn create_connection_pool() -> Pool<SqliteConnectionManager> {
 }
 
 // The app has no way to function at all without its database, so failure
-// here is deliberately fatal (same rationale as lib.rs's main-window
-// .expect() calls) - unlike the other cache/log directories, this isn't
+// here is deliberately fatal (same rationale as the Tauri app's
+// main-window .expect() calls) - unlike the other cache/log directories, this isn't
 // something that can degrade gracefully. Using .expect() with a message
 // instead of a bare .unwrap() at least makes the crash diagnosable.
 fn get_and_create_sqlite_db_path() -> String {

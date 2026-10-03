@@ -13,7 +13,7 @@
 
 use std::collections::HashSet;
 
-use iptelly_lib::{m3u, source_type, types::Source};
+use iptelly_core::{m3u, source_type, types::Source};
 
 const FIXTURE: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -27,7 +27,7 @@ fn test_db_path() -> std::path::PathBuf {
     ))
 }
 
-// Deliberately independent of iptelly_lib::m3u's own parsing - reimplements
+// Deliberately independent of iptelly_core::m3u's own parsing - reimplements
 // just the two conventions that matter (title is everything after the
 // *last* comma on the #EXTINF line, URL is the very next line) so this
 // actually cross-checks the real parser instead of restating its logic.
@@ -83,10 +83,10 @@ fn every_channel_in_the_playlist_ends_up_in_the_database() {
         "sanity check: fixture should contain channels"
     );
 
-    iptelly_lib::sql::create_or_initialize_db().expect("failed to initialize test database");
+    iptelly_core::sql::create_or_initialize_db().expect("failed to initialize test database");
     m3u::read_m3u8(fixture_source(), false).expect("parsing the fixture playlist should succeed");
 
-    let conn = iptelly_lib::sql::get_conn().unwrap();
+    let conn = iptelly_core::sql::get_conn().unwrap();
     let mut stmt = conn.prepare("SELECT url FROM channels").unwrap();
     let actual: HashSet<String> = stmt
         .query_map([], |row| row.get::<_, String>(0))

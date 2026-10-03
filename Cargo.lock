@@ -2432,8 +2432,23 @@ name = "iptelly"
 version = "0.0.0"
 dependencies = [
  "anyhow",
- "base64 0.22.1",
- "bytes",
+ "iptelly-core",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-clipboard-manager",
+ "tauri-plugin-dialog",
+ "tauri-plugin-notification",
+ "tauri-plugin-shell",
+ "tauri-plugin-single-instance",
+ "tauri-plugin-window-state",
+ "tokio",
+]
+
+[[package]]
+name = "iptelly-core"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
  "chrono",
  "chrono-tz",
  "criterion",
@@ -2457,14 +2472,6 @@ dependencies = [
  "sha2 0.11.0",
  "shell-words",
  "simplelog",
- "tauri",
- "tauri-build",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-dialog",
- "tauri-plugin-notification",
- "tauri-plugin-shell",
- "tauri-plugin-single-instance",
- "tauri-plugin-window-state",
  "tokio",
  "tokio-util",
  "url",

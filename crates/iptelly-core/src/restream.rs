@@ -8,7 +8,6 @@ use std::{
 use std::os::windows::process::CommandExt;
 
 use anyhow::{Context, Result};
-use tauri::{AppHandle, Emitter, State};
 use tokio::{
     fs,
     sync::{
@@ -18,6 +17,7 @@ use tokio::{
 };
 
 use crate::{
+    events::Events,
     mpv,
     settings::get_settings,
     sql,
@@ -100,8 +100,8 @@ async fn start_web_server(
 
 pub async fn start_restream(
     port: u16,
-    state: State<'_, Mutex<AppState>>,
-    app: AppHandle,
+    state: &Mutex<AppState>,
+    events: Events,
     channel: Channel,
 ) -> Result<()> {
     let stop = state.lock().await.restream_stop_signal.clone();
@@ -110,7 +110,7 @@ pub async fn start_restream(
     delete_old_segments(&restream_dir).await?;
     let mut ffmpeg_child = start_ffmpeg_listening(channel, restream_dir.clone())?;
     let (web_server_tx, web_server_handle) = start_web_server(restream_dir, port).await?;
-    let _ = app.emit("restream_started", true);
+    events.restream_started();
     while !stop.load(std::sync::atomic::Ordering::Relaxed)
         && ffmpeg_child
             .try_wait()
@@ -127,7 +127,7 @@ pub async fn start_restream(
     Ok(())
 }
 
-pub async fn stop_restream(state: State<'_, Mutex<AppState>>) -> Result<()> {
+pub async fn stop_restream(state: &Mutex<AppState>) -> Result<()> {
     let state = state.lock().await;
     state
         .restream_stop_signal
@@ -158,7 +158,7 @@ async fn delete_old_segments(dir: &Path) -> Result<()> {
     Ok(())
 }
 
-pub async fn watch_self(port: u16, state: State<'_, Mutex<AppState>>) -> Result<()> {
+pub async fn watch_self(port: u16, state: &Mutex<AppState>) -> Result<()> {
     let channel = Channel {
         url: Some(format!("http://127.0.0.1:{port}/stream.m3u8").to_string()),
         name: "Local livestream".to_string(),

@@ -5,7 +5,6 @@ use crate::{media_type, settings::get_settings, sql, types::Channel};
 use anyhow::{Context, Result};
 
 use std::sync::LazyLock;
-use tauri::State;
 use tokio::sync::Mutex;
 
 const ARG_PLAY_AND_EXIT: &str = "--play-and-exit";
@@ -19,11 +18,11 @@ const ARG_REFERRER: &str = "--http-referrer=";
 const VLC_BIN_NAME: &str = "vlc";
 static VLC_PATH: LazyLock<String> = LazyLock::new(|| get_bin(VLC_BIN_NAME));
 
-// VLC is never asked to record (see lib.rs's play command - recording
+// VLC is never asked to record (see api::play - recording
 // always routes to mpv, which is the only one of the three players with a
 // working --stream-record equivalent wired up), so this is narrower than
 // mpv::play: no record/record_path params.
-pub async fn play(channel: Channel, state: State<'_, Mutex<AppState>>) -> Result<()> {
+pub async fn play(channel: Channel, state: &Mutex<AppState>) -> Result<()> {
     let source = channel
         .source_id
         .and_then(|id| {
@@ -33,7 +32,7 @@ pub async fn play(channel: Channel, state: State<'_, Mutex<AppState>>) -> Result
         })
         .or(None);
     let args = get_play_args(&channel, &source)?;
-    external_player::run(&VLC_PATH, args, &channel, &source, &state).await
+    external_player::run(&VLC_PATH, args, &channel, &source, state).await
 }
 
 fn get_play_args(channel: &Channel, source: &Option<Source>) -> Result<Vec<String>> {

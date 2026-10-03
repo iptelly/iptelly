@@ -6,7 +6,7 @@
 //
 // Run with: cargo flamegraph --release --no-default-features --example profile_xtream
 
-use iptelly_lib::{media_type, source_type, sql, types::Source, xtream};
+use iptelly_core::{media_type, source_type, sql, types::Source, xtream};
 
 const CHANNEL_COUNT: usize = 500_000;
 const CATEGORY_COUNT: usize = 20_000;

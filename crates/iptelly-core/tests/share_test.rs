@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard, Once, PoisonError};
 
-use iptelly_lib::{
+use iptelly_core::{
     media_type, share, sql,
     types::{Channel, ChannelHttpHeaders, CustomChannel, ExportedGroup, Group, Source},
 };

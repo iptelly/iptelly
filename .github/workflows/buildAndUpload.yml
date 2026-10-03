@@ -181,7 +181,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: iptelly-windows-${{ inputs.version }}
-          path: src-tauri/target/release/bundle/msi/*.msi
+          path: target/release/bundle/msi/*.msi
           retention-days: 60
 
       - name: Upload DEB
@@ -189,7 +189,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: iptelly-debian-${{ inputs.version }}
-          path: src-tauri/target/release/bundle/deb/*.deb
+          path: target/release/bundle/deb/*.deb
           retention-days: 60
 
       - name: Upload RPM
@@ -197,7 +197,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: iptelly-redhat-${{ inputs.version }}
-          path: src-tauri/target/release/bundle/rpm/*.rpm
+          path: target/release/bundle/rpm/*.rpm
           retention-days: 60
 
       - name: Upload DMG ARM64
@@ -205,7 +205,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: iptelly-mac-arm64-${{ inputs.version }}
-          path: src-tauri/target/release/bundle/dmg/*.dmg
+          path: target/release/bundle/dmg/*.dmg
           retention-days: 60
 
       - name: Upload DMG AMD64
@@ -213,7 +213,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: iptelly-mac-AMD64-${{ inputs.version }}
-          path: src-tauri/target/release/bundle/dmg/*.dmg
+          path: target/release/bundle/dmg/*.dmg
           retention-days: 60
 
   # Only runs once every platform has built, so a tag always means a

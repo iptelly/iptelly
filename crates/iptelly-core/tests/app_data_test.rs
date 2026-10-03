@@ -6,7 +6,7 @@
 // every one of those away, imports the export back, and checks everything
 // came back - rather than just checking the export file's shape.
 
-use iptelly_lib::{
+use iptelly_core::{
     app_data, m3u, media_type, settings, source_type,
     sql::{self},
     types::{ChannelPreserve, DownloadHistoryItem, Source},
@@ -74,8 +74,8 @@ fn fixture_source() -> Source {
     }
 }
 
-fn blank_settings() -> iptelly_lib::types::Settings {
-    iptelly_lib::types::Settings {
+fn blank_settings() -> iptelly_core::types::Settings {
+    iptelly_core::types::Settings {
         recording_path: None,
         mpv_params: None,
         use_stream_caching: None,

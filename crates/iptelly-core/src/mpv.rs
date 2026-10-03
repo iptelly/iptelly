@@ -8,7 +8,6 @@ use chrono::Local;
 
 use std::sync::LazyLock;
 use std::{env::consts::OS, path::Path};
-use tauri::State;
 use tokio::sync::Mutex;
 
 const ARG_SAVE_POSITION_ON_QUIT: &str = "--save-position-on-quit";
@@ -41,7 +40,7 @@ pub async fn play(
     channel: Channel,
     record: bool,
     record_path: Option<String>,
-    state: State<'_, Mutex<AppState>>,
+    state: &Mutex<AppState>,
 ) -> Result<()> {
     eprintln!(
         "{} playing",
@@ -56,14 +55,10 @@ pub async fn play(
         })
         .or(None);
     let args = get_play_args(&channel, record, record_path, &source)?;
-    external_player::run(&MPV_PATH, args, &channel, &source, &state).await
+    external_player::run(&MPV_PATH, args, &channel, &source, state).await
 }
 
-pub async fn cancel_play(
-    source_id: i64,
-    key: String,
-    state: State<'_, Mutex<AppState>>,
-) -> Result<()> {
+pub async fn cancel_play(source_id: i64, key: String, state: &Mutex<AppState>) -> Result<()> {
     log::log(format!("Cancelling play for channel: {}", key));
     let token = crate::utils::remove_from_play_stop(state, &source_id, &key).await?;
     let token = token.context("no channel found")?;

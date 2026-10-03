@@ -10,14 +10,14 @@ use std::hint::black_box;
 use std::time::Duration;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use iptelly_lib::m3u::get_channel_from_lines;
+use iptelly_core::m3u::get_channel_from_lines;
 
 const FIXTURE: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/fixtures/samsung_tvplus_playlist.m3u8"
 );
 
-// Not checked into git (~90MB, see src-tauri/.gitignore) - generated once on
+// Not checked into git (~90MB, see crates/iptelly-core/.gitignore) - generated once on
 // first bench run and cached here for subsequent runs. 500k channels is far
 // beyond anything a real playlist fixture reaches, so this is what actually
 // shows how the parser scales rather than how fast it is on one real file.

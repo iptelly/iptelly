@@ -9,7 +9,7 @@
 // benches/xtream_parse.rs for the same pipeline at the 500k-channel/
 // 20k-category scale this was modeled after.
 
-use iptelly_lib::{media_type, source_type, sql, types::Source, xtream};
+use iptelly_core::{media_type, source_type, sql, types::Source, xtream};
 
 const CHANNEL_COUNT: usize = 3_000;
 const CATEGORY_COUNT: usize = 150;
@@ -82,7 +82,7 @@ fn every_synthetic_channel_and_category_ends_up_in_the_database() {
     unsafe {
         std::env::set_var("OPEN_TV_DB_PATH", &db_path);
     }
-    iptelly_lib::sql::create_or_initialize_db().expect("failed to initialize test database");
+    iptelly_core::sql::create_or_initialize_db().expect("failed to initialize test database");
 
     let streams_json = generate_streams_json();
     let categories_json = generate_categories_json();

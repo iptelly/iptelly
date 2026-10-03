@@ -23,7 +23,6 @@ use std::{
     sync::LazyLock,
     time::Duration,
 };
-use tauri::State;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use which::which;
@@ -127,7 +126,7 @@ pub fn get_local_time(timestamp: i64) -> Result<DateTime<Local>> {
 }
 
 pub async fn remove_from_play_stop(
-    state: State<'_, Mutex<AppState>>,
+    state: &Mutex<AppState>,
     source_id: &i64,
     key: &str,
 ) -> Result<Option<CancellationToken>> {
@@ -139,7 +138,7 @@ pub async fn remove_from_play_stop(
     Ok(map.shift_remove(key))
 }
 
-pub async fn handle_max_streams(source: &Source, state: &State<'_, Mutex<AppState>>) -> Result<()> {
+pub async fn handle_max_streams(source: &Source, state: &Mutex<AppState>) -> Result<()> {
     let max_streams = source.max_streams.unwrap_or(1);
     let mut guard = state.lock().await;
     let channels = guard
@@ -163,7 +162,7 @@ pub async fn insert_play_token(
     source_id: i64,
     key: String,
     token: CancellationToken,
-    state: &State<'_, Mutex<AppState>>,
+    state: &Mutex<AppState>,
 ) -> Result<()> {
     let mut guard = state.lock().await;
     if guard.play_stop.get(&source_id).is_none() {
