@@ -40,18 +40,20 @@
       </div>
     </div>
 
-    <div class="row mt-3 align-items-center">
-      <div class="col-4">
-      <span [ngbTooltip]="
-          'Launch parameters applied when the Player setting is VLC. Leave as-is if you don\'t know what this is'
-        ">Global VLC Parameters</span>
+    @if (!isFlatpak) {
+      <div class="row mt-3 align-items-center">
+        <div class="col-4">
+        <span [ngbTooltip]="
+            'Launch parameters applied when the Player setting is VLC. Leave as-is if you don\'t know what this is'
+          ">Global VLC Parameters</span>
+        </div>
+        <div class="col">
+          <textarea #vlcParams id="vlcParams" [(ngModel)]="settings.vlc_params"
+            placeholder="vlc params like: --avcodec-hw=any. Don't touch this unless you know what you're doing!"
+          class="form-control"></textarea>
+        </div>
       </div>
-      <div class="col">
-        <textarea #vlcParams id="vlcParams" [(ngModel)]="settings.vlc_params"
-          placeholder="vlc params like: --avcodec-hw=any. Don't touch this unless you know what you're doing!"
-        class="form-control"></textarea>
-      </div>
-    </div>
+    }
 
 
     <div class="row mt-3 align-items-center">
@@ -66,17 +68,20 @@
       </div>
     </div>
 
-    <div class="row mt-3 align-items-center">
-      <div class="col-4">
-        <span [ngbTooltip]="'Which app plays your streams. Recording always uses MPV regardless of this setting'">Player</span>
+    <!-- MPV is the only player in the Flatpak, so there's nothing to choose. -->
+    @if (!isFlatpak) {
+      <div class="row mt-3 align-items-center">
+        <div class="col-4">
+          <span [ngbTooltip]="'Which app plays your streams. Recording always uses MPV regardless of this setting'">Player</span>
+        </div>
+        <div class="col">
+          <select [(ngModel)]="settings.player" (ngModelChange)="updateSettings()" class="form-control">
+            <option [ngValue]="'mpv'">MPV</option>
+            <option [ngValue]="'vlc'">VLC</option>
+          </select>
+        </div>
       </div>
-      <div class="col">
-        <select [(ngModel)]="settings.player" (ngModelChange)="updateSettings()" class="form-control">
-          <option [ngValue]="'mpv'">MPV</option>
-          <option [ngValue]="'vlc'">VLC</option>
-        </select>
-      </div>
-    </div>
+    }
 
     <div class="row mt-3 align-items-center">
       <div class="col-4">

@@ -79,6 +79,7 @@ pub fn run() {
             get_m3u8_from_link,
             play,
             get_settings,
+            is_flatpak,
             update_settings,
             search,
             bulk_update,
@@ -304,6 +305,11 @@ async fn play(
 #[tauri::command(async)]
 fn get_settings() -> Result<Settings, String> {
     settings::get_settings().map_err(map_err_frontend)
+}
+
+#[tauri::command]
+fn is_flatpak() -> bool {
+    utils::is_flatpak()
 }
 
 #[tauri::command(async)]
