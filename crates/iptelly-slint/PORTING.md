@@ -26,8 +26,12 @@ Angular component it replaces, under `src/app/`.
       Opened by clicking an error toast.
 - [x] Desktop notifications for EPG reminders (notify-rust). If no notification service is
       running, the reminder shows as a toast instead.
-- [ ] Single instance.
-- [ ] Remember window size and position.
+- [x] Single instance (`instance.rs`): a second launch asks the running app to show its
+      window, then exits. GNOME on Wayland may only flag the window as wanting attention
+      rather than switch to it.
+- [x] Remember window size, position and maximized state (`window_state.rs`). Wayland
+      doesn't let windows place themselves, so there only the size and maximized state
+      come back.
 - [ ] Tray icon (Windows and macOS).
 - [ ] Classic and Modern themes; UI zoom.
 - [ ] What's new dialog (`whats-new-modal`).

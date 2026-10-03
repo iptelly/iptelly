@@ -9,9 +9,11 @@ mod epg;
 mod events;
 mod home;
 mod images;
+mod instance;
 mod restream;
 mod settings_page;
 mod setup;
+mod window_state;
 
 use std::cell::RefCell;
 use std::sync::{LazyLock, OnceLock};
@@ -51,6 +53,9 @@ fn main() -> Result<()> {
     _ = utils::check_nuke()
         .with_context(|| "Failed to delete db after nuke request")
         .inspect_err(|e| log::log(format!("{:?}", e)));
+    if instance::already_running() {
+        return Ok(());
+    }
     sql::create_or_initialize_db()?;
     // Downloads left 'downloading' or 'queued' by the app closing mid-transfer.
     if let Err(e) = sql::reconcile_interrupted_downloads() {
@@ -62,6 +67,8 @@ fn main() -> Result<()> {
     // this id (StartupWMClass=iptelly in the packages' IPTelly.desktop, as
     // for the Tauri app), not from the window's own icon.
     slint::set_xdg_app_id("iptelly")?;
+    instance::listen();
+    window_state::setup(&window);
     window.set_version(env!("CARGO_PKG_VERSION").into());
     WINDOW.set(window.as_weak()).ok();
     EVENTS.set(events::new(&window)).ok();
