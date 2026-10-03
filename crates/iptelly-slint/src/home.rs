@@ -42,7 +42,24 @@ struct Home {
     series_refreshed: HashSet<i64>,
     // Channel ids whose player is starting; clicking again cancels.
     starting: HashSet<i64>,
+    // Favourites' second section: favourite movies and series, below the
+    // favourite channels.
+    fav: FavMedia,
 }
+
+#[derive(Default)]
+struct FavMedia {
+    filters: Option<Filters>,
+    channels: Vec<Channel>,
+    model: Rc<VecModel<ChannelItem>>,
+    reached_max: bool,
+    loading: bool,
+    load_token: u64,
+}
+
+/// Tile indexes from here on are rows of the Favourites movies and series
+/// section (FAV + row), so tile callbacks work the same on both grids.
+const FAV: usize = 1 << 20;
 
 struct Node {
     filters: Filters,
@@ -84,8 +101,10 @@ pub fn setup(window: &AppWindow) {
     let state = window.global::<HomeState>();
     with_home(|home| {
         state.set_channels(ModelRc::from(home.model.clone()));
+        state.set_fav_media(ModelRc::from(home.fav.model.clone()));
         state.set_sidebar(ModelRc::from(home.sidebar.model.clone()));
     });
+    state.set_fav_offset(FAV as i32);
 
     let weak = window.as_weak();
     state.on_rail_selected(move |rail| {
@@ -140,6 +159,8 @@ pub fn setup(window: &AppWindow) {
             load(&window, true);
         }
     });
+
+    state.on_load_more_fav(|| load_fav(true));
 
     let weak = window.as_weak();
     state.on_go_back(move || {
@@ -517,12 +538,8 @@ fn select_rail(window: &AppWindow, rail: Rail) {
         return;
     }
     let (view, media_types) = match rail {
-        // The Angular app shows favourite movies and series in a second
-        // section below the channels; until that's ported they share one grid.
-        Rail::Favourites => (
-            view_type::FAVORITES,
-            vec![media_type::LIVESTREAM, media_type::MOVIE, media_type::SERIE],
-        ),
+        // Favourite movies and series are in a second section (load_fav).
+        Rail::Favourites => (view_type::FAVORITES, vec![media_type::LIVESTREAM]),
         Rail::Movies => (view_type::ALL, vec![media_type::MOVIE]),
         Rail::Series => (view_type::ALL, vec![media_type::SERIE]),
         Rail::History => (
@@ -566,7 +583,30 @@ fn update_filters(f: impl FnOnce(&mut Filters)) {
 }
 
 pub fn channel_at(index: usize) -> Option<Channel> {
-    with_home(|home| home.channels.get(index).cloned())
+    with_home(|home| {
+        if index >= FAV {
+            home.fav.channels.get(index - FAV).cloned()
+        } else {
+            home.channels.get(index).cloned()
+        }
+    })
+}
+
+/// A loaded channel in either section, to update after a change.
+fn channel_mut(home: &mut Home, id: i64) -> Option<&mut Channel> {
+    home.channels
+        .iter_mut()
+        .chain(home.fav.channels.iter_mut())
+        .find(|c| c.id == Some(id))
+}
+
+/// Whether the filters are Favourites' top level, which has the second
+/// section for movies and series.
+fn shows_fav_media(filters: &Filters) -> bool {
+    filters.view_type == view_type::FAVORITES
+        && filters.series_id.is_none()
+        && filters.group_id.is_none()
+        && filters.season.is_none()
 }
 
 // Loads the first page (more = false) or the next one.
@@ -589,6 +629,13 @@ fn load(window: &AppWindow, more: bool) {
         return;
     };
     window.global::<HomeState>().set_loading(true);
+    if !more {
+        let fav = shows_fav_media(&filters);
+        window.global::<HomeState>().set_show_fav_media(fav);
+        if fav {
+            load_fav(false);
+        }
+    }
 
     crate::spawn(
         api::search(filters.clone(), &STATE),
@@ -609,6 +656,7 @@ fn load(window: &AppWindow, more: bool) {
                 }
             };
             let reached_max = channels.len() < sql::PAGE_SIZE as usize || filters.page == u8::MAX;
+            state.set_channels_complete(reached_max);
             let items: Vec<ChannelItem> =
                 with_home(|home| channels.iter().map(|c| item_for(home, c)).collect());
             with_home(|home| {
@@ -625,7 +673,11 @@ fn load(window: &AppWindow, more: bool) {
             });
             if !more {
                 state.set_scroll_reset(state.get_scroll_reset() + 1);
-                state.set_empty_text(empty_text(&filters).into());
+                state.set_empty_text(if shows_fav_media(&filters) {
+                    "No favourite channels.".into()
+                } else {
+                    empty_text(&filters).into()
+                });
                 // Live channels only get the list layout with EPG timelines.
                 let live_only = filters.media_types.as_deref() == Some(&[media_type::LIVESTREAM]);
                 state.set_list_mode(live_only);
@@ -634,6 +686,66 @@ fn load(window: &AppWindow, more: bool) {
             }
             if state.get_list_mode() && state.get_show_epg() {
                 crate::epg::fetch(channels.clone());
+            }
+            request_images(&channels);
+            refresh_download_progress(window);
+        },
+    );
+}
+
+/// Loads the first page (more = false) or the next one of Favourites'
+/// movies and series. They follow the main grid's search, sort and sources.
+fn load_fav(more: bool) {
+    let request = with_home(|home| {
+        if more {
+            if home.fav.loading || home.fav.reached_max {
+                return None;
+            }
+            let filters = home.fav.filters.as_mut()?;
+            filters.page = filters.page.checked_add(1)?;
+        } else {
+            let mut filters = home.filters.clone()?;
+            filters.media_types = Some(vec![media_type::MOVIE, media_type::SERIE]);
+            filters.page = 1;
+            home.fav.filters = Some(filters);
+            home.fav.load_token += 1;
+        }
+        home.fav.loading = true;
+        Some((home.fav.filters.clone()?, home.fav.load_token))
+    });
+    let Some((filters, token)) = request else {
+        return;
+    };
+    crate::spawn(
+        api::search(filters.clone(), &STATE),
+        move |window, result| {
+            if with_home(|home| home.fav.load_token != token) {
+                return;
+            }
+            with_home(|home| home.fav.loading = false);
+            let channels = match result {
+                Ok(channels) => channels,
+                Err(e) => return crate::show_error(window, &e),
+            };
+            let reached_max = channels.len() < sql::PAGE_SIZE as usize || filters.page == u8::MAX;
+            let state = window.global::<HomeState>();
+            state.set_fav_complete(reached_max);
+            let items: Vec<ChannelItem> =
+                with_home(|home| channels.iter().map(|c| item_for(home, c)).collect());
+            with_home(|home| {
+                home.fav.reached_max = reached_max;
+                if more {
+                    home.fav.channels.extend(channels.iter().cloned());
+                    for item in items {
+                        home.fav.model.push(item);
+                    }
+                } else {
+                    home.fav.channels = channels.clone();
+                    home.fav.model.set_vec(items);
+                }
+            });
+            if !more {
+                state.set_fav_scroll_reset(state.get_fav_scroll_reset() + 1);
             }
             request_images(&channels);
             refresh_download_progress(window);
@@ -708,20 +820,30 @@ pub fn refresh_download_progress(window: &AppWindow) {
         .global::<HomeState>()
         .set_batch_running(crate::downloads::batch_running());
     with_home(|home| {
-        for (i, channel) in home.channels.iter().enumerate() {
-            let Some(mut item) = home.model.row_data(i) else {
-                continue;
-            };
-            let current = channel.id.and_then(|id| progress.get(&id.to_string()));
-            let downloading = current.is_some();
-            let value = current.map(|p| (p / 100.0) as f32).unwrap_or(0.0);
-            if item.downloading != downloading || item.progress != value {
-                item.downloading = downloading;
-                item.progress = value;
-                home.model.set_row_data(i, item);
+        for (channels, model) in sections(home) {
+            for (i, channel) in channels.iter().enumerate() {
+                let Some(mut item) = model.row_data(i) else {
+                    continue;
+                };
+                let current = channel.id.and_then(|id| progress.get(&id.to_string()));
+                let downloading = current.is_some();
+                let value = current.map(|p| (p / 100.0) as f32).unwrap_or(0.0);
+                if item.downloading != downloading || item.progress != value {
+                    item.downloading = downloading;
+                    item.progress = value;
+                    model.set_row_data(i, item);
+                }
             }
         }
     });
+}
+
+/// The main grid's channels and tiles, then Favourites' movies and series.
+fn sections(home: &Home) -> [(&[Channel], &VecModel<ChannelItem>); 2] {
+    [
+        (&home.channels, &home.model),
+        (&home.fav.channels, &home.fav.model),
+    ]
 }
 
 pub fn always_ask_save() -> bool {
@@ -836,12 +958,14 @@ fn request_images(channels: &[Channel]) {
                     home.images.clear();
                 }
                 home.images.insert(url.clone(), image.clone());
-                for (i, channel) in home.channels.iter().enumerate() {
-                    if channel.image.as_deref() == Some(url.as_str()) {
-                        if let Some(mut item) = home.model.row_data(i) {
+                for (channels, model) in sections(home) {
+                    for (i, channel) in channels.iter().enumerate() {
+                        if channel.image.as_deref() == Some(url.as_str())
+                            && let Some(mut item) = model.row_data(i)
+                        {
                             item.logo = image.clone();
                             item.has_logo = true;
-                            home.model.set_row_data(i, item);
+                            model.set_row_data(i, item);
                         }
                     }
                 }
@@ -852,17 +976,30 @@ fn request_images(channels: &[Channel]) {
 
 fn update_item(index: usize, f: impl FnOnce(&mut ChannelItem)) {
     with_home(|home| {
-        if let Some(mut item) = home.model.row_data(index) {
+        let (model, row) = if index >= FAV {
+            (&home.fav.model, index - FAV)
+        } else {
+            (&home.model, index)
+        };
+        if let Some(mut item) = model.row_data(row) {
             f(&mut item);
-            home.model.set_row_data(index, item);
+            model.set_row_data(row, item);
         }
     });
 }
 
-// Finds a channel's current row; the list may have reloaded since an
-// action on it started.
+// Finds a channel's current tile index (FAV + row in Favourites' second
+// section); the list may have reloaded since an action on it started.
 fn index_of(id: i64) -> Option<usize> {
-    with_home(|home| home.channels.iter().position(|c| c.id == Some(id)))
+    with_home(|home| {
+        home.channels
+            .iter()
+            .position(|c| c.id == Some(id))
+            .or_else(|| {
+                let row = home.fav.channels.iter().position(|c| c.id == Some(id))?;
+                Some(FAV + row)
+            })
+    })
 }
 
 fn tile_activated(window: &AppWindow, index: usize) {
@@ -1089,7 +1226,7 @@ fn toggle_favorite(index: usize) {
             let in_favorites =
                 window.global::<HomeState>().get_view_type() == view_type::FAVORITES as i32;
             with_home(|home| {
-                if let Some(c) = home.channels.iter_mut().find(|c| c.id == Some(id)) {
+                if let Some(c) = channel_mut(home, id) {
                     c.favorite = favorite;
                 }
             });
@@ -1137,7 +1274,7 @@ fn toggle_hidden(index: usize) {
             let in_hidden_view =
                 window.global::<HomeState>().get_view_type() == view_type::HIDDEN as i32;
             with_home(|home| {
-                if let Some(c) = home.channels.iter_mut().find(|c| c.id == Some(id)) {
+                if let Some(c) = channel_mut(home, id) {
                     c.hidden = Some(hidden);
                 }
             });

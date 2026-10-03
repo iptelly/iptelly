@@ -59,6 +59,15 @@ export enum Rail { favourites, channels, movies, series, history, manage-categor
 export global HomeState {
     in-out property <Rail> rail: Rail.channels;
     in-out property <[ChannelItem]> channels;
+    // Every page of `channels` is loaded.
+    in-out property <bool> channels-complete;
+    // Favourites' second section, favourite movies and series, below the
+    // channels. Its tiles' indexes start at fav-offset.
+    in-out property <bool> show-fav-media;
+    in-out property <[ChannelItem]> fav-media;
+    in-out property <int> fav-offset;
+    in-out property <bool> fav-complete;
+    in-out property <int> fav-scroll-reset;
     in-out property <[SidebarRow]> sidebar;
     in-out property <bool> show-sidebar: true;
     in-out property <bool> loading;
@@ -95,6 +104,7 @@ export global HomeState {
     callback toggle-keywords();
     callback sort-selected(int);
     callback load-more();
+    callback load-more-fav();
     callback go-back();
     callback clear-history();
     callback sidebar-clicked(int);

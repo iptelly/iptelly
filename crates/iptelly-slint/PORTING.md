@@ -53,7 +53,10 @@ Angular component it replaces, under `src/app/`.
 - [x] List layout with an EPG timeline for live channels (`epg-timeline`,
       `epg-timeline-header`), panned 3 hours at a time.
 - [ ] EPG keyboard guide mode (Right arrow on a row to step through its programmes).
-- [ ] Favourites view: a second section for favourite movies and series.
+- [x] Favourites view: favourite channels (as a list with the EPG) in the top 40%, and
+      favourite movies and series in a second grid below. One search box and sort drive
+      both. Down from the last channel moves into the second grid, and Up from its top row
+      comes back.
 - [x] Drill into a series, then a season, then a category. A back row returns you.
 - [x] Clicking a tile plays it. Clicking again while it starts cancels the play. Playing
       adds the item to history.

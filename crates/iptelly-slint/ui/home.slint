@@ -389,30 +389,47 @@ component Tile inherits Rectangle {
 }
 
 component ChannelGrid inherits Rectangle {
-    property <length> spacing: HomeState.list-mode ? 6px : 12px;
-    property <int> columns: HomeState.list-mode ? 1 : max(1, floor((self.width - 16px) / 300px));
-    property <int> rows: ceil(HomeState.channels.length / columns);
-    property <length> row-height: (HomeState.list-mode ? 72px : 88px) + spacing;
+    in property <[ChannelItem]> items;
+    // Tile indexes start here (HomeState.fav-offset for Favourites' second
+    // section), so Rust knows which section a tile is in.
+    in property <int> offset;
+    in property <bool> list-mode;
+    // Every page is loaded.
+    in property <bool> complete;
+    in property <string> empty-text;
+    in property <bool> show-empty;
+    // Rust bumps this whenever a fresh (page 1) load arrives.
+    in property <int> scroll-reset;
 
-    // Up from the top row.
+    callback load-more();
+    // Up from the top row, and Down from the bottom one once complete.
     callback leave-top();
+    callback leave-bottom();
+
+    property <length> spacing: list-mode ? 6px : 12px;
+    property <int> columns: list-mode ? 1 : max(1, floor((self.width - 16px) / 300px));
+    property <int> rows: ceil(items.length / columns);
+    property <length> row-height: (list-mode ? 72px : 88px) + spacing;
 
     public function focus-grid() {
         scope.focus();
     }
 
-    opacity: HomeState.channels-visible ? 1 : 0;
-    animate opacity { duration: 150ms; }
+    // Focuses the grid with a tile (relative to the offset) highlighted.
+    public function enter(index: int) {
+        root.highlight(clamp(index, 0, max(0, items.length - 1)));
+        scope.focus();
+    }
 
     function check-load-more() {
         if (-list.content-y + list.visible-height > list.content-height - 400px) {
-            HomeState.load-more();
+            root.load-more();
         }
     }
 
-    // Highlights a tile and scrolls it into view.
+    // Highlights a tile (relative to the offset) and scrolls it into view.
     function highlight(index: int) {
-        HomeState.focused = index;
+        HomeState.focused = offset + index;
         let top = floor(index / columns) * row-height;
         if top < -list.content-y {
             list.content-y = -top;
@@ -421,14 +438,10 @@ component ChannelGrid inherits Rectangle {
         }
     }
 
-    property <int> focus-requests: HomeState.focus-grid;
-    changed focus-requests => { scope.focus(); }
-
     scope := FocusScope {
-        init => { self.focus(); }
         key-pressed(event) => {
-            let count = HomeState.channels.length;
-            let current = clamp(HomeState.focused, 0, max(0, count - 1));
+            let count = items.length;
+            let current = clamp(HomeState.focused - offset, 0, max(0, count - 1));
             if event.text == Key.UpArrow {
                 if current < columns {
                     root.leave-top();
@@ -446,6 +459,8 @@ component ChannelGrid inherits Rectangle {
                     root.highlight(current + columns);
                 } else if floor(current / columns) < floor((count - 1) / columns) {
                     root.highlight(count - 1);
+                } else if complete {
+                    root.leave-bottom();
                 }
                 return accept;
             }
@@ -466,11 +481,11 @@ component ChannelGrid inherits Rectangle {
                 return accept;
             }
             if event.text == Key.Return || event.text == " " {
-                HomeState.tile-activated(current);
+                HomeState.tile-activated(offset + current);
                 return accept;
             }
             if event.text == Key.Menu || (event.text == Key.F10 && event.modifiers.shift) {
-                HomeState.focused = current;
+                HomeState.focused = offset + current;
                 HomeState.open-menu += 1;
                 return accept;
             }
@@ -487,11 +502,11 @@ component ChannelGrid inherits Rectangle {
                 padding-right: 12px;
                 for col in root.columns: Rectangle {
                     horizontal-stretch: 1;
-                    height: HomeState.list-mode ? 72px : 88px;
-                    if row * root.columns + col < HomeState.channels.length: Tile {
-                        item: HomeState.channels[row * root.columns + col];
-                        index: row * root.columns + col;
-                        list: HomeState.list-mode;
+                    height: root.list-mode ? 72px : 88px;
+                    if row * root.columns + col < root.items.length: Tile {
+                        item: root.items[row * root.columns + col];
+                        index: root.offset + row * root.columns + col;
+                        list: root.list-mode;
                         highlighted: scope.has-focus && HomeState.focused == self.index;
                     }
                 }
@@ -499,15 +514,15 @@ component ChannelGrid inherits Rectangle {
         }
     }
 
-    // Rust bumps scroll-reset whenever a fresh (page 1) load arrives.
-    property <int> scroll-reset: HomeState.scroll-reset;
     changed scroll-reset => {
         list.content-y = 0;
-        HomeState.focused = 0;
+        if HomeState.focused >= offset && HomeState.focused < offset + HomeState.fav-offset {
+            HomeState.focused = offset;
+        }
     }
 
-    if HomeState.channels.length == 0 && !HomeState.loading: Text {
-        text: HomeState.empty-text;
+    if root.items.length == 0 && root.show-empty: Text {
+        text: root.empty-text;
         color: Theme.text-secondary;
         font-size: 16px;
         horizontal-alignment: center;
@@ -716,8 +731,59 @@ component ChannelsView inherits FocusScope {
         }
 
         grid := ChannelGrid {
-            vertical-stretch: 1;
+            // Favourites shares the space with its movies and series, 40:60.
+            vertical-stretch: HomeState.show-fav-media ? 2 : 1;
+            items: HomeState.channels;
+            offset: 0;
+            list-mode: HomeState.list-mode;
+            complete: HomeState.channels-complete;
+            empty-text: HomeState.empty-text;
+            show-empty: !HomeState.loading;
+            scroll-reset: HomeState.scroll-reset;
+            opacity: HomeState.channels-visible ? 1 : 0;
+            animate opacity { duration: 150ms; }
+            load-more => { HomeState.load-more(); }
             leave-top => { search.focus(); }
+            leave-bottom => {
+                if HomeState.show-fav-media && HomeState.fav-media.length > 0 {
+                    fav-grid.enter(0);
+                }
+            }
+        }
+
+        if HomeState.show-fav-media: Text {
+            text: "Movies and series";
+            font-size: 15px;
+            font-weight: 600;
+            color: Theme.text-primary;
+        }
+
+        fav-grid := ChannelGrid {
+            visible: HomeState.show-fav-media;
+            vertical-stretch: HomeState.show-fav-media ? 3 : 0;
+            max-height: HomeState.show-fav-media ? 100000px : 0;
+            items: HomeState.fav-media;
+            offset: HomeState.fav-offset;
+            list-mode: false;
+            complete: HomeState.fav-complete;
+            empty-text: "No favourite movies or series.";
+            show-empty: true;
+            scroll-reset: HomeState.fav-scroll-reset;
+            load-more => { HomeState.load-more-fav(); }
+            leave-top => { grid.enter(HomeState.channels.length - 1); }
+        }
+    }
+
+    init => { grid.focus-grid(); }
+
+    // A clicked tile, or a closed dialog, gives the grid holding the
+    // highlight keyboard focus.
+    property <int> focus-requests: HomeState.focus-grid;
+    changed focus-requests => {
+        if HomeState.show-fav-media && HomeState.focused >= HomeState.fav-offset {
+            fav-grid.focus-grid();
+        } else {
+            grid.focus-grid();
         }
     }
 }
