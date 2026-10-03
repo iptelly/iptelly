@@ -58,6 +58,9 @@ export enum Rail { favourites, channels, movies, series, history, manage-categor
 
 export global HomeState {
     in-out property <Rail> rail: Rail.channels;
+    // The playlist sidebar, collapsed to a strip, or its dragged width.
+    in-out property <bool> sidebar-collapsed;
+    in-out property <length> sidebar-width: 260px;
     in-out property <[ChannelItem]> channels;
     // Every page of `channels` is loaded.
     in-out property <bool> channels-complete;

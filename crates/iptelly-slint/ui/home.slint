@@ -176,25 +176,62 @@ component SidebarRowView inherits Rectangle {
 }
 
 component PlaylistSidebar inherits Rectangle {
-    width: 260px;
+    width: HomeState.sidebar-collapsed ? 40px : HomeState.sidebar-width;
     background: Theme.surface-1;
     border-width: 1px;
     border-color: Theme.border-subtle;
 
     VerticalLayout {
-        padding: 8px;
+        padding: HomeState.sidebar-collapsed ? 4px : 8px;
         spacing: 6px;
-        Text {
-            text: "Playlists";
-            font-size: 15px;
-            font-weight: 600;
-            color: Theme.text-primary;
+        HorizontalLayout {
+            height: 28px;
+            if !HomeState.sidebar-collapsed: Text {
+                text: "Playlists";
+                font-size: 15px;
+                font-weight: 600;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+                color: Theme.text-primary;
+            }
+            Rectangle {
+                width: 28px;
+                border-radius: Theme.radius-sm;
+                background: toggle.has-hover ? Theme.surface-3 : transparent;
+                Icon {
+                    data: HomeState.sidebar-collapsed ? Icons.chevron-right : Icons.chevron-left;
+                    width: 20px;
+                    height: 20px;
+                    color: Theme.text-secondary;
+                }
+                toggle := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { HomeState.sidebar-collapsed = !HomeState.sidebar-collapsed; }
+                }
+            }
         }
-        ListView {
+        if !HomeState.sidebar-collapsed: ListView {
             for row[i] in HomeState.sidebar: SidebarRowView {
                 data: row;
                 index: i;
             }
+        }
+        if HomeState.sidebar-collapsed: Rectangle { }
+    }
+
+    // Drag the right edge to resize (216 to 416px, as in the Angular app).
+    if !HomeState.sidebar-collapsed: TouchArea {
+        x: parent.width - self.width;
+        width: 6px;
+        mouse-cursor: ew-resize;
+        moved => {
+            if self.pressed {
+                HomeState.sidebar-width = clamp(
+                    HomeState.sidebar-width + self.mouse-x - self.pressed-x, 216px, 416px);
+            }
+        }
+        Rectangle {
+            background: parent.has-hover || parent.pressed ? Theme.accent : transparent;
         }
     }
 }

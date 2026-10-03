@@ -45,7 +45,8 @@ Angular component it replaces, under `src/app/`.
 - [x] Playlist sidebar: All playlists, each source, and each source's categories, which
       expand and collapse. Selecting a category drills into it.
 - [x] Hide a category from its context menu.
-- [ ] Collapse and resize the playlist sidebar.
+- [x] Collapse and resize the playlist sidebar (216 to 416px). Both last until the app
+      closes, as in the Angular app.
 - [x] Search with a 300 ms debounce.
 - [x] Keyword search toggle.
 - [x] Sort menu.
