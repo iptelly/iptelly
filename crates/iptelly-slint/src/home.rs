@@ -148,6 +148,20 @@ pub fn setup(window: &AppWindow) {
         }
     });
 
+    let weak = window.as_weak();
+    state.on_escape_pressed(move || {
+        if let Some(window) = weak.upgrade() {
+            escape(&window);
+        }
+    });
+
+    let weak = window.as_weak();
+    state.on_toggle_media_type(move |media_type| {
+        if let Some(window) = weak.upgrade() {
+            toggle_media_type(&window, media_type as u8);
+        }
+    });
+
     state.on_clear_history(|| {
         crate::spawn(crate::blocking(sql::clear_history), |window, result| {
             match result {
@@ -943,7 +957,47 @@ fn go_back(window: &AppWindow) {
         .global::<HomeState>()
         .set_search_text(node.search_text.into());
     refresh_back_title(window);
+    rebuild_sidebar();
     load(window, false);
+}
+
+/// Esc: clears the search if there is one, or else goes back a level.
+fn escape(window: &AppWindow) {
+    let state = window.global::<HomeState>();
+    let searching = !state.get_search_text().is_empty()
+        || with_home(|home| home.filters.as_ref().is_some_and(|f| f.query.is_some()));
+    if !searching {
+        go_back(window);
+        return;
+    }
+    with_home(|home| home.search_timer.stop());
+    state.set_search_text("".into());
+    update_filters(|f| f.query = None);
+    load(window, false);
+}
+
+/// Ctrl+Q/W/E: adds a media type to the grid, or removes it (unless it's
+/// the only one).
+fn toggle_media_type(window: &AppWindow, media_type: u8) {
+    let changed = with_home(|home| {
+        let Some(types) = home.filters.as_mut().and_then(|f| f.media_types.as_mut()) else {
+            return false;
+        };
+        match types.iter().position(|t| *t == media_type) {
+            Some(_) if types.len() == 1 => return false,
+            Some(i) => {
+                types.remove(i);
+            }
+            None => {
+                types.push(media_type);
+                types.sort();
+            }
+        }
+        true
+    });
+    if changed {
+        load(window, false);
+    }
 }
 
 fn refresh_back_title(window: &AppWindow) {

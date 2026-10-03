@@ -109,6 +109,21 @@ export global HomeState {
     // Inside a series but not a season, where bulk actions don't apply.
     in-out property <bool> bulk-disabled;
 
+    // Keyboard navigation: the highlighted tile, shown while the grid has
+    // focus.
+    in-out property <int> focused;
+    // Bumped to give the grid keyboard focus (after a dialog closes, or a
+    // tile is clicked).
+    in-out property <int> focus-grid;
+    // Bumped to open the highlighted tile's context menu.
+    in-out property <int> open-menu;
+    // The F1 keyboard shortcuts help.
+    in-out property <bool> show-help;
+    // Esc: clears the search, or else goes back a level.
+    callback escape-pressed();
+    // Ctrl+Q/W/E: adds or removes a media type (MediaType number) from the grid.
+    callback toggle-media-type(int);
+
     callback tile-activated(int);
     callback tile-favorite(int);
     callback tile-hide(int);

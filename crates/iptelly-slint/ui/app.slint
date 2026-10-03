@@ -10,6 +10,7 @@ import { DialogOverlay } from "dialog.slint";
 import { EpgDialog } from "epg.slint";
 import { RestreamDialog } from "restream.slint";
 import { CustomDialog } from "custom.slint";
+import { ShortcutsHelp } from "shortcuts.slint";
 
 export {
     Theme, HomeState, SetupState, SettingsState, CategoriesState, DownloadsState, EpgState,
@@ -37,6 +38,18 @@ export component AppWindow inherits Window {
     if page == Page.home: HomeView { }
     if page == Page.setup: SetupView { }
 
+    // Keyboard focus goes back to the channel grid once the last overlay
+    // closes; otherwise nothing would have focus and keys would do nothing.
+    property <bool> overlay-open: EpgState.open || RestreamState.open
+        || CustomState.kind != CustomKind.none || DialogState.kind != DialogKind.none
+        || HomeState.show-help;
+    changed overlay-open => {
+        if !overlay-open {
+            HomeState.focus-grid += 1;
+        }
+    }
+
+    if HomeState.show-help: ShortcutsHelp { }
     if EpgState.open: EpgDialog { }
     if RestreamState.open: RestreamDialog { }
     if CustomState.kind != CustomKind.none: CustomDialog { }

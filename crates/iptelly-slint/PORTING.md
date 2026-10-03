@@ -30,7 +30,7 @@ Angular component it replaces, under `src/app/`.
 - [ ] Tray icon (Windows and macOS).
 - [ ] Classic and Modern themes; UI zoom.
 - [ ] What's new dialog (`whats-new-modal`).
-- [ ] Keyboard shortcuts help, opened with F1 (`shortcuts-help-modal`).
+- [x] Keyboard shortcuts help, opened with F1 (`shortcuts-help-modal`).
 
 ## Home (`home/`)
 
@@ -68,13 +68,18 @@ Angular component it replaces, under `src/app/`.
   - [x] Re-stream.
   - [x] Edit, Share and Delete, for custom sources. The grid never shows category tiles,
         so a custom category's Edit, Share and Delete are on its sidebar context menu.
-- [ ] Keyboard navigation:
-  - [ ] Ctrl+F for search.
-  - [ ] Arrow keys move between tiles.
-  - [ ] Esc goes back.
-  - [ ] Tab cycles between areas.
-  - [ ] Ctrl+A/S/D/R switch views.
-  - [ ] Ctrl+Q/W/E toggle media types.
+- [x] Keyboard navigation:
+  - [x] Ctrl+F (or Ctrl+Space) for search, and again to go back to the grid.
+  - [x] Arrow keys, Home and End move between tiles. Up from the top row goes to search,
+        and Down from search comes back. Enter plays, and Menu or Shift+F10 opens the
+        tile's menu.
+  - [x] Esc clears the search, or else goes back a level.
+  - [x] Tab moves between the search box, the toolbar buttons and the grid. This uses
+        Slint's own focus chain, so the nav rail and the playlist sidebar aren't Tab stops
+        yet.
+  - [x] Ctrl+A/D/R switch to Channels, History and Favourites. Ctrl+S (the Angular
+        app's categories view) has no equivalent: categories are in the sidebar.
+  - [x] Ctrl+Q/W/E toggle media types.
 
 ## Other screens
 

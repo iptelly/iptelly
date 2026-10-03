@@ -230,9 +230,21 @@ component Tile inherits Rectangle {
     in property <int> index;
     // One channel per row with its EPG, instead of a grid card.
     in property <bool> list;
+    // The keyboard highlight.
+    in property <bool> highlighted;
+
+    // The Menu key (or Shift+F10) on the highlighted tile opens its menu.
+    property <int> open-menu: HomeState.open-menu;
+    changed open-menu => {
+        if HomeState.focused == index {
+            menu.show({ x: 24px, y: root.height / 2 });
+        }
+    }
 
     height: list ? 72px : 88px;
     border-radius: Theme.radius-md;
+    border-width: highlighted ? 2px : 0;
+    border-color: Theme.accent;
     background: item.starting ? Theme.accent.with-alpha(0.35) : touch.has-hover ? Theme.surface-3 : Theme.surface-2;
     opacity: item.faded ? 0.4 : 1;
     animate background { duration: 100ms; }
@@ -309,6 +321,10 @@ component Tile inherits Rectangle {
             mouse-cursor: pointer;
             clicked => { HomeState.tile-activated(index); }
             pointer-event(event) => {
+                if event.kind == PointerEventKind.down {
+                    HomeState.focused = index;
+                    HomeState.focus-grid += 1;
+                }
                 if event.button == PointerEventButton.right && event.kind == PointerEventKind.up {
                     menu.show({ x: self.mouse-x, y: self.mouse-y });
                 }
@@ -376,6 +392,14 @@ component ChannelGrid inherits Rectangle {
     property <length> spacing: HomeState.list-mode ? 6px : 12px;
     property <int> columns: HomeState.list-mode ? 1 : max(1, floor((self.width - 16px) / 300px));
     property <int> rows: ceil(HomeState.channels.length / columns);
+    property <length> row-height: (HomeState.list-mode ? 72px : 88px) + spacing;
+
+    // Up from the top row.
+    callback leave-top();
+
+    public function focus-grid() {
+        scope.focus();
+    }
 
     opacity: HomeState.channels-visible ? 1 : 0;
     animate opacity { duration: 150ms; }
@@ -386,21 +410,90 @@ component ChannelGrid inherits Rectangle {
         }
     }
 
-    list := ListView {
-        changed content-y => { root.check-load-more(); }
-        changed content-height => { root.check-load-more(); }
+    // Highlights a tile and scrolls it into view.
+    function highlight(index: int) {
+        HomeState.focused = index;
+        let top = floor(index / columns) * row-height;
+        if top < -list.content-y {
+            list.content-y = -top;
+        } else if top + row-height > -list.content-y + list.visible-height {
+            list.content-y = -(top + row-height - list.visible-height);
+        }
+    }
 
-        for row in root.rows: HorizontalLayout {
-            spacing: root.spacing;
-            padding-bottom: root.spacing;
-            padding-right: 12px;
-            for col in root.columns: Rectangle {
-                horizontal-stretch: 1;
-                height: HomeState.list-mode ? 72px : 88px;
-                if row * root.columns + col < HomeState.channels.length: Tile {
-                    item: HomeState.channels[row * root.columns + col];
-                    index: row * root.columns + col;
-                    list: HomeState.list-mode;
+    property <int> focus-requests: HomeState.focus-grid;
+    changed focus-requests => { scope.focus(); }
+
+    scope := FocusScope {
+        init => { self.focus(); }
+        key-pressed(event) => {
+            let count = HomeState.channels.length;
+            let current = clamp(HomeState.focused, 0, max(0, count - 1));
+            if event.text == Key.UpArrow {
+                if current < columns {
+                    root.leave-top();
+                } else {
+                    root.highlight(current - columns);
+                }
+                return accept;
+            }
+            if count == 0 {
+                return reject;
+            }
+            if event.text == Key.DownArrow {
+                // On the last full row, Down goes to the last tile below.
+                if current + columns < count {
+                    root.highlight(current + columns);
+                } else if floor(current / columns) < floor((count - 1) / columns) {
+                    root.highlight(count - 1);
+                }
+                return accept;
+            }
+            if event.text == Key.RightArrow {
+                root.highlight(min(count - 1, current + 1));
+                return accept;
+            }
+            if event.text == Key.LeftArrow {
+                root.highlight(max(0, current - 1));
+                return accept;
+            }
+            if event.text == Key.Home {
+                root.highlight(0);
+                return accept;
+            }
+            if event.text == Key.End {
+                root.highlight(count - 1);
+                return accept;
+            }
+            if event.text == Key.Return || event.text == " " {
+                HomeState.tile-activated(current);
+                return accept;
+            }
+            if event.text == Key.Menu || (event.text == Key.F10 && event.modifiers.shift) {
+                HomeState.focused = current;
+                HomeState.open-menu += 1;
+                return accept;
+            }
+            reject
+        }
+
+        list := ListView {
+            changed content-y => { root.check-load-more(); }
+            changed content-height => { root.check-load-more(); }
+
+            for row in root.rows: HorizontalLayout {
+                spacing: root.spacing;
+                padding-bottom: root.spacing;
+                padding-right: 12px;
+                for col in root.columns: Rectangle {
+                    horizontal-stretch: 1;
+                    height: HomeState.list-mode ? 72px : 88px;
+                    if row * root.columns + col < HomeState.channels.length: Tile {
+                        item: HomeState.channels[row * root.columns + col];
+                        index: row * root.columns + col;
+                        list: HomeState.list-mode;
+                        highlighted: scope.has-focus && HomeState.focused == self.index;
+                    }
                 }
             }
         }
@@ -408,7 +501,10 @@ component ChannelGrid inherits Rectangle {
 
     // Rust bumps scroll-reset whenever a fresh (page 1) load arrives.
     property <int> scroll-reset: HomeState.scroll-reset;
-    changed scroll-reset => { list.content-y = 0; }
+    changed scroll-reset => {
+        list.content-y = 0;
+        HomeState.focused = 0;
+    }
 
     if HomeState.channels.length == 0 && !HomeState.loading: Text {
         text: HomeState.empty-text;
@@ -495,6 +591,137 @@ component BulkButton inherits IconButton {
     }
 }
 
+// The search toolbar and the channel grid, with the keyboard shortcuts.
+component ChannelsView inherits FocusScope {
+    // Never takes focus itself; it sees the keys its children don't handle,
+    // and (capture) the shortcuts before the search box can.
+    focus-on-click: false;
+    focus-on-tab-navigation: false;
+
+    capture-key-pressed(event) => {
+        if event.text == Key.F1 {
+            HomeState.show-help = true;
+            return accept;
+        }
+        if !event.modifiers.control || event.modifiers.alt {
+            return reject;
+        }
+        if event.text == "f" || event.text == " " {
+            if search.has-focus {
+                grid.focus-grid();
+            } else {
+                search.focus();
+            }
+            return accept;
+        }
+        // Ctrl+A in the search box selects its text.
+        if event.text == "a" && !search.has-focus {
+            HomeState.rail-selected(Rail.channels);
+            return accept;
+        }
+        if event.text == "r" {
+            HomeState.rail-selected(Rail.favourites);
+            return accept;
+        }
+        if event.text == "d" {
+            HomeState.rail-selected(Rail.history);
+            return accept;
+        }
+        if event.text == "q" {
+            HomeState.toggle-media-type(0);
+            return accept;
+        }
+        if event.text == "w" {
+            HomeState.toggle-media-type(1);
+            return accept;
+        }
+        if event.text == "e" {
+            HomeState.toggle-media-type(2);
+            return accept;
+        }
+        reject
+    }
+
+    key-pressed(event) => {
+        if event.text == Key.Escape || event.text == Key.Back {
+            if !search.has-focus {
+                HomeState.escape-pressed();
+            }
+            grid.focus-grid();
+            return accept;
+        }
+        if event.text == Key.DownArrow && search.has-focus {
+            grid.focus-grid();
+            return accept;
+        }
+        reject
+    }
+
+    VerticalLayout {
+        padding: 16px;
+        padding-right: 4px;
+        spacing: 12px;
+
+        HorizontalLayout {
+            padding-right: 12px;
+            spacing: 6px;
+            search := LineEdit {
+                placeholder-text: "Type to search...";
+                text <=> HomeState.search-text;
+                edited(text) => { HomeState.search-edited(text); }
+            }
+            IconButton {
+                icon: HomeState.use-keywords ? Icons.keywords-on : Icons.keywords-off;
+                icon-color: HomeState.use-keywords ? Theme.accent-hover : Theme.text-primary;
+                clicked => { HomeState.toggle-keywords(); }
+            }
+            BulkButton { }
+            SortButton { }
+        }
+
+        if HomeState.back-title != "": Rectangle {
+            height: 40px;
+            border-radius: Theme.radius-sm;
+            background: back-touch.has-hover ? Theme.surface-2 : transparent;
+            back-touch := TouchArea {
+                clicked => { HomeState.go-back(); }
+            }
+            HorizontalLayout {
+                alignment: center;
+                spacing: 8px;
+                Icon {
+                    data: Icons.back;
+                    y: (parent.height - self.height) / 2;
+                }
+                Text {
+                    text: HomeState.back-title;
+                    font-size: 16px;
+                    vertical-alignment: center;
+                    color: Theme.text-primary;
+                }
+            }
+        }
+
+        if HomeState.rail == Rail.history: HorizontalLayout {
+            alignment: center;
+            Button {
+                text: "Clear history";
+                clicked => { HomeState.clear-history(); }
+            }
+        }
+
+        if HomeState.list-mode && HomeState.show-epg: EpgHeader {
+            timeline-x: ListLayout.timeline-x;
+            padding-right: 36px;
+        }
+
+        grid := ChannelGrid {
+            vertical-stretch: 1;
+            leave-top => { search.focus(); }
+        }
+    }
+}
+
 export component HomeView inherits Rectangle {
     background: Theme.bg-base;
 
@@ -507,67 +734,6 @@ export component HomeView inherits Rectangle {
         if HomeState.rail == Rail.settings: SettingsView { }
         if HomeState.rail == Rail.manage-categories: CategoriesView { }
 
-        if HomeState.rail != Rail.downloads && HomeState.rail != Rail.manage-categories && HomeState.rail != Rail.settings: VerticalLayout {
-            padding: 16px;
-            padding-right: 4px;
-            spacing: 12px;
-
-            HorizontalLayout {
-                padding-right: 12px;
-                spacing: 6px;
-                search := LineEdit {
-                    placeholder-text: "Type to search...";
-                    text <=> HomeState.search-text;
-                    edited(text) => { HomeState.search-edited(text); }
-                }
-                IconButton {
-                    icon: HomeState.use-keywords ? Icons.keywords-on : Icons.keywords-off;
-                    icon-color: HomeState.use-keywords ? Theme.accent-hover : Theme.text-primary;
-                    clicked => { HomeState.toggle-keywords(); }
-                }
-                BulkButton { }
-                SortButton { }
-            }
-
-            if HomeState.back-title != "": Rectangle {
-                height: 40px;
-                border-radius: Theme.radius-sm;
-                background: back-touch.has-hover ? Theme.surface-2 : transparent;
-                back-touch := TouchArea {
-                    clicked => { HomeState.go-back(); }
-                }
-                HorizontalLayout {
-                    alignment: center;
-                    spacing: 8px;
-                    Icon {
-                        data: Icons.back;
-                        y: (parent.height - self.height) / 2;
-                    }
-                    Text {
-                        text: HomeState.back-title;
-                        font-size: 16px;
-                        vertical-alignment: center;
-                        color: Theme.text-primary;
-                    }
-                }
-            }
-
-            if HomeState.rail == Rail.history: HorizontalLayout {
-                alignment: center;
-                Button {
-                    text: "Clear history";
-                    clicked => { HomeState.clear-history(); }
-                }
-            }
-
-            if HomeState.list-mode && HomeState.show-epg: EpgHeader {
-                timeline-x: ListLayout.timeline-x;
-                padding-right: 36px;
-            }
-
-            ChannelGrid {
-                vertical-stretch: 1;
-            }
-        }
+        if HomeState.rail != Rail.downloads && HomeState.rail != Rail.manage-categories && HomeState.rail != Rail.settings: ChannelsView { }
     }
 }
