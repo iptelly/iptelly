@@ -241,12 +241,10 @@ pub fn setup(window: &AppWindow) {
     });
 
     state.on_sidebar_hide_category(|row| {
-        let Some(SidebarAction::Category(source_id, i)) =
-            with_home(|home| home.sidebar.actions.get(row as usize).copied())
-        else {
+        let Some(category) = sidebar_category(row as usize) else {
             return;
         };
-        let Some(id) = with_home(|home| home.sidebar.categories.get(&source_id)?.get(i)?.id) else {
+        let (Some(id), Some(source_id)) = (category.id, category.source_id) else {
             return;
         };
         crate::spawn(
@@ -264,6 +262,42 @@ pub fn setup(window: &AppWindow) {
                 rebuild_sidebar();
             },
         );
+    });
+
+    let weak = window.as_weak();
+    state.on_sidebar_edit_category(move |row| {
+        if let (Some(window), Some(category)) = (weak.upgrade(), sidebar_category(row as usize)) {
+            crate::custom::edit(&window, category);
+        }
+    });
+    state.on_sidebar_share_category(|row| {
+        if let Some(category) = sidebar_category(row as usize) {
+            crate::custom::share(category);
+        }
+    });
+    let weak = window.as_weak();
+    state.on_sidebar_delete_category(move |row| {
+        if let (Some(window), Some(category)) = (weak.upgrade(), sidebar_category(row as usize)) {
+            crate::custom::delete(&window, category);
+        }
+    });
+
+    let weak = window.as_weak();
+    state.on_tile_edit(move |index| {
+        if let (Some(window), Some(channel)) = (weak.upgrade(), channel_at(index as usize)) {
+            crate::custom::edit(&window, channel);
+        }
+    });
+    state.on_tile_share(|index| {
+        if let Some(channel) = channel_at(index as usize) {
+            crate::custom::share(channel);
+        }
+    });
+    let weak = window.as_weak();
+    state.on_tile_delete(move |index| {
+        if let (Some(window), Some(channel)) = (weak.upgrade(), channel_at(index as usize)) {
+            crate::custom::delete(&window, channel);
+        }
     });
 
     state.on_tile_record(|index| {
@@ -351,6 +385,27 @@ pub fn set_settings(settings: Settings) {
 /// (after the provider was refreshed).
 pub fn clear_series_cache() {
     with_home(|home| home.series_refreshed.clear());
+}
+
+/// After a custom channel or category was added, changed or deleted:
+/// reloads the sidebar's categories and, on a channel view, the grid.
+pub fn refresh(window: &AppWindow) {
+    let media_type = with_home(|home| {
+        home.sidebar.categories.clear();
+        home.sidebar.media_type
+    });
+    let state = window.global::<HomeState>();
+    if state.get_show_sidebar()
+        && let Some(media_type) = media_type
+    {
+        load_sidebar(media_type);
+    }
+    if !matches!(
+        state.get_rail(),
+        Rail::Settings | Rail::ManageCategories | Rail::Downloads
+    ) {
+        load(window, false);
+    }
 }
 
 /// After a source was added, changed, enabled, disabled or deleted. The
@@ -1128,6 +1183,7 @@ fn rebuild_sidebar() {
             name: "All playlists".into(),
             selected: single_source.is_none() && selected_group.is_none(),
             expanded: false,
+            custom: false,
         }];
         let mut actions = vec![SidebarAction::AllSources];
         for source in &home.sources {
@@ -1138,6 +1194,7 @@ fn rebuild_sidebar() {
                 name: source.name.as_str().into(),
                 selected: single_source == Some(id) && selected_group.is_none(),
                 expanded,
+                custom: false,
             });
             actions.push(SidebarAction::Source(id));
             if !expanded {
@@ -1148,6 +1205,7 @@ fn rebuild_sidebar() {
                 name: text.into(),
                 selected: false,
                 expanded: false,
+                custom: false,
             };
             if sidebar.loading.contains(&id) {
                 rows.push(message("Loading..."));
@@ -1169,6 +1227,7 @@ fn rebuild_sidebar() {
                     name: category.name.as_str().into(),
                     selected: category.id.is_some() && category.id == selected_group,
                     expanded: false,
+                    custom: source.source_type == source_type::CUSTOM,
                 });
                 actions.push(SidebarAction::Category(id, i));
             }
@@ -1176,6 +1235,19 @@ fn rebuild_sidebar() {
         sidebar.model.set_vec(rows);
         sidebar.actions = actions;
     });
+}
+
+/// The category on a sidebar row, with its source id filled in.
+fn sidebar_category(row: usize) -> Option<Channel> {
+    let Some(SidebarAction::Category(source_id, i)) =
+        with_home(|home| home.sidebar.actions.get(row).copied())
+    else {
+        return None;
+    };
+    let mut category = with_home(|home| home.sidebar.categories.get(&source_id)?.get(i).cloned())?;
+    category.source_id = Some(source_id);
+    category.media_type = media_type::GROUP;
+    Some(category)
 }
 
 fn sidebar_clicked(window: &AppWindow, row: usize) {

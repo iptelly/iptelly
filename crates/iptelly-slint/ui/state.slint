@@ -48,6 +48,8 @@ export struct SidebarRow {
     name: string,
     selected: bool,
     expanded: bool,
+    // A category of a custom source, which can be edited, shared and deleted.
+    custom: bool,
 }
 
 // Matches RailItem in the Angular app, where it's persisted as
@@ -98,6 +100,9 @@ export global HomeState {
     callback sidebar-clicked(int);
     callback sidebar-toggled(int);
     callback sidebar-hide-category(int);
+    callback sidebar-edit-category(int);
+    callback sidebar-share-category(int);
+    callback sidebar-delete-category(int);
     // BulkActionType: 0 = hide, 1 = unhide, 2 = favorite, 3 = unfavorite;
     // applied to everything the current filters match.
     callback bulk-action(int);
@@ -111,6 +116,10 @@ export global HomeState {
     callback tile-copy-url(int);
     callback tile-record(int);
     callback tile-restream(int);
+    // Custom sources only.
+    callback tile-edit(int);
+    callback tile-share(int);
+    callback tile-delete(int);
     callback tile-download(int);
     callback tile-cancel-download(int);
     // A series or season: queues all its episodes.
@@ -206,6 +215,10 @@ export global SettingsState {
     callback import-data();
     callback delete-everything();
     callback source-action(int, SourceAction);
+    // Custom sources: add a channel or a category, or import one.
+    callback add-channel(int);
+    callback add-group(int);
+    callback import(int);
 }
 
 // One row of Manage Categories' flattened sections.
@@ -315,6 +328,39 @@ export global RestreamState {
     callback stop();
     callback watch();
     callback share();
+    callback close();
+}
+
+export enum CustomKind { none, channel, group, delete-group, import }
+
+// The dialogs for custom sources: adding or editing a channel or a category,
+// choosing where a deleted category's channels go, and importing a shared
+// channel or category.
+export global CustomState {
+    in-out property <CustomKind> kind;
+    in-out property <string> title;
+    // Editing rather than adding.
+    in-out property <bool> editing;
+    // The channel or category name; for an import, the name override.
+    in-out property <string> name;
+    in-out property <string> image;
+    in-out property <string> url;
+    // 0 = livestream, 1 = movie.
+    in-out property <int> media-type;
+    // Category choices, "(None)" first. For delete-group, the replacements.
+    in-out property <[string]> groups;
+    in-out property <int> group;
+    in-out property <string> user-agent;
+    in-out property <string> origin;
+    in-out property <string> referrer;
+    in-out property <bool> ignore-ssl;
+    // The channel (name and URL) or category name is already in the source.
+    in-out property <bool> exists;
+    in-out property <bool> busy;
+
+    callback name-edited();
+    callback url-edited();
+    callback save();
     callback close();
 }
 

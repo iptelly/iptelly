@@ -58,7 +58,7 @@ Angular component it replaces, under `src/app/`.
 - [x] Clicking a tile plays it. Clicking again while it starts cancels the play. Playing
       adds the item to history.
 - [x] History: a Clear history button.
-- [ ] Tile context menu:
+- [x] Tile context menu:
   - [x] Favourite and unfavourite.
   - [x] Hide and unhide.
   - [x] Remove from history.
@@ -66,7 +66,8 @@ Angular component it replaces, under `src/app/`.
   - [x] Record.
   - [x] Download, Download series, Download season, and a progress bar on the tile.
   - [x] Re-stream.
-  - [ ] Edit, Share and Delete, for custom sources.
+  - [x] Edit, Share and Delete, for custom sources. The grid never shows category tiles,
+        so a custom category's Edit, Share and Delete are on its sidebar context menu.
 - [ ] Keyboard navigation:
   - [ ] Ctrl+F for search.
   - [ ] Arrow keys move between tiles.
@@ -86,19 +87,21 @@ Angular component it replaces, under `src/app/`.
       startup.
 - [x] Source tiles (`settings/source-tile/`): enable, edit, refresh, EPG, favourites
       backup and restore, delete, and Share for custom sources.
-- [ ] Source tiles: Add channel, Add group and Import for custom sources (they need the
-      custom channel and category dialogs).
+- [x] Source tiles: Add channel, Add category and Import for custom sources.
 - [x] Manage Categories (`manage-categories/`), including Shift+click range selection.
 - [x] Downloads (`download-manager/`, `home/download-sidebar/`), including queued downloads
       of whole series and seasons.
 - [x] EPG dialog (`epg-modal/`): catch-up playback and download, and reminders.
 - [x] Re-stream dialog (`restream-modal/`).
-- [ ] Custom channel and category dialogs (`edit-channel-modal`, `edit-group-modal`,
-      `delete-group-modal`, `import-modal`).
+- [x] Custom channel and category dialogs (`edit-channel-modal`, `edit-group-modal`,
+      `delete-group-modal`, `import-modal`). The category typeahead is a drop-down of the
+      source's categories.
 
 ## Angular bugs not to copy
 
 - `edit-channel-modal` sends `channel_exists` its name and URL arguments swapped.
+- Deleting a custom channel, or an empty custom category, has no confirmation. The Slint
+  app asks first.
 - In Settings, the re-stream port and zoom are only saved when you leave the page.
 - Deleting a source has no confirmation. The Slint app asks first.
 - The EPG reminder bell does nothing when the tray icon is off, which is always the case on

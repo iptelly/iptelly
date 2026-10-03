@@ -129,9 +129,21 @@ component SidebarRowView inherits Rectangle {
     menu := ContextMenuArea {
         enabled: false;
         Menu {
-            MenuItem {
+            if !data.custom: MenuItem {
                 title: "Hide";
                 activated => { HomeState.sidebar-hide-category(index); }
+            }
+            if data.custom: MenuItem {
+                title: "Edit";
+                activated => { HomeState.sidebar-edit-category(index); }
+            }
+            if data.custom: MenuItem {
+                title: "Share";
+                activated => { HomeState.sidebar-share-category(index); }
+            }
+            if data.custom: MenuItem {
+                title: "Delete";
+                activated => { HomeState.sidebar-delete-category(index); }
             }
         }
     }
@@ -278,6 +290,18 @@ component Tile inherits Rectangle {
             if item.media-type < 3: MenuItem {
                 title: "Copy URL";
                 activated => { HomeState.tile-copy-url(index); }
+            }
+            if item.custom: MenuItem {
+                title: "Edit";
+                activated => { HomeState.tile-edit(index); }
+            }
+            if item.custom: MenuItem {
+                title: "Share";
+                activated => { HomeState.tile-share(index); }
+            }
+            if item.custom: MenuItem {
+                title: "Delete";
+                activated => { HomeState.tile-delete(index); }
             }
         }
 

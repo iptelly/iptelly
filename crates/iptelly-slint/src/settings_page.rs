@@ -217,6 +217,29 @@ pub fn setup(window: &AppWindow) {
             source_action(&window, index as usize, action);
         }
     });
+
+    let weak = window.as_weak();
+    state.on_add_channel(move |index| {
+        if let (Some(window), Some(id)) = (weak.upgrade(), source_id(index)) {
+            crate::custom::add_channel(&window, id);
+        }
+    });
+    let weak = window.as_weak();
+    state.on_add_group(move |index| {
+        if let (Some(window), Some(id)) = (weak.upgrade(), source_id(index)) {
+            crate::custom::add_group(&window, id);
+        }
+    });
+    let weak = window.as_weak();
+    state.on_import(move |index| {
+        if let (Some(window), Some(id)) = (weak.upgrade(), source_id(index)) {
+            crate::custom::import(&window, id);
+        }
+    });
+}
+
+fn source_id(index: i32) -> Option<i64> {
+    with_page(|page| page.sources.get(index as usize)?.id)
 }
 
 /// Asks before wiping all data (also offered on the first-run setup page).
@@ -586,7 +609,7 @@ fn time_until(timestamp: i64) -> String {
     format!("In less than an hour ({date})")
 }
 
-async fn save_dialog(title: &str, file_name: &str, extension: &str) -> Option<String> {
+pub async fn save_dialog(title: &str, file_name: &str, extension: &str) -> Option<String> {
     rfd::AsyncFileDialog::new()
         .set_title(title)
         .set_file_name(file_name)
@@ -596,7 +619,7 @@ async fn save_dialog(title: &str, file_name: &str, extension: &str) -> Option<St
         .map(|f| f.path().to_string_lossy().into_owned())
 }
 
-async fn open_dialog(title: &str, extensions: &[&str]) -> Option<String> {
+pub async fn open_dialog(title: &str, extensions: &[&str]) -> Option<String> {
     rfd::AsyncFileDialog::new()
         .set_title(title)
         .add_filter(extensions.join(", "), extensions)

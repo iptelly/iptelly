@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod categories;
+mod custom;
 mod dialog;
 mod downloads;
 mod epg;
@@ -67,6 +68,7 @@ fn main() -> Result<()> {
     downloads::setup(&window);
     epg::setup(&window);
     restream::setup(&window);
+    custom::setup(&window);
     dialog::setup(&window);
 
     let weak = window.as_weak();

@@ -266,6 +266,21 @@ component SourceTile inherits Rectangle {
                 clicked => { root.action(SourceAction.restore-favs); }
             }
             if type == 3: Button {
+                text: "Add channel";
+                enabled: !SettingsState.busy;
+                clicked => { SettingsState.add-channel(index); }
+            }
+            if type == 3: Button {
+                text: "Add category";
+                enabled: !SettingsState.busy;
+                clicked => { SettingsState.add-group(index); }
+            }
+            if type == 3: Button {
+                text: "Import";
+                enabled: !SettingsState.busy;
+                clicked => { SettingsState.import(index); }
+            }
+            if type == 3: Button {
                 text: "Share";
                 enabled: !SettingsState.busy;
                 clicked => { root.action(SourceAction.share); }

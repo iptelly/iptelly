@@ -2,18 +2,19 @@ import { Theme } from "theme.slint";
 import {
     HomeState, SetupState, SettingsState, CategoriesState, DownloadsState, EpgState, RestreamState,
     DialogState, DialogKind, ChannelItem, SidebarRow, SourceItem, SourceAction, CategoryRow,
-    DownloadRow, DownloadAction, EpgBlock, EpgTick, Rail,
+    DownloadRow, DownloadAction, EpgBlock, EpgTick, Rail, CustomState, CustomKind,
 } from "state.slint";
 import { HomeView } from "home.slint";
 import { SetupView } from "setup.slint";
 import { DialogOverlay } from "dialog.slint";
 import { EpgDialog } from "epg.slint";
 import { RestreamDialog } from "restream.slint";
+import { CustomDialog } from "custom.slint";
 
 export {
     Theme, HomeState, SetupState, SettingsState, CategoriesState, DownloadsState, EpgState,
     RestreamState, DialogState, DialogKind, ChannelItem, SidebarRow, SourceItem, SourceAction,
-    CategoryRow, DownloadRow, DownloadAction, EpgBlock, EpgTick, Rail,
+    CategoryRow, DownloadRow, DownloadAction, EpgBlock, EpgTick, Rail, CustomState, CustomKind,
 }
 
 export enum Page { loading, setup, home }
@@ -38,6 +39,7 @@ export component AppWindow inherits Window {
 
     if EpgState.open: EpgDialog { }
     if RestreamState.open: RestreamDialog { }
+    if CustomState.kind != CustomKind.none: CustomDialog { }
     if DialogState.kind != DialogKind.none: DialogOverlay { }
 
     if toast != "": Rectangle {
