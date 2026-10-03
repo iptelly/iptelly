@@ -24,7 +24,8 @@ Angular component it replaces, under `src/app/`.
 - [x] Toasts.
 - [x] Error dialog (`error-modal`): the error text, a Copy button, and where the logs are.
       Opened by clicking an error toast.
-- [ ] Desktop notifications for EPG reminders. Today these show as a toast.
+- [x] Desktop notifications for EPG reminders (notify-rust). If no notification service is
+      running, the reminder shows as a toast instead.
 - [ ] Single instance.
 - [ ] Remember window size and position.
 - [ ] Tray icon (Windows and macOS).
@@ -113,4 +114,4 @@ Angular component it replaces, under `src/app/`.
 - In Settings, the re-stream port and zoom are only saved when you leave the page.
 - Deleting a source has no confirmation. The Slint app asks first.
 - The EPG reminder bell does nothing when the tray icon is off, which is always the case on
-  Linux. The Slint app always allows reminders, and shows them as a toast for now.
+  Linux. The Slint app always allows reminders.

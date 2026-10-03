@@ -3787,6 +3787,7 @@ dependencies = [
  "directories",
  "image",
  "iptelly-core",
+ "notify-rust",
  "rfd",
  "sha2 0.11.0",
  "slint",

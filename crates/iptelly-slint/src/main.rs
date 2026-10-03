@@ -58,6 +58,10 @@ fn main() -> Result<()> {
     }
 
     let window = AppWindow::new()?;
+    // Wayland desktops take the taskbar icon from the .desktop file matching
+    // this id (StartupWMClass=iptelly in the packages' IPTelly.desktop, as
+    // for the Tauri app), not from the window's own icon.
+    slint::set_xdg_app_id("iptelly")?;
     window.set_version(env!("CARGO_PKG_VERSION").into());
     WINDOW.set(window.as_weak()).ok();
     EVENTS.set(events::new(&window)).ok();
