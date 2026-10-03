@@ -52,7 +52,9 @@ export class SettingsComponent {
   networkInterfaces: NetworkInterface[] = [];
   sortTypes = SORT_TYPES;
   @ViewChild("mpvParams") mpvParams!: ElementRef;
-  @ViewChild("vlcParams") vlcParams!: ElementRef;
+  // Not rendered in the Flatpak, which only bundles mpv.
+  @ViewChild("vlcParams") vlcParams?: ElementRef;
+  isFlatpak = false;
   @ViewChild(NavRailComponent) navRail?: NavRailComponent;
 
   newAdultPin: string = "";
@@ -158,6 +160,7 @@ export class SettingsComponent {
 
   ngOnInit(): void {
     this.getSettings();
+    invoke("is_flatpak").then((x) => (this.isFlatpak = x as boolean));
     this.getSources();
     this.getNetworkInterfaces();
     this.getHasAdultPin();
@@ -254,19 +257,21 @@ export class SettingsComponent {
           await this.updateSettings();
         }),
     );
-    this.subscriptions.push(
-      fromEvent(this.vlcParams.nativeElement, "keyup")
-        .pipe(
-          map((event: any) => {
-            return event.target.value;
+    if (this.vlcParams) {
+      this.subscriptions.push(
+        fromEvent(this.vlcParams.nativeElement, "keyup")
+          .pipe(
+            map((event: any) => {
+              return event.target.value;
+            }),
+            debounceTime(500),
+            distinctUntilChanged(),
+          )
+          .subscribe(async () => {
+            await this.updateSettings();
           }),
-          debounceTime(500),
-          distinctUntilChanged(),
-        )
-        .subscribe(async () => {
-          await this.updateSettings();
-        }),
-    );
+      );
+    }
     this.subscriptions.push(
       this.memory.RefreshSources.subscribe((_) => {
         this.getSources();
