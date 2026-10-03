@@ -32,7 +32,10 @@ Angular component it replaces, under `src/app/`.
 - [x] Remember window size, position and maximized state (`window_state.rs`). Wayland
       doesn't let windows place themselves, so there only the size and maximized state
       come back.
-- [ ] Tray icon (Windows and macOS).
+- [x] Tray icon on Windows and macOS (`tray.rs`), with Show and Quit. While it's on,
+      closing the window hides it to the tray. Turning the setting on or off takes effect
+      at once, not on the next start. Clicking the macOS Dock icon doesn't yet bring a
+      hidden window back (winit 0.30 doesn't report it); the tray icon does.
 - [x] Classic and Modern themes; UI zoom (`zoom.rs`), which multiplies the system's scale
       factor and applies as soon as it's changed.
 - What's new dialog (`whats-new-modal`): not ported, by decision. Its notes were last

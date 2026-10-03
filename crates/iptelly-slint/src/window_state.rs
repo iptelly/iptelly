@@ -35,7 +35,8 @@ fn read() -> Option<WindowState> {
 }
 
 /// Restores the saved state, and saves it again when the window closes.
-/// Call before the window is shown.
+/// Closing quits the app, unless the tray icon is on. Call before the window
+/// is shown.
 pub fn setup(window: &AppWindow) {
     if let Some(state) = read() {
         if state.width > 0 && state.height > 0 {
@@ -62,6 +63,9 @@ pub fn setup(window: &AppWindow) {
     window.window().on_close_requested(move || {
         if let Some(window) = weak.upgrade() {
             save(&window);
+        }
+        if !crate::tray::enabled() {
+            let _ = slint::quit_event_loop();
         }
         slint::CloseRequestResponse::HideWindow
     });

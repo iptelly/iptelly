@@ -13,6 +13,7 @@ mod instance;
 mod restream;
 mod settings_page;
 mod setup;
+mod tray;
 mod window_state;
 mod zoom;
 
@@ -95,7 +96,11 @@ fn main() -> Result<()> {
 
     start();
 
-    window.run()?;
+    // Not window.run(), which quits once the window is hidden: with the tray
+    // icon on, closing the window only hides it. window_state quits on close
+    // otherwise.
+    window.show()?;
+    slint::run_event_loop_until_quit()?;
     Ok(())
 }
 
@@ -111,6 +116,7 @@ pub fn start() {
                     .global::<Theme>()
                     .set_classic(settings.theme.as_deref() == Some("classic"));
                 zoom::set(settings.zoom.unwrap_or(100));
+                tray::set(settings.enable_tray_icon.unwrap_or(true));
                 if sources.is_empty() {
                     setup::show(window, false);
                 } else {

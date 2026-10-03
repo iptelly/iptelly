@@ -86,10 +86,12 @@ fn answer(stream: TcpStream) -> std::io::Result<bool> {
     Ok(true)
 }
 
-fn show_window() {
+/// Brings the window back, including from the tray.
+pub fn show_window() {
     let Some(window) = crate::window() else {
         return;
     };
+    let _ = window.show();
     window.window().set_minimized(false);
     // Desktops may only flash the taskbar entry rather than switch to it
     // (Wayland requires an activation token from the launcher).

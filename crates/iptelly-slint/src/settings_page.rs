@@ -411,6 +411,7 @@ fn save(window: &AppWindow) {
         .global::<crate::Theme>()
         .set_classic(s.theme.as_deref() == Some("classic"));
     crate::zoom::set(s.zoom.unwrap_or(100));
+    crate::tray::set(s.enable_tray_icon.unwrap_or(true));
     crate::home::set_settings(s.clone());
     crate::spawn(
         crate::blocking(move || settings::update_settings(s)),
