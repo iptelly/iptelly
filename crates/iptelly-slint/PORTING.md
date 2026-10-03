@@ -33,8 +33,10 @@ Angular component it replaces, under `src/app/`.
       doesn't let windows place themselves, so there only the size and maximized state
       come back.
 - [ ] Tray icon (Windows and macOS).
-- [ ] Classic and Modern themes; UI zoom.
-- [ ] What's new dialog (`whats-new-modal`).
+- [x] Classic and Modern themes; UI zoom (`zoom.rs`), which multiplies the system's scale
+      factor and applies as soon as it's changed.
+- What's new dialog (`whats-new-modal`): not ported, by decision. Its notes were last
+  updated for open-tv 1.9.1, before the fork.
 - [x] Keyboard shortcuts help, opened with F1 (`shortcuts-help-modal`).
 
 ## Home (`home/`)
@@ -97,8 +99,8 @@ Angular component it replaces, under `src/app/`.
 - [x] Setup: Custom import, Import backup, and the Delete everything button.
 - [x] Settings (`settings/`): every setting, the adult PIN, export and import of app data,
       Delete everything (`confirm-delete-modal`). Settings save as you change them.
-- [ ] Settings: UI zoom. There's no webview to zoom; it could set Slint's scale factor at
-      startup.
+- [x] Settings: UI zoom, 50% to 300%. The Angular app allowed 10% to 1000%, where the
+      window becomes unusable.
 - [x] Source tiles (`settings/source-tile/`): enable, edit, refresh, EPG, favourites
       backup and restore, delete, and Share for custom sources.
 - [x] Source tiles: Add channel, Add category and Import for custom sources.

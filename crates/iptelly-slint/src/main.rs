@@ -14,6 +14,7 @@ mod restream;
 mod settings_page;
 mod setup;
 mod window_state;
+mod zoom;
 
 use std::cell::RefCell;
 use std::sync::{LazyLock, OnceLock};
@@ -69,6 +70,7 @@ fn main() -> Result<()> {
     slint::set_xdg_app_id("iptelly")?;
     instance::listen();
     window_state::setup(&window);
+    zoom::setup(&window);
     window.set_version(env!("CARGO_PKG_VERSION").into());
     WINDOW.set(window.as_weak()).ok();
     EVENTS.set(events::new(&window)).ok();
@@ -108,6 +110,7 @@ pub fn start() {
                 window
                     .global::<Theme>()
                     .set_classic(settings.theme.as_deref() == Some("classic"));
+                zoom::set(settings.zoom.unwrap_or(100));
                 if sources.is_empty() {
                     setup::show(window, false);
                 } else {

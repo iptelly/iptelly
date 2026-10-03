@@ -18,7 +18,7 @@ const SAVE_DELAY: Duration = Duration::from_millis(400);
 #[derive(Default)]
 struct Page {
     // Last loaded or saved settings; keeps the values this page has no
-    // control for (zoom).
+    // control for.
     settings: Option<Settings>,
     // The IP behind each entry of the interfaces combo box ("" = system
     // default).
@@ -294,6 +294,11 @@ fn show_settings(window: &AppWindow, s: &Settings) {
     state.set_mpv_params(s.mpv_params.clone().unwrap_or_default().into());
     state.set_vlc_params(s.vlc_params.clone().unwrap_or_default().into());
     state.set_theme((s.theme.as_deref() == Some("classic")) as i32);
+    state.set_zoom(i32::from(
+        s.zoom
+            .unwrap_or(100)
+            .clamp(crate::zoom::MIN, crate::zoom::MAX),
+    ));
     state.set_player((s.player.as_deref() == Some("vlc")) as i32);
     state.set_default_view(s.default_view.unwrap_or(1).min(4) as i32);
     state.set_default_sort(s.default_sort.unwrap_or(sort_type::PROVIDER) as i32);
@@ -357,6 +362,7 @@ fn save(window: &AppWindow) {
     s.recording_path = optional(&state.get_recording_path());
     s.mpv_params = optional(&state.get_mpv_params());
     s.vlc_params = optional(&state.get_vlc_params());
+    s.zoom = u16::try_from(state.get_zoom()).ok().or(s.zoom);
     s.theme = Some(
         if state.get_theme() == 1 {
             "classic"
@@ -404,6 +410,7 @@ fn save(window: &AppWindow) {
     window
         .global::<crate::Theme>()
         .set_classic(s.theme.as_deref() == Some("classic"));
+    crate::zoom::set(s.zoom.unwrap_or(100));
     crate::home::set_settings(s.clone());
     crate::spawn(
         crate::blocking(move || settings::update_settings(s)),

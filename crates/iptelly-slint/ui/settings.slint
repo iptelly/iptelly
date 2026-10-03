@@ -1,4 +1,4 @@
-import { Button, ComboBox, LineEdit, ScrollView, Slider, Switch } from "std-widgets.slint";
+import { Button, ComboBox, LineEdit, ScrollView, Slider, SpinBox, Switch } from "std-widgets.slint";
 import { Theme, Icons, Icon } from "theme.slint";
 import { SettingsState, SourceItem, SourceAction } from "state.slint";
 
@@ -366,6 +366,23 @@ export component SettingsView inherits Rectangle {
                         model: ["Modern", "Classic"];
                         current-index <=> SettingsState.theme;
                         selected => { SettingsState.changed(); }
+                    }
+                }
+
+                SettingRow {
+                    label: "UI zoom";
+                    hint: "50% to 300%";
+                    SpinBox {
+                        minimum: 50;
+                        maximum: 300;
+                        step-size: 10;
+                        value <=> SettingsState.zoom;
+                        edited => { SettingsState.changed(); }
+                    }
+                    Text {
+                        text: "%";
+                        color: Theme.text-primary;
+                        vertical-alignment: center;
                     }
                 }
 
