@@ -8,14 +8,14 @@ component TypeButton inherits Rectangle {
     property <bool> active: SetupState.source-type == source-type;
 
     height: 36px;
-    min-width: 110px;
+    min-width: max(100px, label-text.preferred-width + 24px);
     border-radius: Theme.radius-sm;
     background: active ? Theme.accent : touch.has-hover ? Theme.surface-3 : Theme.surface-2;
 
     touch := TouchArea {
         clicked => { SetupState.source-type = root.source-type; }
     }
-    Text {
+    label-text := Text {
         text: root.label;
         color: root.active ? Theme.accent-contrast : Theme.text-primary;
     }
@@ -93,10 +93,11 @@ export component SetupView inherits Rectangle {
                 TypeButton { label: "M3U URL"; source-type: 1; }
                 TypeButton { label: "Xtream"; source-type: 2; }
                 TypeButton { label: "Custom"; source-type: 3; }
+                TypeButton { label: "Custom Import"; source-type: 4; }
             }
 
             Field {
-                label: "Nickname";
+                label: type == 4 ? "Nickname (optional, overrides the imported name)" : "Nickname";
                 LineEdit {
                     placeholder-text: "My provider";
                     text <=> SetupState.name;
@@ -150,10 +151,25 @@ export component SetupView inherits Rectangle {
                 Button {
                     primary: true;
                     enabled: root.valid;
-                    text: type == 0 ? "Select file" : type == 1 ? "Fetch" : type == 2 ? "Login" : "Add custom source";
+                    text: type == 0 ? "Select file" : type == 1 ? "Fetch" : type == 2 ? "Login" : type == 3 ? "Add custom source" : "Import custom source";
                     clicked => { SetupState.submit(); }
                 }
             }
+
+            if !SetupState.can-go-back: HorizontalLayout {
+                alignment: center;
+                Button {
+                    text: "Import backup";
+                    clicked => { SetupState.import-backup(); }
+                }
+            }
         }
+    }
+
+    if !SetupState.can-go-back && !SetupState.loading: Button {
+        x: parent.width - self.width - 16px;
+        y: parent.height - self.height - 16px;
+        text: "Delete everything";
+        clicked => { SetupState.delete-everything(); }
     }
 }

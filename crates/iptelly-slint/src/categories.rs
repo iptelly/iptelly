@@ -337,6 +337,8 @@ fn set_groups_hidden(hidden: bool) {
                         group.hidden = Some(hidden);
                     }
                 }
+                page.selected.clear();
+                page.last_clicked = None;
             });
             let verb = if hidden { "Hid" } else { "Unhid" };
             let noun = if count == 1 { "category" } else { "categories" };

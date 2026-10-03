@@ -97,6 +97,12 @@ export global HomeState {
     callback clear-history();
     callback sidebar-clicked(int);
     callback sidebar-toggled(int);
+    callback sidebar-hide-category(int);
+    // BulkActionType: 0 = hide, 1 = unhide, 2 = favorite, 3 = unfavorite;
+    // applied to everything the current filters match.
+    callback bulk-action(int);
+    // Inside a series but not a season, where bulk actions don't apply.
+    in-out property <bool> bulk-disabled;
 
     callback tile-activated(int);
     callback tile-favorite(int);
@@ -104,6 +110,7 @@ export global HomeState {
     callback tile-remove-history(int);
     callback tile-copy-url(int);
     callback tile-record(int);
+    callback tile-restream(int);
     callback tile-download(int);
     callback tile-cancel-download(int);
     // A series or season: queues all its episodes.
@@ -289,7 +296,29 @@ export global EpgState {
     callback toggle-reminder();
 }
 
-export enum DialogKind { none, confirm, pin }
+// Re-streaming a live channel to other devices through ffmpeg and a small
+// web server.
+export global RestreamState {
+    in-out property <bool> open;
+    in-out property <string> channel-name;
+    // Waiting for the restream to start.
+    in-out property <bool> loading;
+    in-out property <bool> started;
+    in-out property <bool> watching;
+    in-out property <[string]> local-ips;
+    in-out property <string> wan-ip;
+    // The local IPs and the WAN IP, for the share picker.
+    in-out property <[string]> share-ips;
+    in-out property <int> share-ip;
+
+    callback start();
+    callback stop();
+    callback watch();
+    callback share();
+    callback close();
+}
+
+export enum DialogKind { none, confirm, pin, error }
 
 // A single modal dialog, drawn over the whole window.
 export global DialogState {
@@ -297,15 +326,19 @@ export global DialogState {
     in-out property <string> title;
     in-out property <string> message;
     in-out property <string> confirm-label: "OK";
+    in-out property <string> cancel-label: "Cancel";
     in-out property <string> pin;
     in-out property <string> pin-error;
+    // The full error, for the error dialog's copyable text box.
+    in-out property <string> details;
 
     callback confirmed();
     callback cancelled();
 }
 
 export global SetupState {
-    // 0 = M3U file, 1 = M3U URL, 2 = Xtream, 3 = Custom (SourceType numbers).
+    // 0 = M3U file, 1 = M3U URL, 2 = Xtream, 3 = Custom, 4 = Custom import
+    // (SourceType numbers).
     in-out property <int> source-type: 0;
     in-out property <string> name;
     in-out property <string> url;
@@ -322,4 +355,7 @@ export global SetupState {
     callback name-edited(string);
     callback submit();
     callback back();
+    // First run only: restore an app data export, or wipe everything.
+    callback import-backup();
+    callback delete-everything();
 }

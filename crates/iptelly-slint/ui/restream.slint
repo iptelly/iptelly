@@ -1,0 +1,121 @@
+import { Button, ComboBox } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { RestreamState } from "state.slint";
+
+export component RestreamDialog inherits Rectangle {
+    background: #000000a0;
+
+    // Swallows clicks so nothing behind the dialog reacts.
+    TouchArea { }
+
+    FocusScope {
+        init => { self.focus(); }
+        key-pressed(event) => {
+            // A running restream has to be stopped first.
+            if event.text == Key.Escape && !RestreamState.started {
+                RestreamState.close();
+                return accept;
+            }
+            reject
+        }
+
+        Rectangle {
+            width: min(600px, root.width - 48px);
+            height: min(content.preferred-height, root.height - 48px);
+            border-radius: Theme.radius-md;
+            background: Theme.surface-1;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: #00000080;
+            clip: true;
+
+            content := VerticalLayout {
+                padding: 20px;
+                spacing: 12px;
+
+                Text {
+                    text: "Re-streaming: " + RestreamState.channel-name;
+                    font-size: 18px;
+                    font-weight: 600;
+                    overflow: elide;
+                    color: Theme.text-primary;
+                }
+
+                if !RestreamState.started: Text {
+                    text: "If your IPTV service does not allow more than one connection, re-streaming lets you share a livestream with friends and family over your LAN or the internet.\n\nPress Start to launch the re-streaming service. Instructions for sharing it will appear here along with its status.";
+                    wrap: word-wrap;
+                    color: Theme.text-secondary;
+                }
+
+                if RestreamState.started: Rectangle {
+                    border-radius: Theme.radius-sm;
+                    background: Theme.surface-2;
+                    height: addresses.preferred-height;
+                    addresses := VerticalLayout {
+                        padding: 12px;
+                        spacing: 4px;
+                        Text {
+                            text: "Running and accessible from these addresses:";
+                            color: Theme.text-primary;
+                        }
+                        Text {
+                            text: "Local IPs:";
+                            color: Theme.text-secondary;
+                        }
+                        for ip in RestreamState.local-ips: Text {
+                            text: ip;
+                            color: Theme.text-primary;
+                        }
+                        Text {
+                            text: "WAN address:";
+                            color: Theme.text-secondary;
+                        }
+                        Text {
+                            text: RestreamState.wan-ip;
+                            color: Theme.text-primary;
+                        }
+                    }
+                }
+
+                if RestreamState.started: Text {
+                    text: "Pick an address and press Share to save an .otv file. Others can import it into a custom source in IPTelly to watch. A local IP only works for people on your network.";
+                    wrap: word-wrap;
+                    color: Theme.text-secondary;
+                }
+
+                if RestreamState.started: ComboBox {
+                    model: RestreamState.share-ips;
+                    current-index <=> RestreamState.share-ip;
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: end;
+                    if !RestreamState.started: Button {
+                        text: "Close";
+                        clicked => { RestreamState.close(); }
+                    }
+                    if !RestreamState.started: Button {
+                        text: RestreamState.loading ? "Starting..." : "Start";
+                        primary: true;
+                        enabled: !RestreamState.loading;
+                        clicked => { RestreamState.start(); }
+                    }
+                    if RestreamState.started: Button {
+                        text: "Watch";
+                        enabled: !RestreamState.watching;
+                        clicked => { RestreamState.watch(); }
+                    }
+                    if RestreamState.started: Button {
+                        text: "Share";
+                        clicked => { RestreamState.share(); }
+                    }
+                    if RestreamState.started: Button {
+                        text: "Stop";
+                        primary: true;
+                        clicked => { RestreamState.stop(); }
+                    }
+                }
+            }
+        }
+    }
+}

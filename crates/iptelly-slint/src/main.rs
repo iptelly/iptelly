@@ -8,6 +8,7 @@ mod epg;
 mod events;
 mod home;
 mod images;
+mod restream;
 mod settings_page;
 mod setup;
 
@@ -39,6 +40,10 @@ static EVENTS: OnceLock<Events> = OnceLock::new();
 
 thread_local! {
     static TOAST_TIMER: RefCell<Timer> = RefCell::new(Timer::default());
+    // The full text of the last error toast, for the error dialog.
+    static LAST_ERROR: RefCell<String> = const { RefCell::new(String::new()) };
+    // Kept alive because on X11 the clipboard contents vanish with it.
+    static CLIPBOARD: RefCell<Option<arboard::Clipboard>> = const { RefCell::new(None) };
 }
 
 fn main() -> Result<()> {
@@ -61,7 +66,18 @@ fn main() -> Result<()> {
     categories::setup(&window);
     downloads::setup(&window);
     epg::setup(&window);
+    restream::setup(&window);
     dialog::setup(&window);
+
+    let weak = window.as_weak();
+    window.on_toast_clicked(move || {
+        let Some(window) = weak.upgrade() else { return };
+        if window.get_toast_error() {
+            window.set_toast("".into());
+            dialog::show_error(&window, &LAST_ERROR.with_borrow(|e| e.clone()));
+        }
+    });
+
     start();
 
     window.run()?;
@@ -133,8 +149,21 @@ pub fn show_toast(window: &AppWindow, message: &str) {
 }
 
 pub fn show_error(window: &AppWindow, error: &anyhow::Error) {
-    log::log(format!("{:?}", error));
-    toast(window, &format!("{error:#}"), true);
+    let details = format!("{error:?}");
+    log::log(details.clone());
+    LAST_ERROR.set(details);
+    toast(window, &format!("{error:#}\nClick for details"), true);
+}
+
+/// Copies text to the system clipboard.
+pub fn copy_to_clipboard(text: String) -> Result<()> {
+    CLIPBOARD.with_borrow_mut(|clipboard| {
+        if clipboard.is_none() {
+            *clipboard = Some(arboard::Clipboard::new()?);
+        }
+        clipboard.as_mut().unwrap().set_text(text)?;
+        Ok(())
+    })
 }
 
 fn toast(window: &AppWindow, message: &str, error: bool) {

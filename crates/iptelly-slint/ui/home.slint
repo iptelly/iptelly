@@ -119,6 +119,21 @@ component SidebarRowView inherits Rectangle {
     touch := TouchArea {
         enabled: data.kind != 3;
         clicked => { HomeState.sidebar-clicked(index); }
+        pointer-event(event) => {
+            if data.kind == 2 && event.button == PointerEventButton.right && event.kind == PointerEventKind.up {
+                menu.show({ x: self.mouse-x, y: self.mouse-y });
+            }
+        }
+    }
+
+    menu := ContextMenuArea {
+        enabled: false;
+        Menu {
+            MenuItem {
+                title: "Hide";
+                activated => { HomeState.sidebar-hide-category(index); }
+            }
+        }
     }
 
     HorizontalLayout {
@@ -255,6 +270,10 @@ component Tile inherits Rectangle {
             if item.media-type == 4 && !HomeState.batch-running: MenuItem {
                 title: "Download Season";
                 activated => { HomeState.tile-download-all(index); }
+            }
+            if item.media-type == 0: MenuItem {
+                title: "Re-stream";
+                activated => { HomeState.tile-restream(index); }
             }
             if item.media-type < 3: MenuItem {
                 title: "Copy URL";
@@ -417,6 +436,41 @@ component SortButton inherits IconButton {
     }
 }
 
+component BulkButton inherits IconButton {
+    icon: Icons.bulk-actions;
+    icon-color: HomeState.bulk-disabled ? Theme.text-secondary : Theme.text-primary;
+    opacity: HomeState.bulk-disabled ? 0.5 : 1;
+    clicked => {
+        if !HomeState.bulk-disabled {
+            menu.show({ x: 0, y: self.height });
+        }
+    }
+
+    menu := ContextMenuArea {
+        enabled: false;
+        Menu {
+            MenuItem {
+                title: "Hide all";
+                activated => { HomeState.bulk-action(0); }
+            }
+            MenuItem {
+                title: "Unhide all";
+                activated => { HomeState.bulk-action(1); }
+            }
+            MenuItem {
+                title: "Favorite all";
+                enabled: HomeState.view-type != 2;
+                activated => { HomeState.bulk-action(2); }
+            }
+            MenuItem {
+                title: "Unfavorite all";
+                enabled: HomeState.view-type != 2;
+                activated => { HomeState.bulk-action(3); }
+            }
+        }
+    }
+}
+
 export component HomeView inherits Rectangle {
     background: Theme.bg-base;
 
@@ -447,6 +501,7 @@ export component HomeView inherits Rectangle {
                     icon-color: HomeState.use-keywords ? Theme.accent-hover : Theme.text-primary;
                     clicked => { HomeState.toggle-keywords(); }
                 }
+                BulkButton { }
                 SortButton { }
             }
 

@@ -5,10 +5,10 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use iptelly_core::types::Source;
-use iptelly_core::{api, m3u, source_type, sql, xtream};
+use iptelly_core::{api, app_data, m3u, share, source_type, sql, xtream};
 use slint::{ComponentHandle, Timer, TimerMode};
 
-use crate::{AppWindow, Page, SetupState};
+use crate::{AppWindow, Page, SetupState, dialog};
 
 thread_local! {
     static NAME_CHECK: RefCell<Timer> = RefCell::new(Timer::default());
@@ -60,6 +60,39 @@ pub fn setup(window: &AppWindow) {
     state.on_back(move || {
         if let Some(window) = weak.upgrade() {
             window.set_page(Page::Home);
+        }
+    });
+
+    state.on_import_backup(|| {
+        crate::spawn(
+            async {
+                let Some(path) = rfd::AsyncFileDialog::new()
+                    .set_title("Select an exported data file")
+                    .add_filter("IPTelly backup", &["otva"])
+                    .pick_file()
+                    .await
+                else {
+                    return Ok(false);
+                };
+                let path = path.path().to_string_lossy().into_owned();
+                crate::blocking(move || app_data::import_app_data(path)).await?;
+                Ok(true)
+            },
+            |window, result| match result {
+                Ok(true) => {
+                    crate::show_toast(window, "Data imported successfully");
+                    crate::start();
+                }
+                Ok(false) => {}
+                Err(e) => crate::show_error(window, &e.context("Failed to import data")),
+            },
+        );
+    });
+
+    let weak = window.as_weak();
+    state.on_delete_everything(move || {
+        if let Some(window) = weak.upgrade() {
+            crate::settings_page::confirm_delete_everything(&window);
         }
     });
 }
@@ -135,8 +168,54 @@ fn submit(window: &AppWindow) {
                 );
             }
         }
+        // A bare server address is usually missing the API path.
+        if let Some((base, path, rest)) = source.url.as_deref().map(split_url) {
+            if path.is_empty() || path == "/" {
+                let corrected = format!("{base}/player_api.php{rest}");
+                let mut fixed = source.clone();
+                fixed.url = Some(corrected);
+                let unchanged = source.clone();
+                dialog::choose(
+                    window,
+                    "Is this the right URL?",
+                    "It seems your URL is not pointing to an Xtream API server. You can proceed \
+                     anyway, or have the URL corrected automatically.\n\nIf the corrected URL \
+                     still fails, please ask your provider for its Xtream API URL or check your \
+                     credentials.",
+                    "Correct URL automatically",
+                    "Proceed anyway",
+                    move |window| add_source(window, fixed.clone()),
+                    move |window| add_source(window, unchanged.clone()),
+                );
+                return;
+            }
+        }
     }
+    add_source(window, source);
+}
 
+// Splits a URL into "scheme://host:port", the path, and any query or
+// fragment.
+fn split_url(url: &str) -> (String, String, String) {
+    let host_start = url.find("://").map(|i| i + 3).unwrap_or(0);
+    let path_start = url[host_start..]
+        .find(['/', '?', '#'])
+        .map(|i| host_start + i)
+        .unwrap_or(url.len());
+    let rest_start = url[path_start..]
+        .find(['?', '#'])
+        .map(|i| path_start + i)
+        .unwrap_or(url.len());
+    (
+        url[..path_start].to_string(),
+        url[path_start..rest_start].to_string(),
+        url[rest_start..].to_string(),
+    )
+}
+
+fn add_source(window: &AppWindow, mut source: Source) {
+    let state = window.global::<SetupState>();
+    let name_override = optional(&state.get_name());
     state.set_loading(true);
     let name = source.name.clone();
     crate::spawn(
@@ -158,7 +237,22 @@ fn submit(window: &AppWindow) {
                 }
                 source_type::M3U_LINK => m3u::get_m3u8_from_link(source, false).await?,
                 source_type::XTREAM => xtream::get_xtream(source, false).await?,
-                _ => crate::blocking(move || api::add_custom_source(source.name)).await?,
+                source_type::CUSTOM => {
+                    crate::blocking(move || api::add_custom_source(source.name)).await?
+                }
+                // Custom import: a custom source someone shared as .otvp.
+                _ => {
+                    let Some(path) = rfd::AsyncFileDialog::new()
+                        .set_title("Select IPTelly export file (.otvp)")
+                        .add_filter("IPTelly playlist", &["otvp"])
+                        .pick_file()
+                        .await
+                    else {
+                        return Ok(false);
+                    };
+                    let path = path.path().to_string_lossy().into_owned();
+                    crate::blocking(move || share::import(path, None, name_override)).await?;
+                }
             }
             Ok(true)
         },
@@ -167,7 +261,12 @@ fn submit(window: &AppWindow) {
             match result {
                 Ok(false) => {}
                 Ok(true) => {
-                    crate::show_toast(window, &format!("\"{name}\" successfully added"));
+                    let message = if name.is_empty() {
+                        "Source successfully imported".to_string()
+                    } else {
+                        format!("\"{name}\" successfully added")
+                    };
+                    crate::show_toast(window, &message);
                     clear_form(window);
                     crate::start();
                 }

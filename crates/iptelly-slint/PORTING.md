@@ -22,7 +22,8 @@ Angular component it replaces, under `src/app/`.
   - [x] `on_start_check_epg` when there is an Xtream source.
   - [x] Run refresh-on-start.
 - [x] Toasts.
-- [ ] Error dialog (`error-modal`): the error text, a Copy button, and where the logs are.
+- [x] Error dialog (`error-modal`): the error text, a Copy button, and where the logs are.
+      Opened by clicking an error toast.
 - [ ] Desktop notifications for EPG reminders. Today these show as a toast.
 - [ ] Single instance.
 - [ ] Remember window size and position.
@@ -38,12 +39,12 @@ Angular component it replaces, under `src/app/`.
 - [x] Adult content lock button on the nav rail (`adult-pin-modal`).
 - [x] Playlist sidebar: All playlists, each source, and each source's categories, which
       expand and collapse. Selecting a category drills into it.
-- [ ] Hide a category from its context menu.
+- [x] Hide a category from its context menu.
 - [ ] Collapse and resize the playlist sidebar.
 - [x] Search with a 300 ms debounce.
 - [x] Keyword search toggle.
 - [x] Sort menu.
-- [ ] Bulk actions: hide, unhide, favourite, unfavourite.
+- [x] Bulk actions: hide, unhide, favourite, unfavourite.
 - [x] Channel grid:
   - [x] Columns fit the window width.
   - [x] Loads the next page of 36 when you scroll near the end.
@@ -64,7 +65,7 @@ Angular component it replaces, under `src/app/`.
   - [x] Copy URL.
   - [x] Record.
   - [x] Download, Download series, Download season, and a progress bar on the tile.
-  - [ ] Re-stream.
+  - [x] Re-stream.
   - [ ] Edit, Share and Delete, for custom sources.
 - [ ] Keyboard navigation:
   - [ ] Ctrl+F for search.
@@ -77,8 +78,8 @@ Angular component it replaces, under `src/app/`.
 ## Other screens
 
 - [x] Setup (`setup/`): M3U file, M3U URL, Xtream and Custom sources.
-- [ ] Setup: a warning for Xtream URLs whose path is `/`.
-- [ ] Setup: Custom import, Import backup, and the Delete everything button.
+- [x] Setup: a warning for Xtream URLs whose path is `/`.
+- [x] Setup: Custom import, Import backup, and the Delete everything button.
 - [x] Settings (`settings/`): every setting, the adult PIN, export and import of app data,
       Delete everything (`confirm-delete-modal`). Settings save as you change them.
 - [ ] Settings: UI zoom. There's no webview to zoom; it could set Slint's scale factor at
@@ -91,7 +92,7 @@ Angular component it replaces, under `src/app/`.
 - [x] Downloads (`download-manager/`, `home/download-sidebar/`), including queued downloads
       of whole series and seasons.
 - [x] EPG dialog (`epg-modal/`): catch-up playback and download, and reminders.
-- [ ] Re-stream dialog (`restream-modal/`).
+- [x] Re-stream dialog (`restream-modal/`).
 - [ ] Custom channel and category dialogs (`edit-channel-modal`, `edit-group-modal`,
       `delete-group-modal`, `import-modal`).
 

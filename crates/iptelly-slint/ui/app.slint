@@ -1,18 +1,19 @@
 import { Theme } from "theme.slint";
 import {
-    HomeState, SetupState, SettingsState, CategoriesState, DownloadsState, EpgState, DialogState,
-    DialogKind, ChannelItem, SidebarRow, SourceItem, SourceAction, CategoryRow, DownloadRow,
-    DownloadAction, EpgBlock, EpgTick, Rail,
+    HomeState, SetupState, SettingsState, CategoriesState, DownloadsState, EpgState, RestreamState,
+    DialogState, DialogKind, ChannelItem, SidebarRow, SourceItem, SourceAction, CategoryRow,
+    DownloadRow, DownloadAction, EpgBlock, EpgTick, Rail,
 } from "state.slint";
 import { HomeView } from "home.slint";
 import { SetupView } from "setup.slint";
 import { DialogOverlay } from "dialog.slint";
 import { EpgDialog } from "epg.slint";
+import { RestreamDialog } from "restream.slint";
 
 export {
     Theme, HomeState, SetupState, SettingsState, CategoriesState, DownloadsState, EpgState,
-    DialogState, DialogKind, ChannelItem, SidebarRow, SourceItem, SourceAction, CategoryRow,
-    DownloadRow, DownloadAction, EpgBlock, EpgTick, Rail,
+    RestreamState, DialogState, DialogKind, ChannelItem, SidebarRow, SourceItem, SourceAction,
+    CategoryRow, DownloadRow, DownloadAction, EpgBlock, EpgTick, Rail,
 }
 
 export enum Page { loading, setup, home }
@@ -30,12 +31,13 @@ export component AppWindow inherits Window {
     in-out property <Page> page: Page.loading;
     in-out property <string> toast;
     in-out property <bool> toast-error;
-    in-out property <bool> restream-running;
+    callback toast-clicked();
 
     if page == Page.home: HomeView { }
     if page == Page.setup: SetupView { }
 
     if EpgState.open: EpgDialog { }
+    if RestreamState.open: RestreamDialog { }
     if DialogState.kind != DialogKind.none: DialogOverlay { }
 
     if toast != "": Rectangle {
@@ -47,6 +49,11 @@ export component AppWindow inherits Window {
         background: toast-error ? Theme.danger : Theme.surface-3;
         drop-shadow-blur: 12px;
         drop-shadow-color: #00000080;
+        // An error toast opens the error dialog with the full details.
+        TouchArea {
+            mouse-cursor: toast-error ? pointer : default;
+            clicked => { root.toast-clicked(); }
+        }
         toast-text := Text {
             text: toast;
             wrap: word-wrap;

@@ -31,57 +31,90 @@ const FFMPEG_BIN_NAME: &str = "ffmpeg";
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 fn start_ffmpeg_listening(channel: Channel, restream_dir: PathBuf) -> Result<Child> {
-    let headers = sql::get_channel_headers_by_id(channel.id.context("no channel id")?)?;
+    let headers =
+        sql::get_channel_headers_by_id(channel.id.context("no channel id")?)?.unwrap_or_default();
+    let source = channel
+        .source_id
+        .and_then(|id| sql::get_source_from_id(id).ok());
+    let settings = get_settings()?;
     let playlist_dir = get_playlist_dir(restream_dir);
     let mut command = Command::new(get_bin(FFMPEG_BIN_NAME));
-    if let Some(headers) = headers {
-        if let Some(referrer) = headers.referrer {
-            command.arg("-headers");
-            command.arg(format!("Referer: {referrer}"));
-        }
-        if let Some(user_agent) = headers.user_agent {
-            command.arg("-headers");
-            command.arg(format!("User-Agent: {user_agent}"));
-        }
-        if let Some(origin) = headers.http_origin {
-            command.arg("-headers");
-            command.arg(format!("Origin: {origin}"));
-        }
-        if let Some(ignore_ssl) = headers.ignore_ssl {
-            if ignore_ssl {
-                command.arg("-tls_verify");
-                command.arg("0");
-            }
-        }
+    // Only errors, so the pipe read when ffmpeg exits (see
+    // ffmpeg_failure) can't fill up and stall it while it runs.
+    command.args(["-hide_banner", "-nostats", "-loglevel", "error"]);
+
+    // Everything up to -i applies to the input: the provider connection.
+    // The same user agent and network interface mpv would use.
+    if let Some(user_agent) = headers
+        .user_agent
+        .or_else(|| source.as_ref().and_then(|s| s.stream_user_agent.clone()))
+    {
+        command.arg("-user_agent").arg(user_agent);
     }
+    // ffmpeg keeps only the last -headers, so they go in one value.
+    let mut extra_headers = String::new();
+    if let Some(referrer) = headers.referrer {
+        extra_headers.push_str(&format!("Referer: {referrer}\r\n"));
+    }
+    if let Some(origin) = headers.http_origin {
+        extra_headers.push_str(&format!("Origin: {origin}\r\n"));
+    }
+    if !extra_headers.is_empty() {
+        command.arg("-headers").arg(extra_headers);
+    }
+    if headers.ignore_ssl == Some(true) {
+        command.args(["-tls_verify", "0"]);
+    }
+    if let Some(address) = settings.network_interface {
+        command.arg("-local_addr").arg(address);
+    }
+    command.args([
+        "-reconnect",
+        "1",
+        "-reconnect_at_eof",
+        "1",
+        "-reconnect_streamed",
+        "1",
+        "-reconnect_on_network_error",
+        "1",
+    ]);
     #[cfg(target_os = "windows")]
     command.creation_flags(CREATE_NO_WINDOW);
     let child = command
         .arg("-i")
         .arg(channel.url.context("no channel url")?)
-        .arg("-c")
-        .arg("copy")
-        .arg("-f")
-        .arg("hls")
-        .arg("-hls_time")
-        .arg("5")
-        .arg("-hls_list_size")
-        .arg("6")
-        .arg("-hls_flags")
-        .arg("delete_segments")
-        .arg("-reconnect")
-        .arg("1")
-        .arg("-reconnect_at_eof")
-        .arg("1")
-        .arg("-reconnect_streamed")
-        .arg("1")
-        .arg("-reconnect_on_network_error")
-        .arg("1")
+        .args([
+            "-c",
+            "copy",
+            "-f",
+            "hls",
+            "-hls_time",
+            "5",
+            "-hls_list_size",
+            "6",
+            "-hls_flags",
+            "delete_segments",
+        ])
         .arg(playlist_dir)
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()?;
     Ok(child)
+}
+
+// What ffmpeg printed before exiting, for the error shown to the user.
+fn ffmpeg_failure(child: &mut Child) -> anyhow::Error {
+    let mut output = String::new();
+    if let Some(mut stderr) = child.stderr.take() {
+        use std::io::Read;
+        let _ = stderr.read_to_string(&mut output);
+    }
+    let output = output.trim();
+    if output.is_empty() {
+        anyhow::anyhow!("ffmpeg stopped before the re-stream started")
+    } else {
+        anyhow::anyhow!("ffmpeg stopped: {output}")
+    }
 }
 
 async fn start_web_server(
@@ -108,23 +141,42 @@ pub async fn start_restream(
     stop.store(false, std::sync::atomic::Ordering::Relaxed);
     let restream_dir = get_restream_folder()?;
     delete_old_segments(&restream_dir).await?;
+    let playlist = PathBuf::from(get_playlist_dir(restream_dir.clone()));
     let mut ffmpeg_child = start_ffmpeg_listening(channel, restream_dir.clone())?;
     let (web_server_tx, web_server_handle) = start_web_server(restream_dir, port).await?;
-    events.restream_started();
-    while !stop.load(std::sync::atomic::Ordering::Relaxed)
-        && ffmpeg_child
-            .try_wait()
-            .map(|option| option.is_none())
-            .unwrap_or(true)
-        && !web_server_handle.is_finished()
-    {
+
+    // Only report it started once there's something to watch: ffmpeg
+    // writes the playlist after its first segment.
+    let mut started = false;
+    let mut failure = None;
+    while !stop.load(std::sync::atomic::Ordering::Relaxed) && !web_server_handle.is_finished() {
+        match ffmpeg_child.try_wait() {
+            Ok(None) => {}
+            Ok(Some(status)) => {
+                if !status.success() || !started {
+                    failure = Some(ffmpeg_failure(&mut ffmpeg_child));
+                }
+                break;
+            }
+            Err(e) => {
+                failure = Some(e.into());
+                break;
+            }
+        }
+        if !started && playlist.exists() {
+            started = true;
+            events.restream_started();
+        }
         tokio::time::sleep(Duration::from_millis(500)).await
     }
     let _ = ffmpeg_child.kill();
     let _ = web_server_tx.send(true);
     let _ = ffmpeg_child.wait();
     let _ = web_server_handle.await;
-    Ok(())
+    match failure {
+        Some(e) => Err(e),
+        None => Ok(()),
+    }
 }
 
 pub async fn stop_restream(state: &Mutex<AppState>) -> Result<()> {

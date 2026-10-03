@@ -6,7 +6,6 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::time::Duration;
 
-use anyhow::Result;
 use iptelly_core::types::{Channel, Filters, Settings, Source};
 use iptelly_core::{
     api, epg, media_type, mpv, settings, sort_type, source_type, sql, utils, view_type, xtream,
@@ -43,8 +42,6 @@ struct Home {
     series_refreshed: HashSet<i64>,
     // Channel ids whose player is starting; clicking again cancels.
     starting: HashSet<i64>,
-    // Kept alive because on X11 the clipboard contents vanish with it.
-    clipboard: Option<arboard::Clipboard>,
 }
 
 struct Node {
@@ -206,17 +203,67 @@ pub fn setup(window: &AppWindow) {
         let Some(url) = channel_at(index as usize).and_then(|c| c.url) else {
             return;
         };
-        let result = with_home(|home| -> Result<()> {
-            if home.clipboard.is_none() {
-                home.clipboard = Some(arboard::Clipboard::new()?);
-            }
-            home.clipboard.as_mut().unwrap().set_text(url)?;
-            Ok(())
-        });
-        match result {
+        match crate::copy_to_clipboard(url) {
             Ok(()) => crate::show_toast(&window, "Copied channel URL"),
             Err(e) => crate::show_error(&window, &e.context("Failed to copy the URL")),
         }
+    });
+
+    let weak = window.as_weak();
+    state.on_tile_restream(move |index| {
+        let Some(window) = weak.upgrade() else { return };
+        if let Some(channel) = channel_at(index as usize) {
+            crate::restream::open(&window, channel);
+        }
+    });
+
+    state.on_bulk_action(|action| {
+        let Some(filters) = with_home(|home| home.filters.clone()) else {
+            return;
+        };
+        let name = ["hide", "unhide", "favorite", "unfavorite"]
+            .get(action as usize)
+            .copied()
+            .unwrap_or_default();
+        crate::spawn(
+            crate::blocking(move || sql::bulk_update(filters, action as u8)),
+            move |window, result| match result {
+                Ok(()) => {
+                    crate::show_toast(
+                        window,
+                        &format!("Successfully executed bulk update: {name}"),
+                    );
+                    load(window, false);
+                }
+                Err(e) => crate::show_error(window, &e),
+            },
+        );
+    });
+
+    state.on_sidebar_hide_category(|row| {
+        let Some(SidebarAction::Category(source_id, i)) =
+            with_home(|home| home.sidebar.actions.get(row as usize).copied())
+        else {
+            return;
+        };
+        let Some(id) = with_home(|home| home.sidebar.categories.get(&source_id)?.get(i)?.id) else {
+            return;
+        };
+        crate::spawn(
+            crate::blocking(move || sql::hide_group(id, true)),
+            move |window, result| {
+                if let Err(e) = result {
+                    crate::show_error(window, &e);
+                    return;
+                }
+                with_home(|home| {
+                    if let Some(list) = home.sidebar.categories.get_mut(&source_id) {
+                        list.retain(|c| c.id != Some(id));
+                    }
+                });
+                rebuild_sidebar();
+            },
+        );
     });
 
     state.on_tile_record(|index| {
@@ -514,6 +561,7 @@ fn load(window: &AppWindow, more: bool) {
                 let live_only = filters.media_types.as_deref() == Some(&[media_type::LIVESTREAM]);
                 state.set_list_mode(live_only);
                 state.set_show_epg(live_only && !lightweight());
+                state.set_bulk_disabled(filters.series_id.is_some() && filters.season.is_none());
             }
             if state.get_list_mode() && state.get_show_epg() {
                 crate::epg::fetch(channels.clone());

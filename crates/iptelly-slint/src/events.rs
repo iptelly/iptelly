@@ -19,7 +19,9 @@ impl EventSink for SlintEvents {
 
     fn restream_started(&self) {
         let _ = self.0.upgrade_in_event_loop(|window| {
-            window.set_restream_running(true);
+            let state = window.global::<crate::RestreamState>();
+            state.set_started(true);
+            state.set_loading(false);
         });
     }
 

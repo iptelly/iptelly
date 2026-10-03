@@ -206,20 +206,9 @@ pub fn setup(window: &AppWindow) {
 
     let weak = window.as_weak();
     state.on_delete_everything(move || {
-        let Some(window) = weak.upgrade() else { return };
-        dialog::confirm(
-            &window,
-            "Confirm deletion of all user data",
-            "This deletes all your sources, channels, favourites, history and settings. \
-             IPTelly closes now and the data is deleted the next time it starts.",
-            "Confirm delete",
-            |window| {
-                // Exits the process on success.
-                if let Err(e) = utils::create_nuke_request() {
-                    crate::show_error(window, &e);
-                }
-            },
-        );
+        if let Some(window) = weak.upgrade() {
+            confirm_delete_everything(&window);
+        }
     });
 
     let weak = window.as_weak();
@@ -228,6 +217,23 @@ pub fn setup(window: &AppWindow) {
             source_action(&window, index as usize, action);
         }
     });
+}
+
+/// Asks before wiping all data (also offered on the first-run setup page).
+pub fn confirm_delete_everything(window: &AppWindow) {
+    dialog::confirm(
+        window,
+        "Confirm deletion of all user data",
+        "This deletes all your sources, channels, favourites, history and settings. \
+         IPTelly closes now and the data is deleted the next time it starts.",
+        "Confirm delete",
+        |window| {
+            // Exits the process on success.
+            if let Err(e) = utils::create_nuke_request() {
+                crate::show_error(window, &e);
+            }
+        },
+    );
 }
 
 /// Fills the page with the stored settings and sources. Called each time
