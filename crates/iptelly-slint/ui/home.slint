@@ -360,6 +360,7 @@ component Tile inherits Rectangle {
             pointer-event(event) => {
                 if event.kind == PointerEventKind.down {
                     HomeState.focused = index;
+                    HomeState.guide-row = -1;
                     HomeState.focus-grid += 1;
                 }
                 if event.button == PointerEventButton.right && event.kind == PointerEventKind.up {
@@ -479,6 +480,27 @@ component ChannelGrid inherits Rectangle {
         key-pressed(event) => {
             let count = items.length;
             let current = clamp(HomeState.focused - offset, 0, max(0, count - 1));
+            // EPG guide mode: Right on a list row moves into its programmes.
+            if list-mode && HomeState.show-epg && count > 0 {
+                let row = offset + current;
+                if HomeState.guide-row == row {
+                    if event.text == Key.RightArrow {
+                        HomeState.guide-key(row, 0);
+                    } else if event.text == Key.LeftArrow {
+                        HomeState.guide-key(row, 1);
+                    } else if event.text == Key.Return || event.text == " " {
+                        HomeState.guide-key(row, 3);
+                    } else if event.text == Key.UpArrow || event.text == Key.DownArrow || event.text == Key.Escape {
+                        HomeState.guide-key(row, 2);
+                    } else {
+                        return reject;
+                    }
+                    return accept;
+                }
+                if event.text == Key.RightArrow && HomeState.guide-key(row, 0) {
+                    return accept;
+                }
+            }
             if event.text == Key.UpArrow {
                 if current < columns {
                     root.leave-top();
@@ -551,8 +573,17 @@ component ChannelGrid inherits Rectangle {
         }
     }
 
+    // Leaving the grid leaves the EPG guide.
+    property <bool> has-focus: scope.has-focus;
+    changed has-focus => {
+        if !has-focus {
+            HomeState.guide-row = -1;
+        }
+    }
+
     changed scroll-reset => {
         list.content-y = 0;
+        HomeState.guide-row = -1;
         if HomeState.focused >= offset && HomeState.focused < offset + HomeState.fav-offset {
             HomeState.focused = offset;
         }

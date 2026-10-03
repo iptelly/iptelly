@@ -28,6 +28,9 @@ export component EpgTimeline inherits Rectangle {
         height: root.height - 8px;
         border-radius: 4px;
         background: touch.has-hover ? Theme.surface-3 : live ? Theme.accent.with-alpha(0.3) : Theme.surface-2;
+        // The keyboard guide cursor.
+        border-width: HomeState.guide-row == root.row-index && HomeState.guide-start == block.start ? 2px : 0;
+        border-color: Theme.accent;
 
         touch := TouchArea {
             mouse-cursor: pointer;

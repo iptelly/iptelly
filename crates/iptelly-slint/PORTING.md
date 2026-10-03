@@ -60,7 +60,9 @@ Angular component it replaces, under `src/app/`.
   - [x] Empty-state messages.
 - [x] List layout with an EPG timeline for live channels (`epg-timeline`,
       `epg-timeline-header`), panned 3 hours at a time.
-- [ ] EPG keyboard guide mode (Right arrow on a row to step through its programmes).
+- [x] EPG keyboard guide mode: Right on a row moves onto the programme on now. Left and
+      Right then step through the programmes (panning the timeline to keep the cursor in
+      view), Enter opens the programme, and Up, Down or Esc leave the guide.
 - [x] Favourites view: favourite channels (as a list with the EPG) in the top 40%, and
       favourite movies and series in a second grid below. One search box and sort drive
       both. Down from the last channel moves into the second grid, and Up from its top row

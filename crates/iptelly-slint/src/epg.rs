@@ -76,16 +76,17 @@ pub fn setup(window: &AppWindow) {
     let weak = window.as_weak();
     state.on_epg_pan(move |direction| {
         let Some(window) = weak.upgrade() else { return };
-        let offset = with_epg(|e| {
-            e.offset = match direction {
-                0 => 0,
-                d => e.offset + d as i64 * PAN_STEP,
-            };
-            e.offset
-        });
-        window.global::<HomeState>().set_epg_offset(offset as i32);
-        tick(&window);
-        fetch(crate::home::loaded_channels());
+        let offset = match direction {
+            0 => 0,
+            d => with_epg(|e| e.offset) + d as i64 * PAN_STEP,
+        };
+        set_offset(&window, offset);
+    });
+
+    let weak = window.as_weak();
+    state.on_guide_key(move |row, key| {
+        weak.upgrade()
+            .is_some_and(|window| guide_key(&window, row, key))
     });
 
     let weak = window.as_weak();
@@ -134,6 +135,97 @@ pub fn setup(window: &AppWindow) {
         }
     });
     dialog.on_toggle_reminder(toggle_reminder);
+}
+
+/// Pans the timeline (seconds from now) and fetches the programmes there.
+fn set_offset(window: &AppWindow, offset: i64) {
+    with_epg(|e| e.offset = offset);
+    window.global::<HomeState>().set_epg_offset(offset as i32);
+    tick(window);
+    fetch(crate::home::loaded_channels());
+}
+
+// Keys for guide_key (HomeState.guide-key).
+const GUIDE_RIGHT: i32 = 0;
+const GUIDE_LEFT: i32 = 1;
+const GUIDE_EXIT: i32 = 2;
+const GUIDE_OPEN: i32 = 3;
+
+/// Keyboard guide mode on a list row (the Angular epg-timeline's guide):
+/// Right enters it on the programme on now, Left and Right step through
+/// the programmes, panning the timeline to keep the cursor in view, and
+/// Enter opens the programme. The cursor follows the programme's start
+/// time, since a pan replaces the row's programmes.
+fn guide_key(window: &AppWindow, row: i32, key: i32) -> bool {
+    let state = window.global::<HomeState>();
+    let Some(channel) = crate::home::channel_at(row as usize) else {
+        return false;
+    };
+    let Some(id) = channel.id else { return false };
+    let programmes = with_epg(|e| e.programmes.get(&id).cloned()).unwrap_or_default();
+    let active = state.get_guide_row() == row;
+    if !active {
+        if key != GUIDE_RIGHT || programmes.is_empty() {
+            return false;
+        }
+        let now = now();
+        let on_now = programmes
+            .iter()
+            .find(|p| p.start_timestamp <= now && p.end_timestamp > now)
+            .unwrap_or(&programmes[0]);
+        show_guide(window, row, on_now);
+        return true;
+    }
+    let current = programmes
+        .iter()
+        .position(|p| relative(p.start_timestamp) == state.get_guide_start());
+    match key {
+        GUIDE_RIGHT | GUIDE_LEFT => {
+            let next = match current {
+                Some(i) if key == GUIDE_RIGHT => (i + 1).min(programmes.len().saturating_sub(1)),
+                Some(i) => i.saturating_sub(1),
+                None => 0,
+            };
+            if let Some(programme) = programmes.get(next) {
+                show_guide(window, row, programme);
+            }
+        }
+        GUIDE_OPEN => {
+            if let Some(programme) = current.and_then(|i| programmes.get(i)) {
+                let start = programme.start_timestamp;
+                state.set_guide_row(-1);
+                open(window, channel, start);
+            }
+        }
+        GUIDE_EXIT => state.set_guide_row(-1),
+        _ => return false,
+    }
+    true
+}
+
+// Puts the guide cursor on a programme, panning 3 hours at a time until
+// it's in the timeline's window.
+fn show_guide(window: &AppWindow, row: i32, programme: &EPG) {
+    let state = window.global::<HomeState>();
+    state.set_guide_row(row);
+    state.set_guide_start(relative(programme.start_timestamp));
+    let now = now();
+    let mut offset = with_epg(|e| e.offset);
+    let original = offset;
+    // The fetch covers a day either side, so this never needs many steps.
+    for _ in 0..(2 * FETCH_AROUND / PAN_STEP + 1) {
+        let start = now + offset - LEAD;
+        if programme.end_timestamp <= start {
+            offset -= PAN_STEP;
+        } else if programme.start_timestamp >= start + DURATION {
+            offset += PAN_STEP;
+        } else {
+            break;
+        }
+    }
+    if offset != original {
+        set_offset(window, offset);
+    }
 }
 
 // Moves "now" on, and redraws the header's date and ruler.
