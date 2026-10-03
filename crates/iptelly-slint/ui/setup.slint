@@ -1,0 +1,159 @@
+import { LineEdit, Button, Switch, Spinner } from "std-widgets.slint";
+import { Theme, Icons, Icon } from "theme.slint";
+import { SetupState } from "state.slint";
+
+component TypeButton inherits Rectangle {
+    in property <string> label;
+    in property <int> source-type;
+    property <bool> active: SetupState.source-type == source-type;
+
+    height: 36px;
+    min-width: 110px;
+    border-radius: Theme.radius-sm;
+    background: active ? Theme.accent : touch.has-hover ? Theme.surface-3 : Theme.surface-2;
+
+    touch := TouchArea {
+        clicked => { SetupState.source-type = root.source-type; }
+    }
+    Text {
+        text: root.label;
+        color: root.active ? Theme.accent-contrast : Theme.text-primary;
+    }
+}
+
+component Field inherits VerticalLayout {
+    in property <string> label;
+    spacing: 4px;
+    Text {
+        text: root.label;
+        color: Theme.text-secondary;
+        font-size: 13px;
+    }
+    @children
+}
+
+export component SetupView inherits Rectangle {
+    background: Theme.bg-base;
+
+    property <int> type: SetupState.source-type;
+    property <bool> valid: (type == 4 || SetupState.name != "") && !SetupState.name-taken
+        && (type != 1 || SetupState.url != "")
+        && (type != 2 || (SetupState.url != "" && SetupState.username != "" && SetupState.password != ""));
+
+    if SetupState.can-go-back: Rectangle {
+        x: 16px;
+        y: 16px;
+        width: 40px;
+        height: 40px;
+        border-radius: 20px;
+        background: back-touch.has-hover ? Theme.surface-2 : transparent;
+        back-touch := TouchArea {
+            clicked => { SetupState.back(); }
+        }
+        Icon { data: Icons.back; }
+    }
+
+    if SetupState.loading: VerticalLayout {
+        alignment: center;
+        spacing: 16px;
+        HorizontalLayout {
+            alignment: center;
+            Spinner {
+                indeterminate: true;
+                width: 48px;
+                height: 48px;
+            }
+        }
+        Text {
+            text: "Loading your channels...";
+            horizontal-alignment: center;
+            color: Theme.text-secondary;
+        }
+    }
+
+    if !SetupState.loading: HorizontalLayout {
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            width: 560px;
+            spacing: 16px;
+
+            Text {
+                text: SetupState.can-go-back ? "Let's add another source" : "Let's add your first source";
+                font-size: 24px;
+                font-weight: 600;
+                horizontal-alignment: center;
+                color: Theme.text-primary;
+            }
+
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: center;
+                TypeButton { label: "M3U File"; source-type: 0; }
+                TypeButton { label: "M3U URL"; source-type: 1; }
+                TypeButton { label: "Xtream"; source-type: 2; }
+                TypeButton { label: "Custom"; source-type: 3; }
+            }
+
+            Field {
+                label: "Nickname";
+                LineEdit {
+                    placeholder-text: "My provider";
+                    text <=> SetupState.name;
+                    edited(text) => { SetupState.name-edited(text); }
+                }
+                if SetupState.name-taken: Text {
+                    text: "This source name is already taken";
+                    color: Theme.danger;
+                    font-size: 12px;
+                }
+            }
+
+            if type == 1 || type == 2: Field {
+                label: type == 2 ? "URL (e.g. http://provider.com:8080)" : "URL";
+                LineEdit { text <=> SetupState.url; }
+            }
+
+            if type == 2: Field {
+                label: "Username";
+                LineEdit { text <=> SetupState.username; }
+            }
+
+            if type == 2: Field {
+                label: "Password";
+                LineEdit {
+                    input-type: password;
+                    text <=> SetupState.password;
+                }
+            }
+
+            if type == 1 || type == 2: Field {
+                label: "User-Agent (optional)";
+                LineEdit {
+                    placeholder-text: "IPTelly";
+                    text <=> SetupState.user-agent;
+                }
+            }
+
+            if type <= 2: Field {
+                label: "Custom EPG URL (optional, XMLTV)";
+                LineEdit { text <=> SetupState.epg-url; }
+            }
+
+            if type <= 1: Switch {
+                text: "Use TVG-ID for names when TVG-NAME is unavailable";
+                checked <=> SetupState.use-tvg-id;
+            }
+
+            HorizontalLayout {
+                alignment: center;
+                Button {
+                    primary: true;
+                    enabled: root.valid;
+                    text: type == 0 ? "Select file" : type == 1 ? "Fetch" : type == 2 ? "Login" : "Add custom source";
+                    clicked => { SetupState.submit(); }
+                }
+            }
+        }
+    }
+}

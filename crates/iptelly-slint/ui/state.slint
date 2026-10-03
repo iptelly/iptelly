@@ -1,0 +1,89 @@
+// Data the Rust side pushes into the UI, and the callbacks it handles.
+// Numbers match iptelly-core: media types (live=0, movie=1, serie=2,
+// group=3, season=4), view types (all=0, favorites=1, categories=2,
+// history=3, hidden=4) and sort types (asc=0, desc=1, provider=2).
+
+export struct ChannelItem {
+    name: string,
+    source-name: string,
+    logo: image,
+    has-logo: bool,
+    media-type: int,
+    favorite: bool,
+    hidden: bool,
+    archive: bool,
+    custom: bool,
+    // Set while the player is starting; clicking again cancels.
+    starting: bool,
+    // Unfavourited or hidden since the list loaded; it disappears on reload.
+    faded: bool,
+}
+
+// One row of the playlist sidebar's flattened tree.
+export struct SidebarRow {
+    // 0 = All playlists, 1 = source, 2 = category, 3 = a message
+    // ("Loading...", "No categories").
+    kind: int,
+    name: string,
+    selected: bool,
+    expanded: bool,
+}
+
+// Matches RailItem in the Angular app, where it's persisted as
+// settings.default_view, so the numbers can't change.
+export enum Rail { favourites, channels, movies, series, history, manage-categories, settings, downloads }
+
+export global HomeState {
+    in-out property <Rail> rail: Rail.channels;
+    in-out property <[ChannelItem]> channels;
+    in-out property <[SidebarRow]> sidebar;
+    in-out property <bool> show-sidebar: true;
+    in-out property <bool> loading;
+    // Fades the grid out between typing and the search results arriving.
+    in-out property <bool> channels-visible: true;
+    // Shown above the grid when drilled into a series or season.
+    in-out property <string> back-title;
+    in-out property <string> empty-text: "Nothing to show here.";
+    in-out property <string> search-text;
+    in-out property <bool> use-keywords;
+    in-out property <int> sort: 2;
+    in-out property <int> view-type;
+    // Incremented by Rust to scroll the grid back to the top.
+    in-out property <int> scroll-reset;
+
+    callback rail-selected(Rail);
+    callback search-edited(string);
+    callback toggle-keywords();
+    callback sort-selected(int);
+    callback load-more();
+    callback go-back();
+    callback clear-history();
+    callback sidebar-clicked(int);
+    callback sidebar-toggled(int);
+
+    callback tile-activated(int);
+    callback tile-favorite(int);
+    callback tile-hide(int);
+    callback tile-remove-history(int);
+    callback tile-copy-url(int);
+}
+
+export global SetupState {
+    // 0 = M3U file, 1 = M3U URL, 2 = Xtream, 3 = Custom (SourceType numbers).
+    in-out property <int> source-type: 0;
+    in-out property <string> name;
+    in-out property <string> url;
+    in-out property <string> user-agent;
+    in-out property <string> epg-url;
+    in-out property <string> username;
+    in-out property <string> password;
+    in-out property <bool> use-tvg-id;
+    in-out property <bool> name-taken;
+    in-out property <bool> loading;
+    // False on first run (no sources yet), when there's nowhere to go back to.
+    in-out property <bool> can-go-back;
+
+    callback name-edited(string);
+    callback submit();
+    callback back();
+}

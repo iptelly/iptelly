@@ -19,7 +19,7 @@ use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{OptionalExtension, Row, Transaction, params, params_from_iter};
 use rusqlite_migration::{M, Migrations};
 
-const PAGE_SIZE: u8 = 36;
+pub const PAGE_SIZE: u8 = 36;
 pub const DB_NAME: &str = "db.sqlite";
 static CONN: LazyLock<Pool<SqliteConnectionManager>> = LazyLock::new(|| create_connection_pool());
 

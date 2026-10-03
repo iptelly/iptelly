@@ -1,0 +1,45 @@
+import { Theme } from "theme.slint";
+import { HomeState, SetupState, ChannelItem, SidebarRow, Rail } from "state.slint";
+import { HomeView } from "home.slint";
+import { SetupView } from "setup.slint";
+
+export { Theme, HomeState, SetupState, ChannelItem, SidebarRow, Rail }
+
+export enum Page { loading, setup, home }
+
+export component AppWindow inherits Window {
+    in property <string> version;
+    title: "IPTelly (v" + version + ")";
+    icon: @image-url("../../../src/assets/app-icon.png");
+    preferred-width: 1280px;
+    preferred-height: 800px;
+    min-width: 800px;
+    min-height: 500px;
+    background: Theme.bg-base;
+
+    in-out property <Page> page: Page.loading;
+    in-out property <string> toast;
+    in-out property <bool> toast-error;
+    in-out property <bool> restream-running;
+
+    if page == Page.home: HomeView { }
+    if page == Page.setup: SetupView { }
+
+    if toast != "": Rectangle {
+        y: parent.height - self.height - 24px;
+        x: (parent.width - self.width) / 2;
+        width: min(520px, parent.width - 48px);
+        height: toast-text.preferred-height + 20px;
+        border-radius: Theme.radius-sm;
+        background: toast-error ? Theme.danger : Theme.surface-3;
+        drop-shadow-blur: 12px;
+        drop-shadow-color: #00000080;
+        toast-text := Text {
+            text: toast;
+            wrap: word-wrap;
+            width: parent.width - 32px;
+            horizontal-alignment: center;
+            color: Theme.text-primary;
+        }
+    }
+}

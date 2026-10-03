@@ -1,0 +1,433 @@
+import { LineEdit, ListView, Button } from "std-widgets.slint";
+import { Theme, Icons, Icon } from "theme.slint";
+import { HomeState, ChannelItem, SidebarRow, Rail } from "state.slint";
+
+component RailButton inherits Rectangle {
+    in property <string> icon;
+    in property <string> label;
+    in property <bool> active;
+    callback clicked;
+
+    height: 56px;
+    border-radius: Theme.radius-sm;
+    background: active ? Theme.accent.with-alpha(0.2) : touch.has-hover ? Theme.surface-2 : transparent;
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    VerticalLayout {
+        alignment: center;
+        spacing: 2px;
+        HorizontalLayout {
+            alignment: center;
+            Icon {
+                data: root.icon;
+                color: root.active ? Theme.accent-hover : Theme.text-primary;
+            }
+        }
+        Text {
+            text: root.label;
+            font-size: 10px;
+            horizontal-alignment: center;
+            color: root.active ? Theme.accent-hover : Theme.text-secondary;
+        }
+    }
+}
+
+component NavRail inherits Rectangle {
+    width: 72px;
+    background: Theme.surface-1;
+
+    VerticalLayout {
+        padding: 6px;
+        spacing: 4px;
+        Image {
+            source: @image-url("../../../src/assets/app-icon.png");
+            height: 48px;
+            image-fit: contain;
+        }
+        RailButton {
+            icon: Icons.star;
+            label: "Favourites";
+            active: HomeState.rail == Rail.favourites;
+            clicked => { HomeState.rail-selected(Rail.favourites); }
+        }
+        RailButton {
+            icon: Icons.channels;
+            label: "Channels";
+            active: HomeState.rail == Rail.channels;
+            clicked => { HomeState.rail-selected(Rail.channels); }
+        }
+        RailButton {
+            icon: Icons.movies;
+            label: "Movies";
+            active: HomeState.rail == Rail.movies;
+            clicked => { HomeState.rail-selected(Rail.movies); }
+        }
+        RailButton {
+            icon: Icons.series;
+            label: "Series";
+            active: HomeState.rail == Rail.series;
+            clicked => { HomeState.rail-selected(Rail.series); }
+        }
+        RailButton {
+            icon: Icons.history;
+            label: "History";
+            active: HomeState.rail == Rail.history;
+            clicked => { HomeState.rail-selected(Rail.history); }
+        }
+        RailButton {
+            icon: Icons.downloads;
+            label: "Downloads";
+            active: HomeState.rail == Rail.downloads;
+            clicked => { HomeState.rail-selected(Rail.downloads); }
+        }
+        RailButton {
+            icon: Icons.manage-categories;
+            label: "Categories";
+            active: HomeState.rail == Rail.manage-categories;
+            clicked => { HomeState.rail-selected(Rail.manage-categories); }
+        }
+        Rectangle { vertical-stretch: 1; }
+        RailButton {
+            icon: Icons.settings;
+            label: "Settings";
+            active: HomeState.rail == Rail.settings;
+            clicked => { HomeState.rail-selected(Rail.settings); }
+        }
+    }
+}
+
+component SidebarRowView inherits Rectangle {
+    in property <SidebarRow> data;
+    in property <int> index;
+
+    height: data.kind == 2 ? 30px : 36px;
+    border-radius: Theme.radius-sm;
+    background: data.selected ? Theme.accent.with-alpha(0.2) : touch.has-hover && data.kind != 3 ? Theme.surface-2 : transparent;
+
+    touch := TouchArea {
+        enabled: data.kind != 3;
+        clicked => { HomeState.sidebar-clicked(index); }
+    }
+
+    HorizontalLayout {
+        padding-left: data.kind >= 2 ? 32px : 8px;
+        padding-right: 8px;
+        spacing: 4px;
+        if data.kind == 1: Rectangle {
+            width: 20px;
+            Icon {
+                data: root.data.expanded ? Icons.chevron-down : Icons.chevron-right;
+                width: 18px;
+                height: 18px;
+                color: Theme.text-secondary;
+            }
+            TouchArea {
+                clicked => { HomeState.sidebar-toggled(index); }
+            }
+        }
+        Text {
+            text: data.name;
+            vertical-alignment: center;
+            overflow: elide;
+            font-size: data.kind == 2 ? 13px : 14px;
+            font-italic: data.kind == 3;
+            color: data.selected ? Theme.accent-hover : data.kind >= 2 ? Theme.text-secondary : Theme.text-primary;
+        }
+    }
+}
+
+component PlaylistSidebar inherits Rectangle {
+    width: 260px;
+    background: Theme.surface-1;
+    border-width: 1px;
+    border-color: Theme.border-subtle;
+
+    VerticalLayout {
+        padding: 8px;
+        spacing: 6px;
+        Text {
+            text: "Playlists";
+            font-size: 15px;
+            font-weight: 600;
+            color: Theme.text-primary;
+        }
+        ListView {
+            for row[i] in HomeState.sidebar: SidebarRowView {
+                data: row;
+                index: i;
+            }
+        }
+    }
+}
+
+component IconButton inherits Rectangle {
+    in property <string> icon;
+    in property <color> icon-color: Theme.text-primary;
+    callback clicked;
+
+    width: 36px;
+    height: 36px;
+    border-radius: Theme.radius-sm;
+    background: touch.has-hover ? Theme.surface-3 : transparent;
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+    Icon {
+        data: root.icon;
+        color: root.icon-color;
+    }
+}
+
+component Tile inherits Rectangle {
+    in property <ChannelItem> item;
+    in property <int> index;
+
+    height: 88px;
+    border-radius: Theme.radius-md;
+    background: item.starting ? Theme.accent.with-alpha(0.35) : touch.has-hover ? Theme.surface-3 : Theme.surface-2;
+    opacity: item.faded ? 0.4 : 1;
+    animate background { duration: 100ms; }
+
+    // The TouchArea inside takes every mouse button, so the menu never sees
+    // the right-click itself; the TouchArea opens it instead.
+    menu := ContextMenuArea {
+        enabled: false;
+        Menu {
+            if HomeState.view-type == 3: MenuItem {
+                title: "Remove";
+                activated => { HomeState.tile-remove-history(index); }
+            }
+            if item.media-type < 3 && HomeState.view-type != 3: MenuItem {
+                title: item.favorite ? "Unfavorite" : "Favorite";
+                activated => { HomeState.tile-favorite(index); }
+            }
+            if !item.custom && item.media-type != 4 && HomeState.view-type != 3: MenuItem {
+                title: item.hidden ? "Unhide" : "Hide";
+                activated => { HomeState.tile-hide(index); }
+            }
+            if item.media-type < 3: MenuItem {
+                title: "Copy URL";
+                activated => { HomeState.tile-copy-url(index); }
+            }
+        }
+
+        touch := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { HomeState.tile-activated(index); }
+            pointer-event(event) => {
+                if event.button == PointerEventButton.right && event.kind == PointerEventKind.up {
+                    menu.show({ x: self.mouse-x, y: self.mouse-y });
+                }
+            }
+
+            HorizontalLayout {
+                padding: 8px;
+                spacing: 10px;
+                if item.has-logo: Image {
+                    source: item.logo;
+                    width: 50px;
+                    image-fit: contain;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 4px;
+                    Text {
+                        text: item.name;
+                        wrap: word-wrap;
+                        overflow: elide;
+                        max-height: 40px;
+                        font-size: 14px;
+                        color: Theme.text-primary;
+                    }
+                    Text {
+                        text: item.source-name;
+                        overflow: elide;
+                        font-size: 12px;
+                        color: Theme.text-secondary;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 6px;
+                    if item.archive: Icon {
+                        data: Icons.archive;
+                        width: 16px;
+                        height: 16px;
+                        color: Theme.text-secondary;
+                    }
+                    if item.favorite: Icon {
+                        data: Icons.star;
+                        width: 16px;
+                        height: 16px;
+                        color: Theme.favorite;
+                    }
+                }
+            }
+        }
+    }
+}
+
+component ChannelGrid inherits Rectangle {
+    property <length> spacing: 12px;
+    property <int> columns: max(1, floor((self.width - 16px) / 300px));
+    property <int> rows: ceil(HomeState.channels.length / columns);
+
+    opacity: HomeState.channels-visible ? 1 : 0;
+    animate opacity { duration: 150ms; }
+
+    function check-load-more() {
+        if (-list.content-y + list.visible-height > list.content-height - 400px) {
+            HomeState.load-more();
+        }
+    }
+
+    list := ListView {
+        changed content-y => { root.check-load-more(); }
+        changed content-height => { root.check-load-more(); }
+
+        for row in root.rows: HorizontalLayout {
+            spacing: root.spacing;
+            padding-bottom: root.spacing;
+            padding-right: 12px;
+            for col in root.columns: Rectangle {
+                horizontal-stretch: 1;
+                height: 88px;
+                if row * root.columns + col < HomeState.channels.length: Tile {
+                    item: HomeState.channels[row * root.columns + col];
+                    index: row * root.columns + col;
+                }
+            }
+        }
+    }
+
+    // Rust bumps scroll-reset whenever a fresh (page 1) load arrives.
+    property <int> scroll-reset: HomeState.scroll-reset;
+    changed scroll-reset => { list.content-y = 0; }
+
+    if HomeState.channels.length == 0 && !HomeState.loading: Text {
+        text: HomeState.empty-text;
+        color: Theme.text-secondary;
+        font-size: 16px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    if list.content-y < -300px: Rectangle {
+        x: parent.width - self.width - 24px;
+        y: parent.height - self.height - 24px;
+        width: 44px;
+        height: 44px;
+        border-radius: 22px;
+        background: Theme.accent;
+        drop-shadow-blur: 8px;
+        drop-shadow-color: #00000080;
+        Icon {
+            data: Icons.chevron-up;
+            color: Theme.accent-contrast;
+        }
+        TouchArea {
+            clicked => { list.content-y = 0; }
+        }
+    }
+}
+
+component SortButton inherits IconButton {
+    icon: Icons.sort;
+    clicked => { menu.show({ x: 0, y: self.height }); }
+
+    menu := ContextMenuArea {
+        enabled: false;
+        Menu {
+            MenuItem {
+                title: (HomeState.sort == 0 ? "✓ " : "    ") + "Alphabetically asc";
+                activated => { HomeState.sort-selected(0); }
+            }
+            MenuItem {
+                title: (HomeState.sort == 1 ? "✓ " : "    ") + "Alphabetically desc";
+                activated => { HomeState.sort-selected(1); }
+            }
+            MenuItem {
+                title: (HomeState.sort == 2 ? "✓ " : "    ") + "Provider";
+                activated => { HomeState.sort-selected(2); }
+            }
+        }
+    }
+}
+
+export component HomeView inherits Rectangle {
+    background: Theme.bg-base;
+
+    HorizontalLayout {
+        NavRail { }
+        if HomeState.show-sidebar: PlaylistSidebar { }
+
+        if HomeState.rail == Rail.downloads || HomeState.rail == Rail.manage-categories || HomeState.rail == Rail.settings: Rectangle {
+            Text {
+                text: "Not ported to the Slint UI yet - see crates/iptelly-slint/PORTING.md.";
+                color: Theme.text-secondary;
+                font-size: 16px;
+            }
+        }
+
+        if HomeState.rail != Rail.downloads && HomeState.rail != Rail.manage-categories && HomeState.rail != Rail.settings: VerticalLayout {
+            padding: 16px;
+            padding-right: 4px;
+            spacing: 12px;
+
+            HorizontalLayout {
+                padding-right: 12px;
+                spacing: 6px;
+                search := LineEdit {
+                    placeholder-text: "Type to search...";
+                    text <=> HomeState.search-text;
+                    edited(text) => { HomeState.search-edited(text); }
+                }
+                IconButton {
+                    icon: HomeState.use-keywords ? Icons.keywords-on : Icons.keywords-off;
+                    icon-color: HomeState.use-keywords ? Theme.accent-hover : Theme.text-primary;
+                    clicked => { HomeState.toggle-keywords(); }
+                }
+                SortButton { }
+            }
+
+            if HomeState.back-title != "": Rectangle {
+                height: 40px;
+                border-radius: Theme.radius-sm;
+                background: back-touch.has-hover ? Theme.surface-2 : transparent;
+                back-touch := TouchArea {
+                    clicked => { HomeState.go-back(); }
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 8px;
+                    Icon {
+                        data: Icons.back;
+                        y: (parent.height - self.height) / 2;
+                    }
+                    Text {
+                        text: HomeState.back-title;
+                        font-size: 16px;
+                        vertical-alignment: center;
+                        color: Theme.text-primary;
+                    }
+                }
+            }
+
+            if HomeState.rail == Rail.history: HorizontalLayout {
+                alignment: center;
+                Button {
+                    text: "Clear history";
+                    clicked => { HomeState.clear-history(); }
+                }
+            }
+
+            ChannelGrid {
+                vertical-stretch: 1;
+            }
+        }
+    }
+}
