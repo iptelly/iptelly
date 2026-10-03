@@ -18,5 +18,4 @@ If applicable, add screenshots/videos to help explain your problem.
  - App Version [e.g. 1.9.0]
  - How the app was installed [e.g. Microsoft Store, Flathub..]
  - If it's a media problem (playing, recording... channels), have you tried playing the same stream(s) on a standalone MPV or using a different player?
-- If you are using linux and do not use an NVIDIA GPU, have you tried removing ``WEBKIT_DISABLE_DMABUF_RENDERER=1`` from the .desktop file or from the env options (using Flatseal or System settings on KDE)?
-- If you are using linux and use an NVIDIA GPU, can you make sure ``WEBKIT_DISABLE_DMABUF_RENDERER=1`` is still set?
+ - If you are using Linux and the window is blank, black or flickering, have you tried launching with ``WEBKIT_DISABLE_DMABUF_RENDERER=1`` set (e.g. ``WEBKIT_DISABLE_DMABUF_RENDERER=1 iptelly``, or via Flatseal for the Flatpak)? IPTelly already sets this automatically on NVIDIA GPUs.
