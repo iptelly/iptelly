@@ -312,6 +312,7 @@ pub fn get_channel_from_lines(
         episode_num: None,
         hidden: Some(false),
         is_adult: false,
+        rating: None,
     };
     Ok(channel)
 }

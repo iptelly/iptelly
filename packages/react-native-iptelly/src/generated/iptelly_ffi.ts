@@ -16,6 +16,7 @@ import {
   FfiConverterArray,
   FfiConverterArrayBuffer,
   FfiConverterBool,
+  FfiConverterFloat64,
   FfiConverterInt64,
   FfiConverterOptional,
   FfiConverterUInt16,
@@ -249,6 +250,126 @@ export async function getEpgSchedule(
       /*liftFunc:*/ (__rb) => {
         try {
           return FfiConverterSequenceTypeEPG.lift(__rb);
+        } finally {
+          nativeModule().rustbuffer_free(__rb);
+        }
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeIptellyError.lift.bind(
+        FfiConverterTypeIptellyError
+      )
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+/**
+ * The programmes of several channels between two Unix timestamps, one list
+ * per channel in the same order, for the TV guide. Channels without a guide
+ * get an empty list.
+ */
+export async function getGuide(
+  channels: Array<Channel>,
+  start: bigint,
+  end: bigint,
+  asyncOpts_?: { signal: AbortSignal }
+): Promise<Array<Array<Epg>>> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_iptelly_ffi_fn_func_get_guide(
+          FfiConverterSequenceTypeChannel.lower(
+            channels,
+            nativeModule().rustbuffer_alloc
+          ),
+          FfiConverterInt64.lower(start, nativeModule().rustbuffer_alloc),
+          FfiConverterInt64.lower(end, nativeModule().rustbuffer_alloc)
+        );
+      },
+      /*pollFunc:*/ nativeModule()
+        .ubrn_ffi_iptelly_ffi_rust_future_poll_rust_buffer,
+      /*cancelFunc:*/ nativeModule()
+        .ubrn_ffi_iptelly_ffi_rust_future_cancel_rust_buffer,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_iptelly_ffi_rust_future_complete_rust_buffer,
+      /*freeFunc:*/ nativeModule()
+        .ubrn_ffi_iptelly_ffi_rust_future_free_rust_buffer,
+      // Async returns always go through the JS-side converter: the
+      // FFI symbol returns the future handle (u64), and the user-level
+      // RustBuffer comes back via the shared `rust_future_complete_*`
+      // export. The bytes the runtime hands back must be deserialized
+      // here using the per-callable return-type converter.
+      // Borrowed view over foreign memory: the call site owns the free,
+      // as on the sync paths. Unconditional — a no-op where buffers are
+      // already JS-owned.
+      /*liftFunc:*/ (__rb) => {
+        try {
+          return FfiConverterSequenceSequenceTypeEPG.lift(__rb);
+        } finally {
+          nativeModule().rustbuffer_free(__rb);
+        }
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeIptellyError.lift.bind(
+        FfiConverterTypeIptellyError
+      )
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+/**
+ * A movie's or series' plot, cast, rating, backdrop and so on, fetched from
+ * its Xtream info page. Other sources have no details, so this is empty
+ * for them.
+ */
+export async function getMediaInfo(
+  channel: Channel,
+  asyncOpts_?: { signal: AbortSignal }
+): Promise<MediaInfo> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_iptelly_ffi_fn_func_get_media_info(
+          FfiConverterTypeChannel.lower(
+            channel,
+            nativeModule().rustbuffer_alloc
+          )
+        );
+      },
+      /*pollFunc:*/ nativeModule()
+        .ubrn_ffi_iptelly_ffi_rust_future_poll_rust_buffer,
+      /*cancelFunc:*/ nativeModule()
+        .ubrn_ffi_iptelly_ffi_rust_future_cancel_rust_buffer,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_iptelly_ffi_rust_future_complete_rust_buffer,
+      /*freeFunc:*/ nativeModule()
+        .ubrn_ffi_iptelly_ffi_rust_future_free_rust_buffer,
+      // Async returns always go through the JS-side converter: the
+      // FFI symbol returns the future handle (u64), and the user-level
+      // RustBuffer comes back via the shared `rust_future_complete_*`
+      // export. The bytes the runtime hands back must be deserialized
+      // here using the per-callable return-type converter.
+      // Borrowed view over foreign memory: the call site owns the free,
+      // as on the sync paths. Unconditional — a no-op where buffers are
+      // already JS-owned.
+      /*liftFunc:*/ (__rb) => {
+        try {
+          return FfiConverterTypeMediaInfo.lift(__rb);
         } finally {
           nativeModule().rustbuffer_free(__rb);
         }
@@ -567,6 +688,44 @@ export async function refreshAll(asyncOpts_?: {
       /*rustCaller:*/ uniffiCaller,
       /*rustFutureFunc:*/ () => {
         return nativeModule().ubrn_uniffi_iptelly_ffi_fn_func_refresh_all();
+      },
+      /*pollFunc:*/ nativeModule().ubrn_ffi_iptelly_ffi_rust_future_poll_void,
+      /*cancelFunc:*/ nativeModule()
+        .ubrn_ffi_iptelly_ffi_rust_future_cancel_void,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_iptelly_ffi_rust_future_complete_void,
+      /*freeFunc:*/ nativeModule().ubrn_ffi_iptelly_ffi_rust_future_free_void,
+      /*liftFunc:*/ (_v) => {},
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeIptellyError.lift.bind(
+        FfiConverterTypeIptellyError
+      )
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+/**
+ * Reloads a source's guide: from its EPG URL (or local file) if it has
+ * one, otherwise from the Xtream server. Adding a source doesn't load it.
+ */
+export async function refreshEpg(
+  sourceId: bigint,
+  asyncOpts_?: { signal: AbortSignal }
+): Promise<void> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_iptelly_ffi_fn_func_refresh_epg(
+          FfiConverterInt64.lower(sourceId, nativeModule().rustbuffer_alloc)
+        );
       },
       /*pollFunc:*/ nativeModule().ubrn_ffi_iptelly_ffi_rust_future_poll_void,
       /*cancelFunc:*/ nativeModule()
@@ -985,6 +1144,7 @@ export type Channel = {
   hidden?: boolean;
   tvgId?: string;
   isAdult: boolean;
+  rating?: number;
 };
 
 /**
@@ -1024,6 +1184,7 @@ const FfiConverterTypeChannel = (() => {
         hidden: FfiConverterOptionalBoolean.readFromCursor(c),
         tvgId: FfiConverterOptionalString.readFromCursor(c),
         isAdult: FfiConverterBool.readFromCursor(c),
+        rating: FfiConverterOptionalFloat64.readFromCursor(c),
       };
     }
     writeIntoCursor(value: TypeName, c: Cursor): void {
@@ -1044,6 +1205,7 @@ const FfiConverterTypeChannel = (() => {
       FfiConverterOptionalBoolean.writeIntoCursor(value.hidden, c);
       FfiConverterOptionalString.writeIntoCursor(value.tvgId, c);
       FfiConverterBool.writeIntoCursor(value.isAdult, c);
+      FfiConverterOptionalFloat64.writeIntoCursor(value.rating, c);
     }
     allocationSize(value: TypeName): number {
       return (
@@ -1063,7 +1225,8 @@ const FfiConverterTypeChannel = (() => {
         FfiConverterOptionalInt64.allocationSize(value.episodeNum) +
         FfiConverterOptionalBoolean.allocationSize(value.hidden) +
         FfiConverterOptionalString.allocationSize(value.tvgId) +
-        FfiConverterBool.allocationSize(value.isAdult)
+        FfiConverterBool.allocationSize(value.isAdult) +
+        FfiConverterOptionalFloat64.allocationSize(value.rating)
       );
     }
   }
@@ -1214,6 +1377,73 @@ const FfiConverterTypeFilters = (() => {
         FfiConverterBool.allocationSize(value.useKeywords) +
         FfiConverterUInt8.allocationSize(value.sort) +
         FfiConverterOptionalInt64.allocationSize(value.season)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type MediaInfo = {
+  plot?: string;
+  cast?: string;
+  director?: string;
+  genre?: string;
+  year?: string;
+  durationSecs?: bigint;
+  rating?: number;
+  backdrop?: string;
+};
+
+/**
+ * Generated factory for {@link MediaInfo} record objects.
+ */
+export const MediaInfo = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<MediaInfo, ReturnType<typeof defaults>>(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<MediaInfo>,
+  });
+})();
+
+const FfiConverterTypeMediaInfo = (() => {
+  type TypeName = MediaInfo;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    readFromCursor(c: Cursor): TypeName {
+      return {
+        plot: FfiConverterOptionalString.readFromCursor(c),
+        cast: FfiConverterOptionalString.readFromCursor(c),
+        director: FfiConverterOptionalString.readFromCursor(c),
+        genre: FfiConverterOptionalString.readFromCursor(c),
+        year: FfiConverterOptionalString.readFromCursor(c),
+        durationSecs: FfiConverterOptionalUInt64.readFromCursor(c),
+        rating: FfiConverterOptionalFloat64.readFromCursor(c),
+        backdrop: FfiConverterOptionalString.readFromCursor(c),
+      };
+    }
+    writeIntoCursor(value: TypeName, c: Cursor): void {
+      FfiConverterOptionalString.writeIntoCursor(value.plot, c);
+      FfiConverterOptionalString.writeIntoCursor(value.cast, c);
+      FfiConverterOptionalString.writeIntoCursor(value.director, c);
+      FfiConverterOptionalString.writeIntoCursor(value.genre, c);
+      FfiConverterOptionalString.writeIntoCursor(value.year, c);
+      FfiConverterOptionalUInt64.writeIntoCursor(value.durationSecs, c);
+      FfiConverterOptionalFloat64.writeIntoCursor(value.rating, c);
+      FfiConverterOptionalString.writeIntoCursor(value.backdrop, c);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterOptionalString.allocationSize(value.plot) +
+        FfiConverterOptionalString.allocationSize(value.cast) +
+        FfiConverterOptionalString.allocationSize(value.director) +
+        FfiConverterOptionalString.allocationSize(value.genre) +
+        FfiConverterOptionalString.allocationSize(value.year) +
+        FfiConverterOptionalUInt64.allocationSize(value.durationSecs) +
+        FfiConverterOptionalFloat64.allocationSize(value.rating) +
+        FfiConverterOptionalString.allocationSize(value.backdrop)
       );
     }
   }
@@ -1615,6 +1845,11 @@ const FfiConverterOptionalUInt64 = new FfiConverterOptional(FfiConverterUInt64);
 // FfiConverter for boolean | undefined
 const FfiConverterOptionalBoolean = new FfiConverterOptional(FfiConverterBool);
 
+// FfiConverter for number | undefined
+const FfiConverterOptionalFloat64 = new FfiConverterOptional(
+  FfiConverterFloat64
+);
+
 // FfiConverter for Array<bigint>
 const FfiConverterSequenceInt64 = new FfiConverterArray(FfiConverterInt64);
 
@@ -1635,14 +1870,19 @@ const FfiConverterOptionalUInt16 = new FfiConverterOptional(FfiConverterUInt16);
 // FfiConverter for Array<Epg>
 const FfiConverterSequenceTypeEPG = new FfiConverterArray(FfiConverterTypeEPG);
 
-// FfiConverter for Array<Source>
-const FfiConverterSequenceTypeSource = new FfiConverterArray(
-  FfiConverterTypeSource
-);
-
 // FfiConverter for Array<Channel>
 const FfiConverterSequenceTypeChannel = new FfiConverterArray(
   FfiConverterTypeChannel
+);
+
+// FfiConverter for Array<Array<Epg>>
+const FfiConverterSequenceSequenceTypeEPG = new FfiConverterArray(
+  FfiConverterSequenceTypeEPG
+);
+
+// FfiConverter for Array<Source>
+const FfiConverterSequenceTypeSource = new FfiConverterArray(
+  FfiConverterTypeSource
 );
 
 /**
@@ -1706,6 +1946,21 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_iptelly_ffi_checksum_func_get_guide() !== 23221
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_iptelly_ffi_checksum_func_get_guide'
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_iptelly_ffi_checksum_func_get_media_info() !==
+    59575
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_iptelly_ffi_checksum_func_get_media_info'
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_iptelly_ffi_checksum_func_get_settings() !==
     47853
   ) {
@@ -1762,6 +2017,13 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_iptelly_ffi_checksum_func_refresh_all'
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_iptelly_ffi_checksum_func_refresh_epg() !== 35438
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_iptelly_ffi_checksum_func_refresh_epg'
     );
   }
   if (
@@ -1834,6 +2096,7 @@ export default Object.freeze({
     FfiConverterTypeEPG,
     FfiConverterTypeFilters,
     FfiConverterTypeIptellyError,
+    FfiConverterTypeMediaInfo,
     FfiConverterTypePlayRequest,
     FfiConverterTypeSettings,
     FfiConverterTypeSource,

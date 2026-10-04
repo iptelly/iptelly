@@ -10,8 +10,8 @@
 use std::sync::LazyLock;
 
 use iptelly_core::playback::PlayRequest;
-use iptelly_core::types::{AppState, Channel, EPG, Filters, Settings, Source};
-use iptelly_core::{api, m3u, paths, playback, settings, source_type, sql, utils, xtream};
+use iptelly_core::types::{AppState, Channel, EPG, Filters, MediaInfo, Settings, Source};
+use iptelly_core::{api, m3u, paths, playback, settings, source_type, sql, utils, xmltv, xtream};
 use tokio::sync::Mutex;
 
 uniffi::setup_scaffolding!();
@@ -122,6 +122,21 @@ pub async fn load_episodes(series: Channel) -> Result<()> {
     Ok(xtream::get_episodes(series).await?)
 }
 
+/// A movie's or series' plot, cast, rating, backdrop and so on, fetched from
+/// its Xtream info page. Other sources have no details, so this is empty
+/// for them.
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn get_media_info(channel: Channel) -> Result<MediaInfo> {
+    let source_id = channel
+        .source_id
+        .ok_or_else(|| anyhow::anyhow!("The movie has no playlist."))?;
+    let source = blocking(move || sql::get_source_from_id(source_id)).await?;
+    if source.source_type != source_type::XTREAM {
+        return Ok(MediaInfo::default());
+    }
+    Ok(xtream::get_media_info(channel).await?)
+}
+
 #[uniffi::export(async_runtime = "tokio")]
 pub async fn set_favorite(channel_id: i64, favorite: bool) -> Result<()> {
     blocking(move || sql::favorite_channel(channel_id, favorite)).await
@@ -152,6 +167,32 @@ pub async fn play_request(channel: Channel) -> Result<PlayRequest> {
 #[uniffi::export(async_runtime = "tokio")]
 pub async fn get_epg(channel: Channel, start: i64, end: i64) -> Result<Vec<EPG>> {
     blocking(move || api::get_epg(channel, start, end)).await
+}
+
+/// The programmes of several channels between two Unix timestamps, one list
+/// per channel in the same order, for the TV guide. Channels without a guide
+/// get an empty list.
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn get_guide(channels: Vec<Channel>, start: i64, end: i64) -> Result<Vec<Vec<EPG>>> {
+    blocking(move || api::get_guide(channels, start, end)).await
+}
+
+/// Reloads a source's guide: from its EPG URL (or local file) if it has
+/// one, otherwise from the Xtream server. Adding a source doesn't load it.
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn refresh_epg(source_id: i64) -> Result<()> {
+    let source = blocking(move || sql::get_source_from_id(source_id)).await?;
+    if source
+        .epg_url
+        .as_ref()
+        .is_some_and(|url| !url.trim().is_empty())
+    {
+        Ok(xmltv::refresh_epg(source).await?)
+    } else if source.source_type == source_type::XTREAM {
+        Ok(xtream::refresh_xtream_epg(source).await?)
+    } else {
+        Ok(())
+    }
 }
 
 /// Every programme kept for the channel.
@@ -210,6 +251,19 @@ pub struct Channel {
     pub hidden: Option<bool>,
     pub tvg_id: Option<String>,
     pub is_adult: bool,
+    pub rating: Option<f64>,
+}
+
+#[uniffi::remote(Record)]
+pub struct MediaInfo {
+    pub plot: Option<String>,
+    pub cast: Option<String>,
+    pub director: Option<String>,
+    pub genre: Option<String>,
+    pub year: Option<String>,
+    pub duration_secs: Option<u64>,
+    pub rating: Option<f64>,
+    pub backdrop: Option<String>,
 }
 
 #[uniffi::remote(Record)]

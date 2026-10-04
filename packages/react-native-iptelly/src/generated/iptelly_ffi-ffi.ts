@@ -173,6 +173,12 @@ interface NativeModuleInterface {
     end: bigint
   ): bigint;
   ubrn_uniffi_iptelly_ffi_fn_func_get_epg_schedule(channel: Uint8Array): bigint;
+  ubrn_uniffi_iptelly_ffi_fn_func_get_guide(
+    channels: Uint8Array,
+    start: bigint,
+    end: bigint
+  ): bigint;
+  ubrn_uniffi_iptelly_ffi_fn_func_get_media_info(channel: Uint8Array): bigint;
   ubrn_uniffi_iptelly_ffi_fn_func_get_settings(): bigint;
   ubrn_uniffi_iptelly_ffi_fn_func_get_sources(): bigint;
   ubrn_uniffi_iptelly_ffi_fn_func_has_adult_pin(): bigint;
@@ -184,6 +190,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_iptelly_ffi_fn_func_lock_adult_content(): bigint;
   ubrn_uniffi_iptelly_ffi_fn_func_play_request(channel: Uint8Array): bigint;
   ubrn_uniffi_iptelly_ffi_fn_func_refresh_all(): bigint;
+  ubrn_uniffi_iptelly_ffi_fn_func_refresh_epg(sourceId: bigint): bigint;
   ubrn_uniffi_iptelly_ffi_fn_func_refresh_source(sourceId: bigint): bigint;
   ubrn_uniffi_iptelly_ffi_fn_func_remove_from_history(
     channelId: bigint
@@ -206,6 +213,8 @@ interface NativeModuleInterface {
   ubrn_uniffi_iptelly_ffi_checksum_func_delete_source(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_get_epg(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_get_epg_schedule(): number;
+  ubrn_uniffi_iptelly_ffi_checksum_func_get_guide(): number;
+  ubrn_uniffi_iptelly_ffi_checksum_func_get_media_info(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_get_settings(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_get_sources(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_has_adult_pin(): number;
@@ -214,6 +223,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_iptelly_ffi_checksum_func_lock_adult_content(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_play_request(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_refresh_all(): number;
+  ubrn_uniffi_iptelly_ffi_checksum_func_refresh_epg(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_refresh_source(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_remove_from_history(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_search(): number;

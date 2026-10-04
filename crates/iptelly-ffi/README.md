@@ -12,9 +12,9 @@ Every function is async and fails with `IptellyError`.
 |---|---|
 | Startup | `init(data_dir, cache_dir)`. Call it first, with the app's data and cache folders. |
 | Sources | `get_sources`, `source_name_exists`, `add_source`, `refresh_source`, `refresh_all`, `delete_source`, `set_source_enabled` |
-| Browsing | `search(filters)`, `load_episodes(series)` (Xtream, before opening a series), `set_favorite`, `add_to_history`, `remove_from_history` |
+| Browsing | `search(filters)`, `load_episodes(series)` (Xtream, before opening a series), `get_media_info(channel)` (a movie's or series' plot, cast, rating and backdrop, from Xtream), `set_favorite`, `add_to_history`, `remove_from_history` |
 | Playback | `play_request(channel)` gives the URLs, headers and settings for the app's player |
-| EPG | `get_epg(channel, start, end)`, `get_epg_schedule(channel)` |
+| EPG | `get_guide(channels, start, end)`, `get_epg(channel, start, end)`, `get_epg_schedule(channel)`, `refresh_epg(source_id)` |
 | Settings | `get_settings`, `update_settings`, `has_adult_pin`, `verify_adult_pin`, `lock_adult_content` |
 
 uniffi can't export constants, so the app needs its own copy of the numeric codes in `iptelly-core`: `media_type`, `source_type`, `view_type` and `sort_type`.
