@@ -1,4 +1,5 @@
-// The one modal dialog (ui/dialog.slint): yes/no confirmations and PIN entry.
+// The one modal dialog (ui/dialog.slint): messages, yes/no confirmations and
+// PIN entry.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -59,6 +60,13 @@ pub fn confirm(
 ) {
     open(window, DialogKind::Confirm, title, message, confirm_label);
     HANDLER.set(Some(Rc::new(move |window, _| on_confirm(window))));
+}
+
+/// A message with just an OK button.
+pub fn inform(window: &AppWindow, title: &str, message: &str) {
+    open(window, DialogKind::Confirm, title, message, "OK");
+    window.global::<DialogState>().set_cancel_label("".into());
+    HANDLER.set(Some(Rc::new(|_, _| {})));
 }
 
 /// Two choices, both of which carry on (Escape counts as the second).

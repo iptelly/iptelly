@@ -253,6 +253,13 @@ pub fn get_bin(bin: &str) -> String {
     return get_bin_from_deps(bin);
 }
 
+/// Whether `bin` can be run: it's on the PATH, or bundled in the deps folder
+/// (Windows) or in a Homebrew or MacPorts folder (macOS). The Windows
+/// installer only bundles mpv, so ffmpeg and yt-dlp may be missing there.
+pub fn is_installed(bin: &str) -> bool {
+    which(get_bin(bin)).is_ok()
+}
+
 fn get_bin_from_deps(bin: &str) -> String {
     let mut path = current_exe().unwrap();
     path.pop();

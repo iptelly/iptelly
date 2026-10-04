@@ -71,7 +71,7 @@
     <Feature Id="Application" Title="IPTelly" Level="1" Absent="disallow">
       <ComponentRef Id="MainExecutable" />
       <ComponentRef Id="StartMenuShortcut" />
-      <!-- mpv, ffmpeg and yt-dlp, from deps.wxs. -->
+      <!-- mpv, from deps.wxs. -->
       <ComponentGroupRef Id="DependencyComponents" />
     </Feature>
 

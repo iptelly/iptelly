@@ -114,8 +114,8 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions-rust-lang/setup-rust-toolchain@v1
 
-      # mpv, ffmpeg and yt-dlp go into the installer's deps folder
-      # (crates/iptelly/wix/deps.wxs), where the core looks for them.
+      # mpv goes into the installer's deps folder (crates/iptelly/wix/deps.wxs),
+      # where the core looks for it. ffmpeg and yt-dlp aren't bundled.
       - name: Download mpv
         shell: powershell
         run: |
@@ -138,40 +138,6 @@ jobs:
 
           New-Item -Path 'C:\iptelly-deps' -ItemType Directory -Force
           7z e .\mpv.zip -oC:\iptelly-deps mpv.exe vulkan-1.dll -y
-
-      - name: Download ffmpeg
-        shell: powershell
-        run: |
-          $retryCount = 3
-          $retryDelay = 5
-          for ($i = 1; $i -le $retryCount; $i++) {
-              try {
-                  Invoke-WebRequest -UserAgent "Wget" -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip" -OutFile .\ffmpeg.zip
-                  break
-              }
-              catch {
-                  Write-Host "Error occurred: $_. Retrying in $retryDelay seconds..."
-                  Start-Sleep -Seconds $retryDelay
-              }
-          }
-          7z e .\ffmpeg.zip -oC:\iptelly-deps ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe
-
-      - name: Download yt-dlp
-        shell: powershell
-        run: |
-          $retryCount = 3
-          $retryDelay = 5
-          for ($i = 1; $i -le $retryCount; $i++) {
-              try {
-                  Invoke-WebRequest -UserAgent "Wget" -Uri "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" -OutFile yt-dlp.exe
-                  break
-              }
-              catch {
-                  Write-Host "Error occurred: $_. Retrying in $retryDelay seconds..."
-                  Start-Sleep -Seconds $retryDelay
-              }
-          }
-          Move-Item -Path yt-dlp.exe -Destination C:\iptelly-deps
 
       - name: Install cargo-wix
         run: cargo install --locked cargo-wix

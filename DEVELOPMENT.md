@@ -88,9 +88,10 @@ Local builds are always version `0.0.0` (see [Versioning](#versioning)), so this
 usual case once you've installed one.
 
 On Windows, the MSI needs the [WiX 3 toolset](https://github.com/wixtoolset/wix3/releases)
-and `cargo install cargo-wix`. It bundles `mpv.exe`, `vulkan-1.dll`, `ffmpeg.exe` and
-`yt-dlp.exe` from `C:\iptelly-deps` (see `crates/iptelly/wix/deps.wxs`), which the release
-workflow downloads first. Then:
+and `cargo install cargo-wix`. It bundles `mpv.exe` and `vulkan-1.dll` from
+`C:\iptelly-deps` (see `crates/iptelly/wix/deps.wxs`), which the release workflow
+downloads first. ffmpeg and yt-dlp aren't bundled, to keep the installer small; the app
+tells the user to install ffmpeg if they try to re-stream without it. Then:
 
 ```
 cargo build --release -p iptelly

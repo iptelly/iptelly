@@ -3,10 +3,10 @@
 use std::cell::{Cell, RefCell};
 
 use iptelly_core::types::Channel;
-use iptelly_core::{restream, settings};
+use iptelly_core::{restream, settings, utils};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 
-use crate::{AppWindow, RestreamState, STATE};
+use crate::{AppWindow, RestreamState, STATE, dialog};
 
 thread_local! {
     static CHANNEL: RefCell<Option<Channel>> = const { RefCell::new(None) };
@@ -106,7 +106,23 @@ pub fn setup(window: &AppWindow) {
     });
 }
 
+// Re-streaming runs ffmpeg, which the Windows installer doesn't include.
+#[cfg(target_os = "windows")]
+const INSTALL_FFMPEG: &str = "Re-streaming needs ffmpeg, which isn't installed. Install it, for \
+     example by running \"winget install Gyan.FFmpeg.Essentials\" in a terminal, then restart \
+     IPTelly.";
+#[cfg(target_os = "macos")]
+const INSTALL_FFMPEG: &str = "Re-streaming needs ffmpeg, which isn't installed. Install it, for \
+     example by running \"brew install ffmpeg\" in a terminal, then try again.";
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+const INSTALL_FFMPEG: &str = "Re-streaming needs ffmpeg, which isn't installed. Install it with \
+     your distribution's package manager, then try again.";
+
 pub fn open(window: &AppWindow, channel: Channel) {
+    if !utils::is_installed(restream::FFMPEG_BIN_NAME) {
+        dialog::inform(window, "ffmpeg isn't installed", INSTALL_FFMPEG);
+        return;
+    }
     let state = window.global::<RestreamState>();
     state.set_channel_name(channel.name.as_str().into());
     state.set_local_ips(ModelRc::default());

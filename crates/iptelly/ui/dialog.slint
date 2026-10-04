@@ -61,7 +61,8 @@ export component DialogOverlay inherits Rectangle {
                 HorizontalLayout {
                     spacing: 8px;
                     alignment: end;
-                    Button {
+                    // An information dialog has only the confirm button.
+                    if DialogState.cancel-label != "": Button {
                         text: DialogState.cancel-label;
                         clicked => { DialogState.cancelled(); }
                     }
