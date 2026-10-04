@@ -1,0 +1,290 @@
+import { Theme, Icons, Icon } from "theme.slint";
+import { HomeState, EpgState, EpgBlock, EpgTick } from "state.slint";
+
+// The window the timelines show, in seconds: four hours from half an hour
+// before now, moved by the header's pan. Must match LEAD and DURATION in
+// epg.rs.
+global Timeline {
+    out property <int> lead: 30 * 60;
+    out property <int> duration: 4 * 3600;
+    out property <int> start: HomeState.epg-now + HomeState.epg-offset - lead;
+}
+
+// One channel's programmes across the timeline window.
+export component EpgTimeline inherits Rectangle {
+    in property <[EpgBlock]> blocks;
+    in property <bool> loaded;
+    in property <int> row-index;
+
+    clip: true;
+    border-radius: Theme.radius-sm;
+    background: Theme.surface-1;
+
+    for block[i] in blocks: Rectangle {
+        property <float> left: max(0, (block.start - Timeline.start) / Timeline.duration);
+        property <float> right: min(1, (block.end - Timeline.start) / Timeline.duration);
+        property <bool> live: block.start <= HomeState.epg-now && block.end > HomeState.epg-now;
+        visible: right > 0 && left < 1;
+        x: root.width * left + 1px;
+        width: max(0px, root.width * (right - left) - 2px);
+        height: root.height - 8px;
+        border-radius: 4px;
+        background: touch.has-hover ? Theme.surface-3 : live ? Theme.accent.with-alpha(0.3) : Theme.surface-2;
+        // The keyboard guide cursor.
+        border-width: HomeState.guide-row == root.row-index && HomeState.guide-start == block.start ? 2px : 0;
+        border-color: Theme.accent;
+
+        touch := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { HomeState.epg-clicked(root.row-index, i); }
+        }
+        Text {
+            x: 6px;
+            width: parent.width - 12px;
+            text: block.title;
+            overflow: elide;
+            font-size: 12px;
+            color: Theme.text-primary;
+        }
+    }
+
+    if loaded && blocks.length == 0: Text {
+        text: "No EPG data";
+        font-size: 12px;
+        color: Theme.text-secondary;
+    }
+
+    // The red line at the real current time.
+    property <float> now-at: (HomeState.epg-now - Timeline.start) / Timeline.duration;
+    if now-at >= 0 && now-at <= 1: Rectangle {
+        x: root.width * now-at;
+        width: 2px;
+        background: #e53935;
+    }
+}
+
+// A small icon (or short text) button for panning the timeline 3 hours.
+component PanButton inherits Rectangle {
+    in property <string> icon;
+    in property <string> label;
+    callback clicked;
+
+    width: label != "" ? label-text.preferred-width + 16px : 28px;
+    height: 28px;
+    border-radius: Theme.radius-sm;
+    background: touch.has-hover ? Theme.surface-3 : Theme.surface-2;
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+    if root.icon != "": Icon {
+        data: root.icon;
+        width: 18px;
+        height: 18px;
+    }
+    label-text := Text {
+        text: root.label;
+        font-size: 12px;
+        color: Theme.text-primary;
+    }
+}
+
+// The date, pan buttons and ruler above the channel list.
+export component EpgHeader inherits VerticalLayout {
+    in property <length> timeline-x;
+    spacing: 4px;
+
+    HorizontalLayout {
+        spacing: 4px;
+        height: 28px;
+        Text {
+            text: HomeState.epg-date;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            color: Theme.text-primary;
+        }
+        PanButton {
+            icon: Icons.chevron-left;
+            clicked => { HomeState.epg-pan(-1); }
+        }
+        if HomeState.epg-offset != 0: PanButton {
+            label: "Now";
+            clicked => { HomeState.epg-pan(0); }
+        }
+        PanButton {
+            icon: Icons.chevron-right;
+            clicked => { HomeState.epg-pan(1); }
+        }
+    }
+
+    HorizontalLayout {
+        Rectangle { width: root.timeline-x; }
+        ruler := Rectangle {
+            height: 20px;
+            for tick in HomeState.epg-ticks: Text {
+                property <float> at: (tick.at - Timeline.start) / Timeline.duration;
+                visible: at >= 0 && at < 0.95;
+                x: ruler.width * at;
+                text: tick.label;
+                font-size: 11px;
+                color: Theme.text-secondary;
+            }
+        }
+    }
+}
+
+component ActionButton inherits Rectangle {
+    in property <string> label;
+    callback clicked;
+    height: 32px;
+    width: text.preferred-width + 24px;
+    border-radius: Theme.radius-sm;
+    background: touch.has-hover ? Theme.surface-3 : Theme.surface-2;
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+    text := Text {
+        text: root.label;
+        color: Theme.text-primary;
+    }
+}
+
+export component EpgDialog inherits Rectangle {
+    background: #000000a0;
+
+    TouchArea {
+        clicked => { EpgState.close(); }
+    }
+
+    FocusScope {
+        init => { self.focus(); }
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                EpgState.close();
+                return accept;
+            }
+            if event.text == Key.LeftArrow {
+                EpgState.prev();
+                return accept;
+            }
+            if event.text == Key.RightArrow {
+                EpgState.next();
+                return accept;
+            }
+            reject
+        }
+
+        Rectangle {
+            width: min(640px, root.width - 48px);
+            height: min(content.preferred-height, root.height - 48px);
+            border-radius: Theme.radius-md;
+            background: Theme.surface-1;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: #00000080;
+            clip: true;
+
+            // Keeps clicks inside the dialog from closing it.
+            TouchArea { }
+
+            content := VerticalLayout {
+                padding: 20px;
+                spacing: 12px;
+
+                HorizontalLayout {
+                    Text {
+                        text: EpgState.channel-name;
+                        font-size: 18px;
+                        font-weight: 600;
+                        horizontal-stretch: 1;
+                        overflow: elide;
+                        color: Theme.text-primary;
+                    }
+                    ActionButton {
+                        label: "✕";
+                        clicked => { EpgState.close(); }
+                    }
+                }
+
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 12px;
+                    Rectangle {
+                        width: 32px;
+                        height: 32px;
+                        opacity: EpgState.can-prev ? 1 : 0.3;
+                        TouchArea { clicked => { EpgState.prev(); } }
+                        Icon { data: Icons.back; }
+                    }
+                    Text {
+                        text: EpgState.date;
+                        vertical-alignment: center;
+                        color: Theme.text-secondary;
+                    }
+                    Rectangle {
+                        width: 32px;
+                        height: 32px;
+                        opacity: EpgState.can-next ? 1 : 0.3;
+                        TouchArea { clicked => { EpgState.next(); } }
+                        Icon {
+                            data: Icons.chevron-right;
+                        }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    if EpgState.now-playing: Rectangle {
+                        width: 10px;
+                        height: 10px;
+                        y: (parent.height - self.height) / 2;
+                        border-radius: 5px;
+                        background: #e53935;
+                    }
+                    Text {
+                        text: EpgState.title;
+                        font-size: 16px;
+                        font-weight: 600;
+                        wrap: word-wrap;
+                        horizontal-stretch: 1;
+                        color: Theme.text-primary;
+                    }
+                }
+                Text {
+                    text: EpgState.time;
+                    color: Theme.text-secondary;
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: start;
+                    if EpgState.has-archive: ActionButton {
+                        label: "▶ Play";
+                        clicked => { EpgState.play(); }
+                    }
+                    if EpgState.has-archive && !EpgState.downloading: ActionButton {
+                        label: "Download";
+                        clicked => { EpgState.download(); }
+                    }
+                    if EpgState.downloading: ActionButton {
+                        label: "Cancel download (" + round(EpgState.progress * 100) + "%)";
+                        clicked => { EpgState.cancel-download(); }
+                    }
+                    ActionButton {
+                        label: EpgState.reminder ? "Remove reminder" : "Remind me";
+                        clicked => { EpgState.toggle-reminder(); }
+                    }
+                }
+
+                Rectangle {
+                    height: 1px;
+                    background: Theme.border-subtle;
+                }
+                Text {
+                    text: EpgState.description;
+                    wrap: word-wrap;
+                    color: Theme.text-primary;
+                }
+            }
+        }
+    }
+}

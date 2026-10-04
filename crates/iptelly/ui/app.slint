@@ -1,0 +1,80 @@
+import { Theme } from "theme.slint";
+import {
+    HomeState, SetupState, SettingsState, CategoriesState, DownloadsState, EpgState, RestreamState,
+    DialogState, DialogKind, ChannelItem, SidebarRow, SourceItem, SourceAction, CategoryRow,
+    DownloadRow, DownloadAction, EpgBlock, EpgTick, Rail, CustomState, CustomKind,
+} from "state.slint";
+import { HomeView } from "home.slint";
+import { SetupView } from "setup.slint";
+import { DialogOverlay } from "dialog.slint";
+import { EpgDialog } from "epg.slint";
+import { RestreamDialog } from "restream.slint";
+import { CustomDialog } from "custom.slint";
+import { ShortcutsHelp } from "shortcuts.slint";
+
+export {
+    Theme, HomeState, SetupState, SettingsState, CategoriesState, DownloadsState, EpgState,
+    RestreamState, DialogState, DialogKind, ChannelItem, SidebarRow, SourceItem, SourceAction,
+    CategoryRow, DownloadRow, DownloadAction, EpgBlock, EpgTick, Rail, CustomState, CustomKind,
+}
+
+export enum Page { loading, setup, home }
+
+export component AppWindow inherits Window {
+    in property <string> version;
+    title: "IPTelly (v" + version + ")";
+    icon: @image-url("../icons/128x128.png");
+    preferred-width: 1280px;
+    preferred-height: 800px;
+    min-width: 800px;
+    min-height: 500px;
+    background: Theme.bg-base;
+
+    in-out property <Page> page: Page.loading;
+    in-out property <string> toast;
+    in-out property <bool> toast-error;
+    callback toast-clicked();
+
+    if page == Page.home: HomeView { }
+    if page == Page.setup: SetupView { }
+
+    // Keyboard focus goes back to the channel grid once the last overlay
+    // closes; otherwise nothing would have focus and keys would do nothing.
+    property <bool> overlay-open: EpgState.open || RestreamState.open
+        || CustomState.kind != CustomKind.none || DialogState.kind != DialogKind.none
+        || HomeState.show-help;
+    changed overlay-open => {
+        if !overlay-open {
+            HomeState.focus-grid += 1;
+        }
+    }
+
+    if HomeState.show-help: ShortcutsHelp { }
+    if EpgState.open: EpgDialog { }
+    if RestreamState.open: RestreamDialog { }
+    if CustomState.kind != CustomKind.none: CustomDialog { }
+    if DialogState.kind != DialogKind.none: DialogOverlay { }
+
+    if toast != "": Rectangle {
+        y: parent.height - self.height - 24px;
+        x: (parent.width - self.width) / 2;
+        width: min(520px, parent.width - 48px);
+        height: toast-text.preferred-height + 20px;
+        border-radius: Theme.radius-sm;
+        background: toast-error ? Theme.danger : Theme.surface-3;
+        drop-shadow-blur: 12px;
+        drop-shadow-color: #00000080;
+        // An error toast opens the error dialog with the full details.
+        toast-area := TouchArea {
+            mouse-cursor: toast-error ? pointer : default;
+            clicked => { root.toast-clicked(); }
+        }
+        toast-text := Text {
+            text: toast;
+            wrap: word-wrap;
+            width: parent.width - 32px;
+            horizontal-alignment: center;
+            color: Theme.text-primary;
+        }
+    }
+}

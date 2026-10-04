@@ -7,6 +7,11 @@ on:
         description: "Version to build, e.g. 2.1.0"
         required: true
         type: string
+      dry_run:
+        description: "Build the packages but don't tag the release"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -19,14 +24,15 @@ jobs:
 
     steps:
       - name: Check branch
+        if: ${{ !inputs.dry_run }}
         run: |
           if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
             echo "::error::Releases can only be built from main, not '$GITHUB_REF_NAME'"
             exit 1
           fi
 
-      # The MSI bundler only accepts plain numeric versions, so no
-      # pre-release suffixes like -beta.1.
+      # The MSI only accepts plain numeric versions, so no pre-release
+      # suffixes like -beta.1.
       - name: Check version
         env:
           VERSION: ${{ inputs.version }}
@@ -37,6 +43,7 @@ jobs:
           fi
 
       - name: Check tag doesn't exist
+        if: ${{ !inputs.dry_run }}
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ inputs.version }}
@@ -46,21 +53,70 @@ jobs:
             exit 1
           fi
 
-  build:
+  linux:
     needs: prepare
-    runs-on: ${{ matrix.os }}
-
-    strategy:
-      matrix:
-        node-version: [24.x]
-        os: [ubuntu-22.04, windows-latest]
+    # The oldest supported Ubuntu, so the .deb's glibc requirement is low.
+    runs-on: ubuntu-22.04
 
     steps:
       - uses: actions/checkout@v7
       - uses: actions-rust-lang/setup-rust-toolchain@v1
 
+      # dpkg-dev provides dpkg-shlibdeps, which cargo-deb uses to work out
+      # the .deb's library dependencies ($auto).
+      - name: Install deps
+        run: |
+          sudo apt update
+          sudo apt install -y libssl-dev libfontconfig1-dev dpkg-dev
+
+      - name: Install packagers
+        run: cargo install --locked cargo-deb cargo-generate-rpm
+
+      # The repo holds a 0.0.0 placeholder; the real version is only written
+      # here, on the runner, and never committed back.
+      - name: Set version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          sed -i "0,/^version = \".*\"/s//version = \"$VERSION\"/" crates/iptelly/Cargo.toml
+          grep -m1 '^version' crates/iptelly/Cargo.toml
+
+      # Not --locked: setting the version also changes it in Cargo.lock.
+      - name: Build
+        run: cargo build --release -p iptelly
+
+      - name: Package
+        run: |
+          cargo deb -p iptelly --no-build
+          cargo generate-rpm -p crates/iptelly
+
+      - name: Upload DEB
+        uses: actions/upload-artifact@v7
+        with:
+          name: iptelly-debian-${{ inputs.version }}
+          path: target/debian/*.deb
+          retention-days: 60
+
+      - name: Upload RPM
+        uses: actions/upload-artifact@v7
+        with:
+          name: iptelly-redhat-${{ inputs.version }}
+          path: target/generate-rpm/*.rpm
+          retention-days: 60
+
+  windows:
+    needs: prepare
+    # cargo-wix needs the WiX 3 toolset, which windows-2022 has installed
+    # (windows-2025 doesn't).
+    runs-on: windows-2022
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      # mpv, ffmpeg and yt-dlp go into the installer's deps folder
+      # (crates/iptelly/wix/deps.wxs), where the core looks for them.
       - name: Download mpv
-        if: matrix.os == 'windows-latest'
         shell: powershell
         run: |
           $nightlyPage = "https://nightly.link/mpv-player/mpv/workflows/build/master"
@@ -84,7 +140,6 @@ jobs:
           7z e .\mpv.zip -oC:\iptelly-deps mpv.exe vulkan-1.dll -y
 
       - name: Download ffmpeg
-        if: matrix.os == 'windows-latest'
         shell: powershell
         run: |
           $retryCount = 3
@@ -102,7 +157,6 @@ jobs:
           7z e .\ffmpeg.zip -oC:\iptelly-deps ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe
 
       - name: Download yt-dlp
-        if: matrix.os == 'windows-latest'
         shell: powershell
         run: |
           $retryCount = 3
@@ -119,107 +173,36 @@ jobs:
           }
           Move-Item -Path yt-dlp.exe -Destination C:\iptelly-deps
 
-      - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v7
-        with:
-          node-version: ${{ matrix.node-version }}
+      - name: Install cargo-wix
+        run: cargo install --locked cargo-wix
 
-      - name: Install deps linux
-        if: matrix.os == 'ubuntu-22.04'
-        run: |
-          sudo apt update
-          sudo apt install libwebkit2gtk-4.1-dev \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libxdo-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libgtk-3-dev
-
-      # The repo holds a 0.0.0 placeholder; the real version is only written
-      # here, on the runner, and never committed back.
+      # See the linux job.
       - name: Set version
         shell: bash
         env:
           VERSION: ${{ inputs.version }}
         run: |
-          npm version "$VERSION" --no-git-tag-version --allow-same-version
-          node -e '
-            const fs = require("fs");
-            const file = "src-tauri/tauri.conf.json";
-            const conf = JSON.parse(fs.readFileSync(file, "utf8"));
-            conf.version = process.env.VERSION;
-            fs.writeFileSync(file, JSON.stringify(conf, null, 2) + "\n");
-          '
-          sed -i "0,/^version = \".*\"/s//version = \"$VERSION\"/" src-tauri/Cargo.toml
-          grep -m1 '^version' src-tauri/Cargo.toml
-
-      - name: Install deps project
-        run: |
-          npm install
+          sed -i "0,/^version = \".*\"/s//version = \"$VERSION\"/" crates/iptelly/Cargo.toml
+          grep -m1 '^version' crates/iptelly/Cargo.toml
 
       - name: Build
-        if: startsWith(matrix.os, 'macos-')
-        run: |
-          CI=true npm run tauri build
+        run: cargo build --release -p iptelly
 
-      - name: Build
-        if: matrix.os == 'windows-latest'
-        run: |
-          npm run tauri build
+      - name: Package
+        run: cargo wix -p iptelly --no-build --nocapture
 
-      - name: Build
-        if: matrix.os == 'ubuntu-22.04'
-        run: |
-          npm run tauri build -- --bundles deb,rpm
-          
       - name: Upload MSI
-        if: matrix.os == 'windows-latest'
         uses: actions/upload-artifact@v7
         with:
           name: iptelly-windows-${{ inputs.version }}
-          path: target/release/bundle/msi/*.msi
-          retention-days: 60
-
-      - name: Upload DEB
-        if: matrix.os == 'ubuntu-22.04'
-        uses: actions/upload-artifact@v7
-        with:
-          name: iptelly-debian-${{ inputs.version }}
-          path: target/release/bundle/deb/*.deb
-          retention-days: 60
-
-      - name: Upload RPM
-        if: matrix.os == 'ubuntu-22.04'
-        uses: actions/upload-artifact@v7
-        with:
-          name: iptelly-redhat-${{ inputs.version }}
-          path: target/release/bundle/rpm/*.rpm
-          retention-days: 60
-
-      - name: Upload DMG ARM64
-        if: matrix.os == 'macos-latest'
-        uses: actions/upload-artifact@v7
-        with:
-          name: iptelly-mac-arm64-${{ inputs.version }}
-          path: target/release/bundle/dmg/*.dmg
-          retention-days: 60
-
-      - name: Upload DMG AMD64
-        if: matrix.os == 'macos-13'
-        uses: actions/upload-artifact@v7
-        with:
-          name: iptelly-mac-AMD64-${{ inputs.version }}
-          path: target/release/bundle/dmg/*.dmg
+          path: target/wix/*.msi
           retention-days: 60
 
   # Only runs once every platform has built, so a tag always means a
   # complete set of artifacts exists for that version.
   tag:
-    needs: build
+    needs: [linux, windows]
+    if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-22.04
     permissions:
       contents: write

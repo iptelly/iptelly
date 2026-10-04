@@ -23,20 +23,16 @@ jobs:
       - name: cargo fmt --check
         run: cargo fmt --all --check
 
-      # Tauri's Linux crates (gtk, webkit2gtk, appindicator, ...) link
-      # against these system libraries, so cargo test can't build without
-      # them. Caching skips apt update and the downloads on later runs.
+      # The app links OpenSSL (reqwest) and fontconfig (Slint's text
+      # rendering), so cargo test can't build without their headers. Caching
+      # skips apt update and the downloads on later runs.
       - name: Install deps linux
         uses: awalsh128/cache-apt-pkgs-action@v1
         with:
           packages: >-
-            libwebkit2gtk-4.1-dev
-            libxdo-dev
             libssl-dev
-            libayatana-appindicator3-dev
-            librsvg2-dev
-            libgtk-3-dev
-          version: 1.0
+            libfontconfig1-dev
+          version: 2.0
 
       # -D warnings turns every plain rustc warning (unused imports, unused
       # variables, dead code, ...) into a build failure, across every target

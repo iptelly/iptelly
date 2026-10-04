@@ -1,3 +1,0 @@
-# Builds before the move to a Cargo workspace (target/ is now at the repo root).
-/target/
-/gen/schemas

@@ -5,7 +5,7 @@ use anyhow::Result;
 use crate::types::DownloadProgress;
 
 // How the backend reaches the UI when the UI didn't ask - download
-// progress, a restream coming up, an EPG reminder going off. Each frontend
+// progress, a restream coming up, an EPG reminder going off. The UI
 // implements this over its own event system.
 pub trait EventSink: Send + Sync {
     fn download_progress(&self, download_id: &str, progress: DownloadProgress);

@@ -539,9 +539,7 @@ pub fn enqueue(download_id: &str, channel: &Channel, path: &str) -> Result<()> {
     Ok(())
 }
 
-// Re-exported so the Tauri app's `download` command keeps its current
-// call shape (state, events, channel, download_id, path) for a fresh, non-
-// resuming download.
+// A fresh, non-resuming download.
 pub async fn download(
     state: &Mutex<AppState>,
     events: Events,

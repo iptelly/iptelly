@@ -89,7 +89,7 @@ fn headers() -> ChannelHttpHeaders {
 }
 
 // Adds the channel to the source (and group, if given) and returns it with
-// its database id, the way the frontend passes it to share_custom_channel.
+// its database id, the way the UI passes it to share_custom_channel.
 fn add_channel(
     source: &Source,
     group_id: Option<i64>,
@@ -135,7 +135,7 @@ fn add_group(source: &Source, name: &str) -> i64 {
     .unwrap()
 }
 
-// The group as the frontend passes it to share_custom_group - a Channel
+// The group as the UI passes it to share_custom_group - a Channel
 // row standing in for the group.
 fn group_as_channel(source: &Source, group_id: i64, name: &str) -> Channel {
     Channel {

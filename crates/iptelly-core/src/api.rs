@@ -1,5 +1,4 @@
-// Operations that combine several modules or touch AppState, so every
-// frontend gets the same behaviour. Anything that's a single call into one
+// Operations that combine several modules or touch AppState. Anything that's a single call into one
 // module (most of sql::, settings::, share::, ...) is called directly instead.
 
 use anyhow::{Context, Result};
@@ -69,11 +68,10 @@ pub fn clear_cancelled_downloads() -> Result<()> {
     sql::clear_download_history_by_status(&["cancelled", "failed", "paused"])
 }
 
-// Timeline display only ever needs a window of a few days around wherever
-// the timeline is currently panned to (see epgTimelineWindow.ts +
-// EPG_FETCH_LOOKBACK/LOOKAHEAD_SECONDS on the frontend) - not the whole
-// retention range, which is only needed by the EPG modal's prev/next
-// paging (get_epg_schedule below). Fetching the full range for every
+// Timeline display only ever needs a window of a day or two around wherever
+// the timeline is currently panned to (FETCH_AROUND in the app's epg.rs) -
+// not the whole retention range, which is only needed by the EPG dialog's
+// prev/next paging (get_epg_schedule below). Fetching the full range for every
 // channel tile as it scrolls into view was the main cost behind slow
 // scrolling through the channel grid.
 pub fn get_epg(channel: Channel, start_timestamp: i64, end_timestamp: i64) -> Result<Vec<EPG>> {

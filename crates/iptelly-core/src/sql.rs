@@ -54,9 +54,8 @@ fn create_connection_pool() -> Pool<SqliteConnectionManager> {
 }
 
 // The app has no way to function at all without its database, so failure
-// here is deliberately fatal (same rationale as the Tauri app's
-// main-window .expect() calls) - unlike the other cache/log directories, this isn't
-// something that can degrade gracefully. Using .expect() with a message
+// here is deliberately fatal - unlike the other cache/log directories, this
+// isn't something that can degrade gracefully. Using .expect() with a message
 // instead of a bare .unwrap() at least makes the crash diagnosable.
 fn get_and_create_sqlite_db_path() -> String {
     if let Some(path) = db_path_override() {
@@ -889,12 +888,12 @@ pub fn get_download_row(id: &str) -> Result<Option<DownloadHistoryItem>> {
 // Only terminal statuses - a large active batch's queued/downloading/paused
 // rows all share a very recent updated_at, so without this filter they'd
 // dominate the ORDER BY ... LIMIT window and push genuinely-historical rows
-// out of it entirely (the frontend then has nothing left to show once it
+// out of it entirely (the UI then has nothing left to show once it
 // excludes whatever's still active from this same list).
 // 'paused' included alongside the plainly-terminal statuses: a download the
 // user explicitly paused is meant to stay visible/resumable indefinitely,
-// including across a restart (its historyRow already has a Resume button
-// wired up for this status) - it's not "in progress" the way 'downloading'/
+// including across a restart (its history row has a Resume button for this
+// status) - it's not "in progress" the way 'downloading'/
 // 'queued' are, which is exactly why those two are deliberately left out
 // (see list_download_history's own note on that further down, and
 // reconcile_interrupted_downloads below for what happens to them).
@@ -1013,18 +1012,17 @@ pub fn search(filters: Filters, hide_adult: bool) -> Result<Vec<Channel>> {
     }
     let sql = get_conn()?;
     // page.max(1) - 1, rather than page * PAGE_SIZE - PAGE_SIZE, so a page
-    // of 0 clamps to the first page instead of underflowing (page is only
-    // ever sent as 1-indexed by the frontend, but nothing enforces that at
-    // the IPC boundary, and the raw subtraction would panic in debug builds
-    // or silently return a huge bogus offset in release).
+    // of 0 clamps to the first page instead of underflowing (the UI only
+    // ever sends 1-indexed pages, but nothing enforces that, and the raw
+    // subtraction would panic in debug builds or silently return a huge
+    // bogus offset in release).
     let offset: u16 = (filters.page.max(1) as u16 - 1) * PAGE_SIZE as u16;
     let media_types = match filters.series_id.is_some() {
         true => vec![1],
-        // Only reachable with series_id absent - the frontend always sends
-        // a real (possibly empty) array there, but that's an unenforced
-        // cross-language invariant, not a type-level guarantee, so fall
-        // back to "every channel type" instead of panicking if it's ever
-        // actually missing.
+        // Only reachable with series_id absent - the UI always sends a real
+        // (possibly empty) list there, but the type doesn't guarantee it,
+        // so fall back to "every channel type" instead of panicking if it's
+        // ever actually missing.
         false => filters
             .media_types
             .clone()
@@ -1110,10 +1108,10 @@ pub fn search(filters: Filters, hide_adult: bool) -> Result<Vec<Channel>> {
 fn search_series(filters: Filters) -> Result<Vec<Channel>> {
     let sql = get_conn()?;
     // page.max(1) - 1, rather than page * PAGE_SIZE - PAGE_SIZE, so a page
-    // of 0 clamps to the first page instead of underflowing (page is only
-    // ever sent as 1-indexed by the frontend, but nothing enforces that at
-    // the IPC boundary, and the raw subtraction would panic in debug builds
-    // or silently return a huge bogus offset in release).
+    // of 0 clamps to the first page instead of underflowing (the UI only
+    // ever sends 1-indexed pages, but nothing enforces that, and the raw
+    // subtraction would panic in debug builds or silently return a huge
+    // bogus offset in release).
     let offset: u16 = (filters.page.max(1) as u16 - 1) * PAGE_SIZE as u16;
     let query = filters.query.unwrap_or("".to_string());
     let keywords: Vec<String> = match filters.use_keywords {
@@ -1242,7 +1240,7 @@ pub fn get_series_name(source_id: i64, series_id: u64) -> Result<Option<String>>
 
 // Given just an episode's own channel id (always reliable, unlike
 // Channel.series_id which row_to_channel never populates when sending
-// episodes to the frontend - see get_series_episodes above), resolves
+// episodes to the UI - see get_series_episodes above), resolves
 // (series_name, season_name) for building its download folder path. Used
 // by download() for the single-episode/movie download case; returns None
 // for a genuine standalone movie (no season_id at all) rather than erroring,
@@ -1480,19 +1478,18 @@ fn apply_bulk_channels(
 fn search_hidden(filters: Filters, hide_adult: bool) -> Result<Vec<Channel>> {
     let sql = get_conn()?;
     // page.max(1) - 1, rather than page * PAGE_SIZE - PAGE_SIZE, so a page
-    // of 0 clamps to the first page instead of underflowing (page is only
-    // ever sent as 1-indexed by the frontend, but nothing enforces that at
-    // the IPC boundary, and the raw subtraction would panic in debug builds
-    // or silently return a huge bogus offset in release).
+    // of 0 clamps to the first page instead of underflowing (the UI only
+    // ever sends 1-indexed pages, but nothing enforces that, and the raw
+    // subtraction would panic in debug builds or silently return a huge
+    // bogus offset in release).
     let offset: u16 = (filters.page.max(1) as u16 - 1) * PAGE_SIZE as u16;
 
     let media_types = match filters.series_id.is_some() {
         true => vec![1],
-        // Only reachable with series_id absent - the frontend always sends
-        // a real (possibly empty) array there, but that's an unenforced
-        // cross-language invariant, not a type-level guarantee, so fall
-        // back to "every channel type" instead of panicking if it's ever
-        // actually missing.
+        // Only reachable with series_id absent - the UI always sends a real
+        // (possibly empty) list there, but the type doesn't guarantee it,
+        // so fall back to "every channel type" instead of panicking if it's
+        // ever actually missing.
         false => filters
             .media_types
             .clone()
@@ -1610,10 +1607,10 @@ fn to_sql_like(query: Option<String>) -> String {
 pub fn search_group(filters: Filters) -> Result<Vec<Channel>> {
     let sql = get_conn()?;
     // page.max(1) - 1, rather than page * PAGE_SIZE - PAGE_SIZE, so a page
-    // of 0 clamps to the first page instead of underflowing (page is only
-    // ever sent as 1-indexed by the frontend, but nothing enforces that at
-    // the IPC boundary, and the raw subtraction would panic in debug builds
-    // or silently return a huge bogus offset in release).
+    // of 0 clamps to the first page instead of underflowing (the UI only
+    // ever sends 1-indexed pages, but nothing enforces that, and the raw
+    // subtraction would panic in debug builds or silently return a huge
+    // bogus offset in release).
     let offset: u16 = (filters.page.max(1) as u16 - 1) * PAGE_SIZE as u16;
     let query = filters.query.unwrap_or("".to_string());
     let media_types = filters.media_types.context("no media types")?;
@@ -1707,7 +1704,7 @@ fn row_to_channel(row: &Row) -> std::result::Result<Channel, rusqlite::Error> {
 }
 
 // For resuming a download that's only in history (e.g. after an app
-// restart) - the frontend no longer has the full Channel by then, only the
+// restart) - the UI no longer has the full Channel by then, only the
 // history row's channel_id.
 pub fn get_channel_by_id(id: i64) -> Result<Channel> {
     let sql = get_conn()?;
