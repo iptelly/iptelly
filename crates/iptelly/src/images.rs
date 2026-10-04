@@ -39,7 +39,13 @@ static CACHE_DIR: LazyLock<Option<PathBuf>> = LazyLock::new(|| {
 });
 
 pub async fn load(url: String) -> Result<SharedPixelBuffer<Rgba8Pixel>> {
-    let path = cache_path(&url);
+    load_sized(url, MAX_SIZE).await
+}
+
+/// Like load, but shrunk to fit `max_size` instead of a tile, for the
+/// movie details' poster and backdrop. Each size is cached separately.
+pub async fn load_sized(url: String, max_size: u32) -> Result<SharedPixelBuffer<Rgba8Pixel>> {
+    let path = cache_path(&url, max_size);
     if let Some(path) = &path
         && let Ok(bytes) = tokio::fs::read(path).await
         // A cached file that won't decode (say, half written) is replaced.
@@ -49,7 +55,7 @@ pub async fn load(url: String) -> Result<SharedPixelBuffer<Rgba8Pixel>> {
     }
     let bytes = download(&url).await?;
     let _permit = DECODES.acquire().await?;
-    let (buffer, webp) = tokio::task::spawn_blocking(move || shrink(&bytes)).await??;
+    let (buffer, webp) = tokio::task::spawn_blocking(move || shrink(&bytes, max_size)).await??;
     if let Some(path) = path {
         // A failed write only costs a re-download next time.
         let _ = tokio::fs::write(&path, webp).await;
@@ -68,9 +74,13 @@ pub fn clear_cache() -> Result<()> {
     Ok(())
 }
 
-fn cache_path(url: &str) -> Option<PathBuf> {
+fn cache_path(url: &str, max_size: u32) -> Option<PathBuf> {
     let hash = Sha256::digest(url.as_bytes());
-    let name: String = hash.iter().map(|b| format!("{b:02x}")).collect();
+    let mut name: String = hash.iter().map(|b| format!("{b:02x}")).collect();
+    // Tile-sized copies keep their original names.
+    if max_size != MAX_SIZE {
+        name += &format!("-{max_size}");
+    }
     Some(CACHE_DIR.as_ref()?.join(name + ".webp"))
 }
 
@@ -81,12 +91,12 @@ async fn download(url: &str) -> Result<Vec<u8>> {
     Ok(response.bytes().await?.to_vec())
 }
 
-/// Shrinks a downloaded image to tile size, returning its pixels and a
+/// Shrinks a downloaded image to fit `max_size`, returning its pixels and a
 /// lossless WebP of them for the cache.
-fn shrink(bytes: &[u8]) -> Result<(SharedPixelBuffer<Rgba8Pixel>, Vec<u8>)> {
+fn shrink(bytes: &[u8], max_size: u32) -> Result<(SharedPixelBuffer<Rgba8Pixel>, Vec<u8>)> {
     let image = image::load_from_memory(bytes).context("unsupported image")?;
-    let image = if image.width() > MAX_SIZE || image.height() > MAX_SIZE {
-        image.thumbnail(MAX_SIZE, MAX_SIZE)
+    let image = if image.width() > max_size || image.height() > max_size {
+        image.thumbnail(max_size, max_size)
     } else {
         image
     };
@@ -96,7 +106,7 @@ fn shrink(bytes: &[u8]) -> Result<(SharedPixelBuffer<Rgba8Pixel>, Vec<u8>)> {
     Ok((pixels(&rgba), webp))
 }
 
-/// Decodes a cached WebP, which is already tile size.
+/// Decodes a cached WebP, which is already shrunk.
 fn decode(bytes: &[u8]) -> Result<SharedPixelBuffer<Rgba8Pixel>> {
     let image = image::load_from_memory_with_format(bytes, ImageFormat::WebP)?;
     Ok(pixels(&image.into_rgba8()))
@@ -124,20 +134,20 @@ mod tests {
 
     #[test]
     fn large_images_are_shrunk_to_tile_size() {
-        let (buffer, _) = shrink(&png(1000, 1500)).unwrap();
+        let (buffer, _) = shrink(&png(1000, 1500), MAX_SIZE).unwrap();
         assert_eq!(buffer.height(), MAX_SIZE);
         assert!(buffer.width() < MAX_SIZE);
     }
 
     #[test]
     fn small_images_keep_their_size() {
-        let (buffer, _) = shrink(&png(64, 48)).unwrap();
+        let (buffer, _) = shrink(&png(64, 48), MAX_SIZE).unwrap();
         assert_eq!((buffer.width(), buffer.height()), (64, 48));
     }
 
     #[test]
     fn the_cached_webp_decodes_to_the_same_pixels() {
-        let (buffer, webp) = shrink(&png(1000, 1500)).unwrap();
+        let (buffer, webp) = shrink(&png(1000, 1500), MAX_SIZE).unwrap();
         assert_eq!(image::guess_format(&webp).unwrap(), ImageFormat::WebP);
         let cached = decode(&webp).unwrap();
         assert_eq!(
@@ -149,7 +159,7 @@ mod tests {
 
     #[test]
     fn a_broken_image_is_an_error() {
-        assert!(shrink(b"not an image").is_err());
+        assert!(shrink(b"not an image", MAX_SIZE).is_err());
         assert!(decode(b"not an image").is_err());
     }
 }
