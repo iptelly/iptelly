@@ -421,6 +421,12 @@ pub fn clear_series_cache() {
     with_home(|home| home.series_refreshed.clear());
 }
 
+/// Forgets the logos and posters loaded this run, so they're downloaded
+/// again (after the image cache was cleared). Tiles on screen keep theirs.
+pub fn clear_image_cache() {
+    with_home(|home| home.images.clear());
+}
+
 /// After a custom channel or category was added, changed or deleted:
 /// reloads the sidebar's categories and, on a channel view, the grid.
 pub fn refresh(window: &AppWindow) {

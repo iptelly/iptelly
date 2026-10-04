@@ -157,6 +157,16 @@ pub fn setup(window: &AppWindow) {
         );
     });
 
+    state.on_clear_image_cache(|| {
+        crate::home::clear_image_cache();
+        run(
+            "",
+            crate::blocking(crate::images::clear_cache),
+            "Image cache cleared successfully",
+            "Failed to clear the image cache",
+        );
+    });
+
     state.on_export_data(|| {
         crate::spawn(
             async {
