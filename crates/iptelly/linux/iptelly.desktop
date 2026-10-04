@@ -1,0 +1,12 @@
+[Desktop Entry]
+Categories=AudioVideo;Video;Player;TV;
+Comment=Fast And Powerful IPTV App
+Exec=iptelly
+GenericName=IPTV Player
+Icon=iptelly
+Keywords=iptelly;tv;iptv;m3u;xtream;epg;live;stream;player;
+Name=IPTelly
+SingleMainWindow=true
+StartupWMClass=iptelly
+Terminal=false
+Type=Application

@@ -1,0 +1,95 @@
+[package]
+name = "iptelly"
+# A placeholder: the release workflow sets the real version on the runner.
+version = "0.0.0"
+description = "Fast And Powerful IPTV App"
+authors = ["jeffsmith82"]
+homepage = "https://github.com/iptelly/iptelly"
+repository = "https://github.com/iptelly/iptelly"
+edition = "2024"
+rust-version = "1.91.1"
+license = ""
+
+[dependencies]
+iptelly-core = { path = "../iptelly-core" }
+# unstable-winit-030: the monitor list and focusing the window (window_state.rs,
+# instance.rs).
+slint = { version = "1.18", features = ["unstable-winit-030"] }
+tokio = { version = "1", features = ["full"] }
+anyhow = "1.0"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
+sha2 = "0.11.0"
+directories = "6.0.0"
+chrono = "0.4"
+# File dialogs on Linux go through the XDG desktop portal, on tokio since
+# the dialogs are opened from tasks on the app's tokio runtime.
+rfd = { version = "0.16", default-features = false, features = ["xdg-portal", "wayland", "tokio"] }
+arboard = { version = "3.6", features = ["wayland-data-control"] }
+notify-rust = "4.18"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Linux has no tray icon (see tray.rs), and tray-icon would pull in GTK and
+# libappindicator there.
+[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
+tray-icon = "0.25"
+
+[dev-dependencies]
+# Runs the UI headless in tests (testing.rs). Its version must match slint's.
+i-slint-backend-testing = "=1.18.1"
+
+[build-dependencies]
+slint-build = "1.18"
+# The .exe's icon (build.rs).
+embed-resource = "3.0"
+
+# Release packages, built by .github/workflows/buildAndUpload.yml.
+#
+# Besides the libraries they link (found automatically), winit and the
+# renderer load the X11, Wayland, xkbcommon and EGL/GL libraries at run time,
+# so those are listed by hand. mpv plays streams, ffmpeg records and yt-dlp
+# resolves some stream URLs.
+
+# cargo deb -p iptelly
+[package.metadata.deb]
+section = "video"
+depends = "$auto, mpv, ffmpeg, yt-dlp, libx11-6, libx11-xcb1, libxcb1, libxcursor1, libxi6, libxrender1, libwayland-client0, libwayland-egl1, libxkbcommon0, libxkbcommon-x11-0, libegl1, libgl1"
+assets = [
+    ["target/release/iptelly", "usr/bin/", "755"],
+    ["linux/iptelly.desktop", "usr/share/applications/", "644"],
+    ["icons/32x32.png", "usr/share/icons/hicolor/32x32/apps/iptelly.png", "644"],
+    ["icons/128x128.png", "usr/share/icons/hicolor/128x128/apps/iptelly.png", "644"],
+    ["icons/256x256.png", "usr/share/icons/hicolor/256x256/apps/iptelly.png", "644"],
+    ["icons/icon.png", "usr/share/icons/hicolor/512x512/apps/iptelly.png", "644"],
+]
+
+# cargo generate-rpm -p crates/iptelly
+[package.metadata.generate-rpm]
+# The repository's LICENSE file.
+license = "GPL-2.0"
+assets = [
+    { source = "target/release/iptelly", dest = "/usr/bin/iptelly", mode = "755" },
+    { source = "linux/iptelly.desktop", dest = "/usr/share/applications/iptelly.desktop", mode = "644" },
+    { source = "icons/32x32.png", dest = "/usr/share/icons/hicolor/32x32/apps/iptelly.png", mode = "644" },
+    { source = "icons/128x128.png", dest = "/usr/share/icons/hicolor/128x128/apps/iptelly.png", mode = "644" },
+    { source = "icons/256x256.png", dest = "/usr/share/icons/hicolor/256x256/apps/iptelly.png", mode = "644" },
+    { source = "icons/icon.png", dest = "/usr/share/icons/hicolor/512x512/apps/iptelly.png", mode = "644" },
+]
+
+# By soname, so they resolve whatever the distribution calls the packages.
+[package.metadata.generate-rpm.requires]
+mpv = "*"
+ffmpeg = "*"
+yt-dlp = "*"
+"libX11.so.6()(64bit)" = "*"
+"libX11-xcb.so.1()(64bit)" = "*"
+"libxcb.so.1()(64bit)" = "*"
+"libXcursor.so.1()(64bit)" = "*"
+"libXi.so.6()(64bit)" = "*"
+"libXrender.so.1()(64bit)" = "*"
+"libwayland-client.so.0()(64bit)" = "*"
+"libwayland-egl.so.1()(64bit)" = "*"
+"libxkbcommon.so.0()(64bit)" = "*"
+"libxkbcommon-x11.so.0()(64bit)" = "*"
+"libEGL.so.1()(64bit)" = "*"
+"libGL.so.1()(64bit)" = "*"

@@ -188,8 +188,7 @@ pub fn get_filename(channel_name: String, url: String) -> Result<String> {
 // Only the last path segment can hold the file's extension - dots in the
 // host, query string or fragment don't count. PHP endpoints (e.g. Xtream's
 // get.php) serve the stream rather than a file of that type, so they fall
-// back to mp4 like URLs with no extension at all. Matches getExtension in
-// the frontend's utils.ts.
+// back to mp4 like URLs with no extension at all.
 pub fn get_extension(url: String) -> String {
     let without_query = url.split(['?', '#']).next().unwrap_or_default();
     let path = match without_query.split_once("://") {
@@ -207,10 +206,10 @@ pub fn sanitize(str: String) -> String {
     ILLEGAL_CHARS_REGEX.replace_all(&str, "").to_string()
 }
 
-// Exposed to the frontend (via a thin command wrapper) so "Download Series"
-// can build its own <base>/<show>/<season>/<episode> paths - the plain
-// single-file case still goes through get_download_path below, which just
-// appends a flat filename to this same base.
+// Public so the UI's "Download Series" can build its own
+// <base>/<show>/<season>/<episode> paths - the plain single-file case still
+// goes through get_download_path below, which just appends a flat filename
+// to this same base.
 pub fn get_download_base_path() -> Result<String> {
     let settings = get_settings()?;
     match settings.recording_path {
@@ -225,11 +224,9 @@ pub(crate) fn get_download_path(file_name: String) -> Result<String> {
     Ok(path.to_string_lossy().to_string())
 }
 
-// <base>/<show>/<season>/<file> - shared by single-episode downloads
-// (download(), above) and the frontend's "Download Series"/"Download
-// Season" loops, which build this same structure client-side per episode
-// (see channel-tile.component.ts) since get_download_base_path() is
-// exposed to them for exactly that.
+// <base>/<show>/<season>/<file> - the layout of single-episode downloads
+// (download(), above). The UI's "Download Series"/"Download Season" queues
+// build the same structure per episode from get_download_base_path().
 pub(crate) fn get_series_download_path(
     series_name: &str,
     season_name: &str,
@@ -254,6 +251,13 @@ pub fn get_bin(bin: &str) -> String {
         return find_macos_bin(bin);
     }
     return get_bin_from_deps(bin);
+}
+
+/// Whether `bin` can be run: it's on the PATH, or bundled in the deps folder
+/// (Windows) or in a Homebrew or MacPorts folder (macOS). The Windows
+/// installer only bundles mpv, so ffmpeg and yt-dlp may be missing there.
+pub fn is_installed(bin: &str) -> bool {
+    which(get_bin(bin)).is_ok()
 }
 
 fn get_bin_from_deps(bin: &str) -> String {

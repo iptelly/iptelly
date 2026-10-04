@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="windows-1252"?>
+<!--
+  The Windows installer, built by cargo-wix (WiX 3) in
+  .github/workflows/buildAndUpload.yml. XML comments can't contain two
+  dashes, so see there for the command.
+  cargo-wix compiles every .wxs in this folder, so deps.wxs is included, and
+  passes the Version, Platform and CargoTargetBinDir variables.
+
+  The UpgradeCode must never change: it's how a new version finds and
+  replaces the old one.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product
+      Id="*"
+      Name="IPTelly"
+      UpgradeCode="af2f486f-d137-436a-bba2-c8e6aea1321c"
+      Manufacturer="IPTelly"
+      Language="1033"
+      Codepage="1252"
+      Version="$(var.Version)">
+
+    <Package
+        Id="*"
+        Description="Fast And Powerful IPTV App"
+        Manufacturer="IPTelly"
+        InstallerVersion="450"
+        Languages="1033"
+        Compressed="yes"
+        InstallScope="perMachine"
+        SummaryCodepage="1252"
+        Platform="$(var.Platform)" />
+
+    <MajorUpgrade
+        Schedule="afterInstallInitialize"
+        DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+
+    <Media Id="1" Cabinet="media1.cab" EmbedCab="yes" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLDIR" Name="IPTelly">
+          <Component Id="MainExecutable" Guid="687970e6-19f1-4b70-9398-7b6aa7c3cf3f" Win64="yes">
+            <File
+                Id="IptellyExe"
+                Name="iptelly.exe"
+                Source="$(var.CargoTargetBinDir)\iptelly.exe"
+                KeyPath="yes" />
+          </Component>
+        </Directory>
+      </Directory>
+
+      <Directory Id="ProgramMenuFolder">
+        <Component Id="StartMenuShortcut" Guid="51826ebd-78b2-4152-ac97-5550df26e15c">
+          <Shortcut
+              Id="IptellyShortcut"
+              Name="IPTelly"
+              Description="Fast And Powerful IPTV App"
+              Target="[INSTALLDIR]iptelly.exe"
+              WorkingDirectory="INSTALLDIR" />
+          <RegistryValue
+              Root="HKCU"
+              Key="Software\IPTelly"
+              Name="StartMenuShortcut"
+              Type="integer"
+              Value="1"
+              KeyPath="yes" />
+        </Component>
+      </Directory>
+    </Directory>
+
+    <Feature Id="Application" Title="IPTelly" Level="1" Absent="disallow">
+      <ComponentRef Id="MainExecutable" />
+      <ComponentRef Id="StartMenuShortcut" />
+      <!-- mpv, from deps.wxs. -->
+      <ComponentGroupRef Id="DependencyComponents" />
+    </Feature>
+
+    <Icon Id="IptellyIcon" SourceFile="$(sys.SOURCEFILEDIR)..\icons\icon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="IptellyIcon" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/iptelly/iptelly" />
+
+    <!-- The install folder dialog, without the licence agreement page. -->
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLDIR" />
+    <UI>
+      <UIRef Id="WixUI_InstallDir" />
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" Order="2">1</Publish>
+      <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="2">1</Publish>
+    </UI>
+  </Product>
+</Wix>

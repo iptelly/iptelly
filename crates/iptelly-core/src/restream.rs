@@ -26,7 +26,7 @@ use crate::{
 };
 
 const WAN_IP_API: &str = "https://api.ipify.org";
-const FFMPEG_BIN_NAME: &str = "ffmpeg";
+pub const FFMPEG_BIN_NAME: &str = "ffmpeg";
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 

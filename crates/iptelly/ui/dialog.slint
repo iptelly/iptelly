@@ -1,0 +1,78 @@
+import { Button, LineEdit, TextEdit } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { DialogState, DialogKind } from "state.slint";
+
+// Dims the window and shows DialogState's dialog in the middle.
+export component DialogOverlay inherits Rectangle {
+    background: #000000a0;
+
+    // Swallows clicks so nothing behind the dialog reacts.
+    TouchArea { }
+
+    FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                DialogState.cancelled();
+                return accept;
+            }
+            reject
+        }
+
+        Rectangle {
+            width: min(DialogState.kind == DialogKind.error ? 640px : 460px, root.width - 48px);
+            height: content.preferred-height;
+            border-radius: Theme.radius-md;
+            background: Theme.surface-1;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: #00000080;
+
+            content := VerticalLayout {
+                padding: 20px;
+                spacing: 14px;
+
+                Text {
+                    text: DialogState.title;
+                    font-size: 18px;
+                    font-weight: 600;
+                    color: Theme.text-primary;
+                }
+                if DialogState.message != "": Text {
+                    text: DialogState.message;
+                    wrap: word-wrap;
+                    color: Theme.text-secondary;
+                }
+                if DialogState.kind == DialogKind.pin: pin := LineEdit {
+                    input-type: password;
+                    placeholder-text: "PIN";
+                    text <=> DialogState.pin;
+                    accepted => { DialogState.confirmed(); }
+                    init => { self.focus(); }
+                }
+                if DialogState.kind == DialogKind.error: TextEdit {
+                    read-only: true;
+                    wrap: word-wrap;
+                    height: 180px;
+                    text: DialogState.details;
+                }
+                if DialogState.pin-error != "": Text {
+                    text: DialogState.pin-error;
+                    color: Theme.danger;
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: end;
+                    // An information dialog has only the confirm button.
+                    if DialogState.cancel-label != "": Button {
+                        text: DialogState.cancel-label;
+                        clicked => { DialogState.cancelled(); }
+                    }
+                    Button {
+                        text: DialogState.confirm-label;
+                        primary: true;
+                        clicked => { DialogState.confirmed(); }
+                    }
+                }
+            }
+        }
+    }
+}

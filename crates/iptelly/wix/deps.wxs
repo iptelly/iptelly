@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  mpv, which the app looks for in this deps folder next to iptelly.exe when
+  it isn't on the PATH. The release workflow downloads it to C:\iptelly-deps
+  first. ffmpeg (for re-streaming) and yt-dlp aren't bundled, to keep the
+  installer small: the app asks for ffmpeg when it's needed.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <DirectoryRef Id="INSTALLDIR">
+      <Directory Id="DepsFolder" Name="deps">
+        <Component Id="MpvComponent" Guid="*">
+          <File Id="MpvExe" Source="C:\iptelly-deps\mpv.exe" KeyPath="yes" />
+        </Component>
+        <Component Id="VulkanComponent" Guid="*">
+          <File Id="VulkanDLL" Source="C:\iptelly-deps\vulkan-1.dll" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </DirectoryRef>
+
+    <ComponentGroup Id="DependencyComponents">
+      <ComponentRef Id="MpvComponent" />
+      <ComponentRef Id="VulkanComponent" />
+    </ComponentGroup>
+  </Fragment>
+</Wix>
