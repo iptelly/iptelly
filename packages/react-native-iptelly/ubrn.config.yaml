@@ -1,0 +1,14 @@
+# uniffi-bindgen-react-native: builds crates/iptelly-ffi and generates the
+# TypeScript and C++ bindings for it. `yarn ubrn:android` runs it.
+rust:
+  directory: ../..
+  manifestPath: crates/iptelly-ffi/Cargo.toml
+
+android:
+  # Phones and TVs are arm64 or 32-bit arm; x86_64 is for the emulator.
+  targets:
+    - arm64-v8a
+    - armeabi-v7a
+    - x86_64
+  # The same minimum as the app (minSdkVersion).
+  apiLevel: 24

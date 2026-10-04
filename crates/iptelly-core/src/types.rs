@@ -36,6 +36,23 @@ pub struct Channel {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tvg_id: Option<String>,
     pub is_adult: bool,
+    // Out of 10, for movies and series from Xtream sources.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rating: Option<f64>,
+}
+
+// A movie or series' details, from its Xtream info page.
+#[derive(Clone, PartialEq, Debug, Deserialize, Serialize, Default)]
+pub struct MediaInfo {
+    pub plot: Option<String>,
+    pub cast: Option<String>,
+    pub director: Option<String>,
+    pub genre: Option<String>,
+    pub year: Option<String>,
+    // A movie's length, or a series' episode length.
+    pub duration_secs: Option<u64>,
+    pub rating: Option<f64>,
+    pub backdrop: Option<String>,
 }
 
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize, Default)]

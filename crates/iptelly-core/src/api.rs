@@ -82,6 +82,37 @@ pub fn get_epg(channel: Channel, start_timestamp: i64, end_timestamp: i64) -> Re
     sql::get_epg_for_channel(source_id, &normalized, from_ts, to_ts)
 }
 
+// The programmes for several channels at once, in the same order as
+// `channels`, for a TV guide grid. A channel without a guide gets an empty
+// list rather than failing the whole call.
+pub fn get_guide(
+    channels: Vec<Channel>,
+    start_timestamp: i64,
+    end_timestamp: i64,
+) -> Result<Vec<Vec<EPG>>> {
+    let mut bounds = std::collections::HashMap::new();
+    channels
+        .iter()
+        .map(|channel| {
+            let Ok((source_id, normalized)) = epg_key(channel) else {
+                return Ok(Vec::new());
+            };
+            let (min_ts, max_ts) = match bounds.get(&source_id) {
+                Some(b) => *b,
+                None => *bounds
+                    .entry(source_id)
+                    .or_insert(epg_read_bounds(source_id)?),
+            };
+            sql::get_epg_for_channel(
+                source_id,
+                &normalized,
+                start_timestamp.max(min_ts),
+                end_timestamp.min(max_ts),
+            )
+        })
+        .collect()
+}
+
 // Full retention-window fetch, for the EPG modal's prev/next paging through
 // a single channel's whole kept schedule - only called once, when the
 // modal actually opens, rather than for every visible timeline row.
@@ -122,4 +153,82 @@ fn epg_key(channel: &Channel) -> Result<(i64, String)> {
         .as_ref()
         .context("No EPG data for this channel")?;
     Ok((source_id, utils::normalize_tvg_id(tvg_id)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{media_type, test_db};
+
+    fn xmltv_time(timestamp: i64) -> String {
+        chrono::DateTime::from_timestamp(timestamp, 0)
+            .unwrap()
+            .format("%Y%m%d%H%M%S +0000")
+            .to_string()
+    }
+
+    #[tokio::test]
+    async fn get_guide_reads_a_local_xmltv_file() {
+        let _db = test_db::lock();
+        let source = test_db::add_source("guide");
+        let mut news = test_db::channel("News", "http://example.com/news", media_type::LIVESTREAM);
+        news.tvg_id = Some("news.uk".to_string());
+        let news = test_db::add_channel(&source, news, None);
+        let film = test_db::add_channel(
+            &source,
+            test_db::channel("Films", "http://example.com/films", media_type::LIVESTREAM),
+            None,
+        );
+
+        let now = chrono::Utc::now().timestamp();
+        let hour = now - now % 3600;
+        let xml = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?><tv><programme channel="news.uk" start="{}" stop="{}"><title>Headlines</title></programme></tv>"#,
+            xmltv_time(hour),
+            xmltv_time(hour + 3600),
+        );
+        let path = std::env::temp_dir().join(format!("iptelly_guide_{}.xml", std::process::id()));
+        std::fs::write(&path, xml).unwrap();
+        xmltv::refresh_epg_from_url(source, path.to_string_lossy().to_string())
+            .await
+            .unwrap();
+        std::fs::remove_file(&path).unwrap();
+
+        let guide = get_guide(vec![news, film], hour, hour + 7200).unwrap();
+        assert_eq!(guide.len(), 2);
+        assert_eq!(guide[0].len(), 1);
+        assert_eq!(guide[0][0].title, "Headlines");
+        assert_eq!(guide[0][0].start_timestamp, hour);
+        assert!(guide[1].is_empty());
+    }
+
+    #[test]
+    fn searches_keep_a_movies_rating_and_find_hidden_ones() {
+        let _db = test_db::lock();
+        let source = test_db::add_source("ratings");
+        let mut film = test_db::channel("Rated Film", "http://example.com/rated", media_type::MOVIE);
+        film.rating = Some(6.5);
+        let film = test_db::add_channel(&source, film, None);
+        let filters = |view_type| Filters {
+            query: Some("Rated Film".to_string()),
+            source_ids: vec![source.id.unwrap()],
+            media_types: Some(vec![media_type::MOVIE]),
+            view_type,
+            page: 1,
+            series_id: None,
+            group_id: None,
+            use_keywords: false,
+            sort: 0,
+            season: None,
+        };
+
+        let found = sql::search(filters(crate::view_type::ALL), false).unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].rating, Some(6.5));
+
+        sql::hide_channel(film.id.unwrap(), true).unwrap();
+        let hidden = sql::search(filters(crate::view_type::HIDDEN), false).unwrap();
+        assert_eq!(hidden.len(), 1);
+        assert_eq!(hidden[0].rating, Some(6.5));
+    }
 }

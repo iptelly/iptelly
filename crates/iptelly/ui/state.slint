@@ -38,6 +38,26 @@ export struct ChannelItem {
     // Live channels in the list layout.
     epg: [EpgBlock],
     epg-loaded: bool,
+    // Movies and series from Xtream: "6.5", or empty.
+    rating: string,
+}
+
+// The movie or series at the top of the Movies and Series views, like
+// TiviMate's. Fields the provider doesn't give are empty.
+export struct MediaDetails {
+    title: string,
+    rating: string,
+    // "2025 • 1h 45m • Thriller".
+    line: string,
+    cast: string,
+    director: string,
+    plot: string,
+    poster: image,
+    has-poster: bool,
+    backdrop: image,
+    has-backdrop: bool,
+    // A movie, which the pane's Play button plays; a series opens instead.
+    playable: bool,
 }
 
 // One row of the playlist sidebar's flattened tree.
@@ -133,6 +153,14 @@ export global HomeState {
     // Keyboard navigation: the highlighted tile, shown while the grid has
     // focus.
     in-out property <int> focused;
+
+    // The details pane above the grid: the selected movie (clicking a movie
+    // selects it, and clicking it again plays it), or the open series.
+    in-out property <bool> show-details;
+    in-out property <MediaDetails> details;
+    // The selected movie's player is starting; Play again cancels it.
+    in-out property <bool> details-starting;
+    callback details-play();
     // Bumped to give the grid keyboard focus (after a dialog closes, or a
     // tile is clicked).
     in-out property <int> focus-grid;

@@ -39,6 +39,12 @@ struct Home {
     images_pending: HashSet<String>,
     // Series whose episodes were already fetched from the provider this run.
     series_refreshed: HashSet<i64>,
+    // The details pane's movie: clicking a movie selects it, and clicking
+    // it again plays it. Any new list clears it.
+    selected: Option<Channel>,
+    // The series being browsed, which the details pane shows while its
+    // seasons and episodes are in the grid.
+    open_series: Option<Channel>,
     // Channel ids whose player is starting; clicking again cancels.
     starting: HashSet<i64>,
     // Favourites' second section: favourite movies and series, below the
@@ -172,6 +178,12 @@ pub fn setup(window: &AppWindow) {
     state.on_escape_pressed(move || {
         if let Some(window) = weak.upgrade() {
             escape(&window);
+        }
+    });
+
+    state.on_details_play(|| {
+        if let Some(channel) = with_home(|home| home.selected.clone()) {
+            play(channel);
         }
     });
 
@@ -419,6 +431,7 @@ pub fn set_settings(settings: Settings) {
 /// (after the provider was refreshed).
 pub fn clear_series_cache() {
     with_home(|home| home.series_refreshed.clear());
+    crate::details::clear_cache();
 }
 
 /// Forgets the logos and posters loaded this run, so they're downloaded
@@ -626,6 +639,7 @@ fn load(window: &AppWindow, more: bool) {
         } else {
             filters.page = 1;
             home.load_token += 1;
+            home.selected = None;
         }
         home.loading = true;
         Some((filters.clone(), home.load_token))
@@ -633,6 +647,9 @@ fn load(window: &AppWindow, more: bool) {
     let Some((filters, token)) = request else {
         return;
     };
+    if !more {
+        refresh_details(window);
+    }
     window.global::<HomeState>().set_loading(true);
     if !more {
         let fav = shows_fav_media(&filters);
@@ -792,6 +809,55 @@ fn item_for(home: &Home, channel: &Channel) -> ChannelItem {
         progress: 0.0,
         epg: ModelRc::default(),
         epg_loaded: false,
+        rating: channel
+            .rating
+            .map(crate::details::format_rating)
+            .unwrap_or_default()
+            .into(),
+    }
+}
+
+/// Shows the details pane for the selected movie, or for the open series
+/// while its seasons and episodes are in the grid, and hides it otherwise.
+fn refresh_details(window: &AppWindow) {
+    let (channel, xtream, starting) = with_home(|home| {
+        let in_series = home.filters.as_ref().is_some_and(|f| f.series_id.is_some());
+        let channel = if in_series {
+            home.open_series.clone()
+        } else {
+            home.selected.clone()
+        };
+        let xtream = channel.as_ref().is_some_and(|c| {
+            home.sources
+                .iter()
+                .any(|s| s.id == c.source_id && s.source_type == source_type::XTREAM)
+        });
+        let starting = channel
+            .as_ref()
+            .and_then(|c| c.id)
+            .is_some_and(|id| home.starting.contains(&id));
+        (channel, xtream, starting)
+    });
+    let state = window.global::<HomeState>();
+    state.set_show_details(channel.is_some());
+    state.set_details_starting(starting);
+    crate::details::show(window, channel, xtream);
+}
+
+/// Clicking a movie in Movies selects it, showing its details and a Play
+/// button; clicking the selected movie again plays it.
+fn select_movie(window: &AppWindow, channel: Channel) {
+    let again = with_home(|home| {
+        let again = home.selected.as_ref().is_some_and(|s| s.id == channel.id);
+        if !again {
+            home.selected = Some(channel.clone());
+        }
+        again
+    });
+    if again {
+        play(channel);
+    } else {
+        refresh_details(window);
     }
 }
 
@@ -1026,6 +1092,9 @@ fn tile_activated(window: &AppWindow, index: usize) {
             let Some(id) = channel.id else { return };
             push_node(window, Some(channel.name.clone()), |f| f.season = Some(id));
         }
+        media_type::MOVIE if window.global::<HomeState>().get_rail() == Rail::Movies => {
+            select_movie(window, channel);
+        }
         _ => play(channel),
     }
 }
@@ -1037,6 +1106,7 @@ fn open_series(window: &AppWindow, channel: Channel) {
         return;
     };
     let open = move |window: &AppWindow, channel: Channel| {
+        with_home(|home| home.open_series = Some(channel.clone()));
         push_node(window, Some(channel.name.clone()), |f| {
             f.series_id = Some(series_id);
             f.source_ids = channel.source_id.into_iter().collect();
@@ -1105,6 +1175,11 @@ fn go_back(window: &AppWindow) {
 
 /// Esc: clears the search if there is one, or else goes back a level.
 fn escape(window: &AppWindow) {
+    // Closes the details pane first.
+    if with_home(|home| home.selected.take()).is_some() {
+        refresh_details(window);
+        return;
+    }
     let state = window.global::<HomeState>();
     let searching = !state.get_search_text().is_empty()
         || with_home(|home| home.filters.as_ref().is_some_and(|f| f.query.is_some()));
@@ -1197,6 +1272,7 @@ fn start_player(channel: Channel, record: bool, record_path: Option<String>) {
     if let Some(index) = index_of(id) {
         update_item(index, |item| item.starting = true);
     }
+    show_starting(id, true);
     crate::spawn(
         async move {
             // Returns once the player has exited.
@@ -1208,11 +1284,22 @@ fn start_player(channel: Channel, record: bool, record_path: Option<String>) {
             if let Some(index) = index_of(id) {
                 update_item(index, |item| item.starting = false);
             }
+            show_starting(id, false);
             if let Err(e) = result {
                 crate::show_error(window, &e);
             }
         },
     );
+}
+
+/// Shows on the details pane's Play button that the selected movie's
+/// player is starting, so a second click (which cancels it) isn't made
+/// by accident.
+fn show_starting(id: i64, starting: bool) {
+    let selected = with_home(|home| home.selected.as_ref().is_some_and(|s| s.id == Some(id)));
+    if let (true, Some(window)) = (selected, crate::window()) {
+        window.global::<HomeState>().set_details_starting(starting);
+    }
 }
 
 fn toggle_favorite(index: usize) {
@@ -1597,5 +1684,81 @@ mod tests {
         search.set_accessible_value("  ");
         wait(300);
         assert_eq!(query(), None);
+    }
+
+    #[test]
+    fn clicking_a_movie_shows_its_details_and_esc_closes_them() {
+        let (window, _search) = home();
+        let state = window.global::<HomeState>();
+        state.set_rail(Rail::Movies);
+        let movie = Channel {
+            id: Some(41),
+            name: "Film".to_string(),
+            url: Some("http://example.com/41.mp4".to_string()),
+            group: None,
+            image: None,
+            media_type: media_type::MOVIE,
+            source_id: Some(1),
+            series_id: None,
+            group_id: None,
+            favorite: false,
+            stream_id: Some(41),
+            tv_archive: None,
+            season_id: None,
+            episode_num: None,
+            hidden: None,
+            tvg_id: None,
+            is_adult: false,
+            rating: Some(7.5),
+        };
+        with_home(|home| home.channels = vec![movie]);
+        assert!(!state.get_show_details());
+
+        tile_activated(&window, 0);
+        assert!(state.get_show_details());
+        let details = state.get_details();
+        assert_eq!(details.title, "Film");
+        assert_eq!(details.rating, "7.5");
+        assert!(details.playable);
+
+        escape(&window);
+        assert!(!state.get_show_details());
+    }
+
+    #[test]
+    fn the_play_button_asks_to_play_the_selected_movie() {
+        let (window, _search) = home();
+        let state = window.global::<HomeState>();
+        state.set_rail(Rail::Movies);
+        state.set_show_details(true);
+        let mut details = state.get_details();
+        details.title = "Film".into();
+        details.playable = true;
+        state.set_details(details);
+        let pressed = Rc::new(std::cell::Cell::new(false));
+        let flag = pressed.clone();
+        state.on_details_play(move || flag.set(true));
+        wait(0);
+
+        let play = ElementHandle::find_by_element_id(&window, "DetailsPanel::play-touch")
+            .next()
+            .expect("no Play button");
+        let size = play.size();
+        let at = play.absolute_position();
+        let position =
+            slint::LogicalPosition::new(at.x + size.width / 2.0, at.y + size.height / 2.0);
+        let button = slint::platform::PointerEventButton::Left;
+        let events = [
+            slint::platform::WindowEvent::PointerMoved { position },
+            slint::platform::WindowEvent::PointerPressed { position, button },
+            slint::platform::WindowEvent::PointerReleased { position, button },
+        ];
+        for event in events {
+            window.window().dispatch_event(event);
+        }
+        assert!(
+            pressed.get(),
+            "the Play button at {at:?}, {size:?}, wasn't clicked"
+        );
     }
 }

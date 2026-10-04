@@ -1,0 +1,14 @@
+{
+  "name": "iptelly-js",
+  "private": true,
+  "description": "The React Native TV app and its Rust module. The Rust crates are built with cargo, not from here.",
+  "workspaces": [
+    "apps/tv",
+    "packages/react-native-iptelly"
+  ],
+  "scripts": {
+    "tv": "yarn workspace iptelly-tv",
+    "rust": "yarn workspace react-native-iptelly"
+  },
+  "packageManager": "yarn@4.11.0"
+}

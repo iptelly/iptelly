@@ -36,13 +36,37 @@ pub async fn refresh_epg(source: Source) -> Result<()> {
     refresh_epg_from_url(source, url).await
 }
 
+// `url` can also be a local file (a plain path or file://), for M3U files
+// that come with their own XMLTV file.
 pub async fn refresh_epg_from_url(source: Source, url: String) -> Result<()> {
     let refresh_start = std::time::Instant::now();
-    let source_id = source.id.context("no source id")?;
-    let user_agent = get_user_agent_from_source(&source)?;
+    let path = match local_path(&url) {
+        Some(path) => path.to_string(),
+        None => download(&source, &url).await?,
+    };
+    store_programmes(&source, &path)?;
+    log::log(format!(
+        "[perf] {}: total refresh_epg_from_url took {:?}",
+        source.name,
+        refresh_start.elapsed()
+    ));
+    Ok(())
+}
+
+fn local_path(url: &str) -> Option<&str> {
+    match url.strip_prefix("file://") {
+        Some(path) => Some(path),
+        None if !url.contains("://") => Some(url),
+        None => None,
+    }
+}
+
+// Downloads the XMLTV file to the cache and returns its path.
+async fn download(source: &Source, url: &str) -> Result<String> {
+    let user_agent = get_user_agent_from_source(source)?;
     let client = crate::utils::new_http_client(&user_agent)?;
     let fetch_start = std::time::Instant::now();
-    let mut response = client.get(&url).send().await?;
+    let mut response = client.get(url).send().await?;
     if !response.status().is_success() {
         bail!("Failed to fetch EPG, status: {}", response.status());
     }
@@ -61,6 +85,12 @@ pub async fn refresh_epg_from_url(source: Source, url: String) -> Result<()> {
         bytes_written,
         fetch_start.elapsed()
     ));
+    Ok(tmp_path)
+}
+
+// Replaces the source's programmes with the ones in the XMLTV file at path.
+fn store_programmes(source: &Source, path: &str) -> Result<()> {
+    let source_id = source.id.context("no source id")?;
     let parse_start = std::time::Instant::now();
     let known_tvg_ids: HashSet<String> = sql::get_tvg_ids_for_source(source_id)?
         .iter()
@@ -70,7 +100,7 @@ pub async fn refresh_epg_from_url(source: Source, url: String) -> Result<()> {
         .epg_retention_days
         .map(|d| d as i64)
         .unwrap_or(DEFAULT_EPG_RETENTION_DAYS);
-    let programmes = parse_xmltv(&tmp_path, &known_tvg_ids, retention_days * 24 * 60 * 60)?;
+    let programmes = parse_xmltv(path, &known_tvg_ids, retention_days * 24 * 60 * 60)?;
     log::log(format!(
         "[perf] {}: EPG parse ({} programmes) took {:?}",
         source.name,
@@ -94,11 +124,6 @@ pub async fn refresh_epg_from_url(source: Source, url: String) -> Result<()> {
         "[perf] {}: EPG delete+insert+analyze+commit took {:?}",
         source.name,
         db_start.elapsed()
-    ));
-    log::log(format!(
-        "[perf] {}: total refresh_epg_from_url took {:?}",
-        source.name,
-        refresh_start.elapsed()
     ));
     Ok(())
 }
@@ -336,6 +361,14 @@ mod tests {
             r#"<?xml version="1.0" encoding="UTF-8"?><tv>{}</tv>"#,
             programmes.concat()
         )
+    }
+
+    #[test]
+    fn treats_paths_and_file_urls_as_local_files() {
+        assert_eq!(local_path("/data/guide.xml"), Some("/data/guide.xml"));
+        assert_eq!(local_path("file:///data/guide.xml"), Some("/data/guide.xml"));
+        assert_eq!(local_path("http://example.com/guide.xml"), None);
+        assert_eq!(local_path("https://example.com/guide.xml.gz"), None);
     }
 
     #[test]
