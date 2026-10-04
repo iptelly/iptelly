@@ -1,5 +1,8 @@
 use std::vec;
-use std::{collections::HashMap, sync::LazyLock};
+use std::{
+    collections::HashMap,
+    sync::{LazyLock, OnceLock},
+};
 
 use crate::log::log;
 use crate::sort_type;
@@ -70,13 +73,24 @@ fn get_and_create_sqlite_db_path() -> String {
     return path.to_string_lossy().to_string();
 }
 
+static DB_PATH: OnceLock<String> = OnceLock::new();
+
+/// Points the database at `path` rather than the user's, for the tests of
+/// the apps built on the core. Only works before the first sql:: call.
+pub fn use_db_path(path: String) {
+    let _ = DB_PATH.set(path);
+}
+
 // Lets integration tests point this at a throwaway file instead of the
 // real user database - CONN is a LazyLock, so this only needs to be set
 // before the first sql:: call in the process (each file under tests/ is
 // its own process, so this can't affect a real running app).
 #[cfg(not(test))]
 fn db_path_override() -> Option<String> {
-    std::env::var("OPEN_TV_DB_PATH").ok()
+    DB_PATH
+        .get()
+        .cloned()
+        .or_else(|| std::env::var("OPEN_TV_DB_PATH").ok())
 }
 
 // Lib unit tests always get a throwaway database, with no env var to

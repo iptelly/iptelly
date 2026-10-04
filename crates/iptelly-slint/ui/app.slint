@@ -65,7 +65,7 @@ export component AppWindow inherits Window {
         drop-shadow-blur: 12px;
         drop-shadow-color: #00000080;
         // An error toast opens the error dialog with the full details.
-        TouchArea {
+        toast-area := TouchArea {
             mouse-cursor: toast-error ? pointer : default;
             clicked => { root.toast-clicked(); }
         }

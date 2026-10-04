@@ -14,6 +14,8 @@ mod instance;
 mod restream;
 mod settings_page;
 mod setup;
+#[cfg(test)]
+mod testing;
 mod tray;
 mod window_state;
 mod zoom;
@@ -86,14 +88,7 @@ fn main() -> Result<()> {
     custom::setup(&window);
     dialog::setup(&window);
 
-    let weak = window.as_weak();
-    window.on_toast_clicked(move || {
-        let Some(window) = weak.upgrade() else { return };
-        if window.get_toast_error() {
-            window.set_toast("".into());
-            dialog::show_error(&window, &LAST_ERROR.with_borrow(|e| e.clone()));
-        }
-    });
+    setup_toasts(&window);
 
     start();
 
@@ -174,8 +169,24 @@ pub fn show_toast(window: &AppWindow, message: &str) {
 pub fn show_error(window: &AppWindow, error: &anyhow::Error) {
     let details = format!("{error:?}");
     log::log(details.clone());
+    error_toast(window, &format!("{error:#}"), details);
+}
+
+fn error_toast(window: &AppWindow, message: &str, details: String) {
     LAST_ERROR.set(details);
-    toast(window, &format!("{error:#}\nClick for details"), true);
+    toast(window, &format!("{message}\nClick for details"), true);
+}
+
+// Clicking an error toast opens the error dialog with the full details.
+fn setup_toasts(window: &AppWindow) {
+    let weak = window.as_weak();
+    window.on_toast_clicked(move || {
+        let Some(window) = weak.upgrade() else { return };
+        if window.get_toast_error() {
+            window.set_toast("".into());
+            dialog::show_error(&window, &LAST_ERROR.with_borrow(|e| e.clone()));
+        }
+    });
 }
 
 /// Copies text to the system clipboard.
@@ -204,4 +215,66 @@ fn toast(window: &AppWindow, message: &str, error: bool) {
             },
         )
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use i_slint_backend_testing::ElementHandle;
+    use slint::platform::PointerEventButton;
+
+    use super::*;
+    use crate::testing::{wait, window};
+
+    fn click_toast(window: &AppWindow) {
+        wait(0);
+        ElementHandle::find_by_element_id(window, "AppWindow::toast-area")
+            .next()
+            .expect("no toast on screen")
+            .mock_single_click(PointerEventButton::Left);
+    }
+
+    #[test]
+    fn clicking_an_error_toast_opens_the_error_dialog() {
+        let window = window();
+        setup_toasts(&window);
+        dialog::setup(&window);
+        error_toast(&window, "Couldn't load", "the full error".into());
+        assert_eq!(window.get_toast(), "Couldn't load\nClick for details");
+
+        click_toast(&window);
+
+        assert_eq!(window.get_toast(), "");
+        let dialog = window.global::<DialogState>();
+        assert_eq!(dialog.get_kind(), DialogKind::Error);
+        assert_eq!(dialog.get_details(), "the full error");
+    }
+
+    #[test]
+    fn clicking_an_info_toast_does_nothing() {
+        let window = window();
+        setup_toasts(&window);
+        show_toast(&window, "Saved");
+
+        click_toast(&window);
+
+        assert_eq!(window.get_toast(), "Saved");
+        assert_eq!(window.global::<DialogState>().get_kind(), DialogKind::None);
+    }
+
+    #[test]
+    fn toasts_hide_after_4_seconds_or_8_for_errors() {
+        let window = window();
+        show_toast(&window, "Saved");
+        wait(3900);
+        assert_eq!(window.get_toast(), "Saved");
+        wait(200);
+        assert_eq!(window.get_toast(), "");
+
+        error_toast(&window, "Failed", String::new());
+        wait(7900);
+        assert!(window.get_toast_error());
+        assert_ne!(window.get_toast(), "");
+        wait(200);
+        assert_eq!(window.get_toast(), "");
+    }
 }

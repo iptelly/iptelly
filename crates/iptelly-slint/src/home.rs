@@ -1518,3 +1518,79 @@ fn sidebar_toggled(row: usize) {
     }
     rebuild_sidebar();
 }
+
+#[cfg(test)]
+mod tests {
+    use i_slint_backend_testing::ElementHandle;
+
+    use super::*;
+    use crate::testing::{wait, window};
+
+    // The home screen with nothing loaded yet. Searches it starts run
+    // against the empty test database.
+    fn home() -> (AppWindow, ElementHandle) {
+        let window = window();
+        setup(&window);
+        with_home(|home| {
+            home.filters = Some(Filters {
+                query: None,
+                source_ids: vec![],
+                media_types: None,
+                view_type: view_type::ALL,
+                page: 1,
+                series_id: None,
+                group_id: None,
+                use_keywords: false,
+                sort: sort_type::ALPHABETICAL_ASC,
+                season: None,
+            })
+        });
+        window.set_page(Page::Home);
+        wait(0);
+        let search = ElementHandle::find_by_element_id(&window, "ChannelsView::search")
+            .next()
+            .expect("no search box");
+        (window, search)
+    }
+
+    fn query() -> Option<String> {
+        with_home(|home| home.filters.as_ref()?.query.clone())
+    }
+
+    // Bumped by each new search (but not by loading the next page, which
+    // the empty grid asks for as soon as it's shown).
+    fn searches() -> u64 {
+        with_home(|home| home.load_token)
+    }
+
+    #[test]
+    fn search_waits_for_a_300_ms_pause_in_typing() {
+        let (window, search) = home();
+        let before = searches();
+        for text in ["n", "ne", "new"] {
+            search.set_accessible_value(text);
+            wait(200);
+        }
+        search.set_accessible_value("news ");
+        assert!(!window.global::<HomeState>().get_channels_visible());
+        wait(299);
+        assert_eq!(query(), None);
+        assert_eq!(searches(), before);
+
+        wait(1);
+        assert_eq!(query().as_deref(), Some("news"));
+        assert_eq!(searches(), before + 1);
+    }
+
+    #[test]
+    fn clearing_the_search_box_clears_the_query() {
+        let (_window, search) = home();
+        search.set_accessible_value("news");
+        wait(300);
+        assert_eq!(query().as_deref(), Some("news"));
+
+        search.set_accessible_value("  ");
+        wait(300);
+        assert_eq!(query(), None);
+    }
+}

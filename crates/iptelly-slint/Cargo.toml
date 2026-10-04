@@ -36,5 +36,9 @@ serde_json = "1.0"
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 tray-icon = "0.25"
 
+[dev-dependencies]
+# Runs the UI headless in tests (testing.rs). Its version must match slint's.
+i-slint-backend-testing = "=1.18.1"
+
 [build-dependencies]
 slint-build = "1.18"
