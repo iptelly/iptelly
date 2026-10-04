@@ -1,0 +1,180 @@
+import { Button, CheckBox, ComboBox, LineEdit } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { CustomState, CustomKind } from "state.slint";
+
+component Field inherits HorizontalLayout {
+    in property <string> label;
+    in property <bool> required;
+
+    spacing: 12px;
+    Text {
+        text: label + (required ? " *" : "");
+        width: 130px;
+        vertical-alignment: center;
+        color: Theme.text-secondary;
+    }
+    @children
+}
+
+component Error inherits HorizontalLayout {
+    in property <string> text;
+
+    Rectangle { width: 142px; }
+    Text {
+        text: root.text;
+        wrap: word-wrap;
+        color: Theme.danger;
+    }
+}
+
+export component CustomDialog inherits Rectangle {
+    property <CustomKind> kind: CustomState.kind;
+    property <bool> needs-url: kind == CustomKind.channel;
+    property <bool> needs-name: kind == CustomKind.channel || kind == CustomKind.group;
+    property <bool> can-save: !CustomState.busy && !CustomState.exists
+        && (!needs-name || CustomState.name != "") && (!needs-url || CustomState.url != "");
+
+    background: #000000a0;
+
+    // Swallows clicks so nothing behind the dialog reacts.
+    TouchArea { }
+
+    FocusScope {
+        init => { self.focus(); }
+        key-pressed(event) => {
+            if event.text == Key.Escape && !CustomState.busy {
+                CustomState.close();
+                return accept;
+            }
+            reject
+        }
+
+        Rectangle {
+            width: min(620px, root.width - 48px);
+            height: min(content.preferred-height, root.height - 48px);
+            border-radius: Theme.radius-md;
+            background: Theme.surface-1;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: #00000080;
+            clip: true;
+
+            content := VerticalLayout {
+                padding: 20px;
+                spacing: 12px;
+
+                Text {
+                    text: CustomState.title;
+                    font-size: 18px;
+                    font-weight: 600;
+                    overflow: elide;
+                    color: Theme.text-primary;
+                }
+
+                if kind == CustomKind.delete-group: Text {
+                    text: "The channels in this category will move to the category you choose. If you choose (None), they will no longer have a category.";
+                    wrap: word-wrap;
+                    color: Theme.text-secondary;
+                }
+                if kind == CustomKind.import: Text {
+                    text: "Optionally choose a new name for the import, to avoid duplicates for example. Then pick the .otv or .otvg file to import.";
+                    wrap: word-wrap;
+                    color: Theme.text-secondary;
+                }
+
+                if kind != CustomKind.delete-group: Field {
+                    label: "Name";
+                    required: needs-name;
+                    LineEdit {
+                        text <=> CustomState.name;
+                        placeholder-text: kind == CustomKind.group ? "My cool category"
+                            : kind == CustomKind.channel ? "My cool channel" : "";
+                        edited => { CustomState.name-edited(); }
+                    }
+                }
+                if kind == CustomKind.group && CustomState.exists: Error {
+                    text: "This category name is already taken.";
+                }
+
+                if needs-name: Field {
+                    label: "Image (link)";
+                    LineEdit {
+                        text <=> CustomState.image;
+                        placeholder-text: "http://mycoolsite.com/image.png";
+                    }
+                }
+
+                if needs-url: Field {
+                    label: "URL";
+                    required: true;
+                    LineEdit {
+                        text <=> CustomState.url;
+                        placeholder-text: "YouTube, Twitch, anything";
+                        edited => { CustomState.url-edited(); }
+                    }
+                }
+                if needs-url: Field {
+                    label: "Media type";
+                    required: true;
+                    ComboBox {
+                        model: ["Livestream", "Movie"];
+                        current-index <=> CustomState.media-type;
+                    }
+                }
+                if needs-url || kind == CustomKind.delete-group: Field {
+                    label: "Category";
+                    ComboBox {
+                        model: CustomState.groups;
+                        current-index <=> CustomState.group;
+                    }
+                }
+                if needs-url: Field {
+                    label: "HTTP user agent";
+                    LineEdit {
+                        text <=> CustomState.user-agent;
+                        placeholder-text: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)...";
+                    }
+                }
+                if needs-url: Field {
+                    label: "HTTP origin";
+                    LineEdit {
+                        text <=> CustomState.origin;
+                        placeholder-text: "http://mycoolsite.com";
+                    }
+                }
+                if needs-url: Field {
+                    label: "HTTP referrer";
+                    LineEdit {
+                        text <=> CustomState.referrer;
+                        placeholder-text: "http://mycoolsite.com";
+                    }
+                }
+                if needs-url: Field {
+                    label: "Ignore SSL";
+                    CheckBox {
+                        checked <=> CustomState.ignore-ssl;
+                    }
+                }
+                if needs-url && CustomState.exists: Error {
+                    text: "A channel with this name and URL already exists.";
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: end;
+                    Button {
+                        text: "Cancel";
+                        enabled: !CustomState.busy;
+                        clicked => { CustomState.close(); }
+                    }
+                    Button {
+                        text: kind == CustomKind.delete-group ? "Delete"
+                            : kind == CustomKind.import ? "Choose file..." : "Save";
+                        primary: true;
+                        enabled: can-save;
+                        clicked => { CustomState.save(); }
+                    }
+                }
+            }
+        }
+    }
+}

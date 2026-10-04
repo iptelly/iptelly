@@ -1,0 +1,593 @@
+import { Button, ComboBox, LineEdit, ScrollView, Slider, SpinBox, Switch } from "std-widgets.slint";
+import { Theme, Icons, Icon } from "theme.slint";
+import { SettingsState, SourceItem, SourceAction } from "state.slint";
+
+component SettingRow inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> hint;
+    spacing: 16px;
+    min-height: 40px;
+
+    VerticalLayout {
+        width: 260px;
+        alignment: center;
+        Text {
+            text: root.label;
+            color: Theme.text-primary;
+            wrap: word-wrap;
+        }
+        if root.hint != "": Text {
+            text: root.hint;
+            font-size: 12px;
+            color: Theme.text-secondary;
+            wrap: word-wrap;
+        }
+    }
+    @children
+}
+
+component Heading inherits Text {
+    font-size: 22px;
+    font-weight: 600;
+    color: Theme.text-primary;
+    horizontal-alignment: center;
+}
+
+// One label/value line on a source tile.
+component InfoRow inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> value;
+    spacing: 12px;
+    Text {
+        text: root.label;
+        width: 150px;
+        color: Theme.text-secondary;
+    }
+    Text {
+        text: root.value;
+        color: Theme.text-primary;
+        overflow: elide;
+        horizontal-stretch: 1;
+    }
+}
+
+component EditRow inherits HorizontalLayout {
+    in property <string> label;
+    spacing: 12px;
+    Text {
+        text: root.label;
+        width: 150px;
+        color: Theme.text-secondary;
+        vertical-alignment: center;
+    }
+    @children
+}
+
+component SourceTile inherits Rectangle {
+    in property <SourceItem> source;
+    in property <int> index;
+    property <bool> editing: SettingsState.editing == index;
+    property <int> type: source.source-type;
+    property <bool> has-epg: source.epg-url != "" || type == 2;
+    property <bool> show-password: false;
+
+    callback action(SourceAction);
+    action(a) => { SettingsState.source-action(index, a); }
+
+    border-radius: Theme.radius-md;
+    background: Theme.surface-1;
+    border-width: 1px;
+    border-color: Theme.border-subtle;
+    opacity: source.enabled || editing ? 1 : 0.6;
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 8px;
+
+        HorizontalLayout {
+            spacing: 8px;
+            VerticalLayout {
+                Text {
+                    text: source.name;
+                    font-size: 18px;
+                    font-weight: 600;
+                    color: Theme.text-primary;
+                }
+                Text {
+                    text: "Refreshed: " + source.refreshed;
+                    font-size: 12px;
+                    color: Theme.text-secondary;
+                }
+            }
+            if !editing: Rectangle {
+                width: 36px;
+                height: 36px;
+                border-radius: 18px;
+                background: toggle-touch.has-hover ? Theme.surface-3 : transparent;
+                toggle-touch := TouchArea {
+                    enabled: !SettingsState.busy;
+                    clicked => { root.action(SourceAction.toggle); }
+                }
+                Icon {
+                    data: source.enabled ? Icons.check-circle : Icons.check-circle-outline;
+                    color: source.enabled ? Theme.accent-hover : Theme.text-secondary;
+                    width: 24px;
+                    height: 24px;
+                }
+            }
+        }
+
+        InfoRow { label: "Type"; value: source.type-name; }
+
+        if !editing && type != 3: InfoRow { label: "URL"; value: source.url; }
+        if editing && type == 0: EditRow {
+            label: "File";
+            Text {
+                text: SettingsState.edit-url;
+                color: Theme.text-primary;
+                overflow: elide;
+                horizontal-stretch: 1;
+                vertical-alignment: center;
+            }
+            Button {
+                text: "Browse";
+                clicked => { root.action(SourceAction.browse); }
+            }
+        }
+        if editing && type != 0: EditRow {
+            label: "URL";
+            LineEdit { text <=> SettingsState.edit-url; }
+        }
+
+        if (type == 1 || type == 2) && !editing: InfoRow { label: "User-agent"; value: source.user-agent == "" ? "IPTelly" : source.user-agent; }
+        if (type == 1 || type == 2) && editing: EditRow {
+            label: "User-agent";
+            LineEdit {
+                placeholder-text: "IPTelly";
+                text <=> SettingsState.edit-user-agent;
+            }
+        }
+
+        if !editing: InfoRow { label: "Stream user-agent"; value: source.stream-user-agent; }
+        if editing: EditRow {
+            label: "Stream user-agent";
+            LineEdit { text <=> SettingsState.edit-stream-user-agent; }
+        }
+
+        if type != 3 && !editing: InfoRow { label: "Max streams"; value: source.max-streams == "" ? "1" : source.max-streams; }
+        if type != 3 && editing: EditRow {
+            label: "Max streams";
+            LineEdit {
+                input-type: number;
+                placeholder-text: "1";
+                text <=> SettingsState.edit-max-streams;
+            }
+        }
+
+        if type == 2 && !editing: InfoRow { label: "Username"; value: root.show-password ? source.username : "******"; }
+        if type == 2 && !editing: HorizontalLayout {
+            spacing: 12px;
+            Text {
+                text: "Password";
+                width: 150px;
+                color: Theme.text-secondary;
+                vertical-alignment: center;
+            }
+            Text {
+                text: root.show-password ? source.password : "******";
+                color: Theme.text-primary;
+                vertical-alignment: center;
+            }
+            Rectangle {
+                width: 28px;
+                height: 28px;
+                TouchArea {
+                    clicked => { root.show-password = !root.show-password; }
+                }
+                Icon {
+                    data: root.show-password ? Icons.eye : Icons.eye-outline;
+                    color: Theme.text-secondary;
+                    width: 18px;
+                    height: 18px;
+                }
+            }
+            Rectangle { horizontal-stretch: 1; }
+        }
+        if type == 2 && editing: EditRow {
+            label: "Username";
+            LineEdit { text <=> SettingsState.edit-username; }
+        }
+        if type == 2 && editing: EditRow {
+            label: "Password";
+            LineEdit {
+                input-type: password;
+                text <=> SettingsState.edit-password;
+            }
+        }
+        if type == 2 && !editing: InfoRow { label: "Expires"; value: source.expires; }
+        if type == 2 && !editing: InfoRow { label: "Timezone"; value: source.timezone; }
+
+        if (type == 0 || type == 1) && editing: Switch {
+            text: "Use TVG-ID for names when TVG-NAME is unavailable";
+            checked <=> SettingsState.edit-use-tvg-id;
+        }
+
+        if type != 3 && !editing: InfoRow { label: "Custom EPG URL"; value: source.epg-url; }
+        if type != 3 && editing: EditRow {
+            label: "Custom EPG URL";
+            LineEdit { text <=> SettingsState.edit-epg-url; }
+        }
+        if type != 3 && !editing: InfoRow { label: "EPG retention (days)"; value: source.epg-retention == "" ? "7" : source.epg-retention; }
+        if type != 3 && editing: EditRow {
+            label: "EPG retention (days)";
+            LineEdit {
+                input-type: number;
+                placeholder-text: "7";
+                text <=> SettingsState.edit-epg-retention;
+            }
+        }
+
+        if editing: HorizontalLayout {
+            spacing: 8px;
+            alignment: end;
+            Button {
+                text: "Cancel";
+                clicked => { root.action(SourceAction.cancel); }
+            }
+            Button {
+                text: "Save";
+                primary: true;
+                enabled: !SettingsState.busy;
+                clicked => { root.action(SourceAction.save); }
+            }
+        }
+
+        if !editing: HorizontalLayout {
+            spacing: 8px;
+            alignment: start;
+            if type != 3: Button {
+                text: "Edit";
+                enabled: !SettingsState.busy;
+                clicked => { root.action(SourceAction.edit); }
+            }
+            if type != 3: Button {
+                text: "Refresh";
+                enabled: !SettingsState.busy;
+                clicked => { root.action(SourceAction.refresh); }
+            }
+            if type != 3: Button {
+                text: "Backup favs";
+                enabled: !SettingsState.busy;
+                clicked => { root.action(SourceAction.backup-favs); }
+            }
+            if type != 3: Button {
+                text: "Restore favs";
+                enabled: !SettingsState.busy;
+                clicked => { root.action(SourceAction.restore-favs); }
+            }
+            if type == 3: Button {
+                text: "Add channel";
+                enabled: !SettingsState.busy;
+                clicked => { SettingsState.add-channel(index); }
+            }
+            if type == 3: Button {
+                text: "Add category";
+                enabled: !SettingsState.busy;
+                clicked => { SettingsState.add-group(index); }
+            }
+            if type == 3: Button {
+                text: "Import";
+                enabled: !SettingsState.busy;
+                clicked => { SettingsState.import(index); }
+            }
+            if type == 3: Button {
+                text: "Share";
+                enabled: !SettingsState.busy;
+                clicked => { root.action(SourceAction.share); }
+            }
+            Button {
+                text: "Delete";
+                enabled: !SettingsState.busy;
+                clicked => { root.action(SourceAction.delete); }
+            }
+        }
+
+        if !editing && root.has-epg: HorizontalLayout {
+            spacing: 8px;
+            alignment: start;
+            Button {
+                text: "Refresh EPG";
+                enabled: !SettingsState.busy;
+                clicked => { root.action(SourceAction.refresh-epg); }
+            }
+            if source.epg-url != "" && type == 2: Button {
+                text: "Refresh provider EPG";
+                enabled: !SettingsState.busy;
+                clicked => { root.action(SourceAction.refresh-provider-epg); }
+            }
+            Button {
+                text: "Clear old EPG";
+                enabled: !SettingsState.busy;
+                clicked => { root.action(SourceAction.prune-epg); }
+            }
+        }
+    }
+}
+
+export component SettingsView inherits Rectangle {
+    background: Theme.bg-base;
+
+    ScrollView {
+        HorizontalLayout {
+            alignment: center;
+            padding: 24px;
+
+            VerticalLayout {
+                width: min(820px, root.width - 48px);
+                spacing: 14px;
+
+                Heading { text: "Settings"; }
+
+                SettingRow {
+                    label: "Recording path";
+                    hint: "Where recorded livestreams are saved";
+                    LineEdit {
+                        read-only: true;
+                        placeholder-text: "~/Videos/iptelly";
+                        text: SettingsState.recording-path;
+                    }
+                    Button {
+                        text: "Change";
+                        clicked => { SettingsState.browse-recording-path(); }
+                    }
+                }
+
+                SettingRow {
+                    label: "Global MPV parameters";
+                    hint: "Passed to mpv for every stream";
+                    LineEdit {
+                        text <=> SettingsState.mpv-params;
+                        edited => { SettingsState.changed(); }
+                    }
+                }
+
+                if !SettingsState.is-flatpak: SettingRow {
+                    label: "Global VLC parameters";
+                    hint: "Passed to VLC for every stream";
+                    LineEdit {
+                        text <=> SettingsState.vlc-params;
+                        edited => { SettingsState.changed(); }
+                    }
+                }
+
+                SettingRow {
+                    label: "Theme";
+                    ComboBox {
+                        model: ["Modern", "Classic"];
+                        current-index <=> SettingsState.theme;
+                        selected => { SettingsState.changed(); }
+                    }
+                }
+
+                SettingRow {
+                    label: "UI zoom";
+                    hint: "50% to 300%";
+                    SpinBox {
+                        minimum: 50;
+                        maximum: 300;
+                        step-size: 10;
+                        value <=> SettingsState.zoom;
+                        edited => { SettingsState.changed(); }
+                    }
+                    Text {
+                        text: "%";
+                        color: Theme.text-primary;
+                        vertical-alignment: center;
+                    }
+                }
+
+                if !SettingsState.is-flatpak: SettingRow {
+                    label: "Player";
+                    ComboBox {
+                        model: ["MPV", "VLC"];
+                        current-index <=> SettingsState.player;
+                        selected => { SettingsState.changed(); }
+                    }
+                }
+
+                SettingRow {
+                    label: "Default view";
+                    ComboBox {
+                        model: ["Favourites", "Channels", "Movies", "Series", "History"];
+                        current-index <=> SettingsState.default-view;
+                        selected => { SettingsState.changed(); }
+                    }
+                }
+
+                SettingRow {
+                    label: "Default sort";
+                    ComboBox {
+                        model: ["Alphabetically asc", "Alphabetically desc", "Provider"];
+                        current-index <=> SettingsState.default-sort;
+                        selected => { SettingsState.changed(); }
+                    }
+                }
+
+                SettingRow {
+                    label: "Volume on start";
+                    Slider {
+                        minimum: 0;
+                        maximum: 100;
+                        value: SettingsState.volume;
+                        changed(value) => {
+                            SettingsState.volume = round(value);
+                            SettingsState.changed();
+                        }
+                    }
+                    Text {
+                        text: SettingsState.volume + "%";
+                        width: 44px;
+                        color: Theme.text-primary;
+                        vertical-alignment: center;
+                    }
+                }
+
+                SettingRow {
+                    label: "Re-stream port";
+                    LineEdit {
+                        input-type: number;
+                        placeholder-text: "3000";
+                        text <=> SettingsState.restream-port;
+                        edited => { SettingsState.changed(); }
+                    }
+                }
+
+                SettingRow {
+                    label: "Network interface";
+                    hint: SettingsState.interface-warning != "" ? SettingsState.interface-warning : "The local address all traffic is sent from";
+                    ComboBox {
+                        model: SettingsState.interfaces;
+                        current-index <=> SettingsState.interface;
+                        selected => { SettingsState.changed(); }
+                    }
+                    Button {
+                        text: "Refresh";
+                        clicked => { SettingsState.refresh-interfaces(); }
+                    }
+                }
+
+                SettingRow {
+                    label: "Use stream caching";
+                    Switch {
+                        checked <=> SettingsState.stream-caching;
+                        toggled => { SettingsState.changed(); }
+                    }
+                }
+                SettingRow {
+                    label: "Enable hardware acceleration";
+                    Switch {
+                        checked <=> SettingsState.hwdec;
+                        toggled => { SettingsState.changed(); }
+                    }
+                }
+                SettingRow {
+                    label: "Modern hardware optimizations";
+                    Switch {
+                        checked <=> SettingsState.gpu;
+                        toggled => { SettingsState.changed(); }
+                    }
+                }
+                SettingRow {
+                    label: "Always ask where to save downloads";
+                    Switch {
+                        checked <=> SettingsState.always-ask-save;
+                        toggled => { SettingsState.changed(); }
+                    }
+                }
+                SettingRow {
+                    label: "Refresh all sources on start";
+                    Switch {
+                        checked <=> SettingsState.refresh-on-start;
+                        toggled => { SettingsState.changed(); }
+                    }
+                }
+                if SettingsState.has-tray: SettingRow {
+                    label: "Enable tray icon";
+                    Switch {
+                        checked <=> SettingsState.tray;
+                        toggled => { SettingsState.changed(); }
+                    }
+                }
+                SettingRow {
+                    label: "Lightweight mode";
+                    hint: "Don't load channel images or EPG data";
+                    Switch {
+                        checked <=> SettingsState.lightweight;
+                        toggled => { SettingsState.changed(); }
+                    }
+                }
+
+                if !SettingsState.pin-set: SettingRow {
+                    label: "Adult content PIN";
+                    hint: SettingsState.pin-error != "" ? SettingsState.pin-error : "Hides adult content until the PIN is entered";
+                    LineEdit {
+                        input-type: password;
+                        placeholder-text: "New PIN";
+                        text <=> SettingsState.new-pin;
+                    }
+                    LineEdit {
+                        input-type: password;
+                        placeholder-text: "Confirm PIN";
+                        text <=> SettingsState.confirm-pin;
+                        accepted => { SettingsState.set-pin(); }
+                    }
+                    Button {
+                        text: "Set PIN";
+                        clicked => { SettingsState.set-pin(); }
+                    }
+                }
+                if SettingsState.pin-set: SettingRow {
+                    label: "Adult content PIN";
+                    hint: "PIN is set";
+                    Rectangle { horizontal-stretch: 1; }
+                    Button {
+                        text: "Remove PIN";
+                        clicked => { SettingsState.remove-pin(); }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: center;
+                    Button {
+                        text: "Add source";
+                        primary: true;
+                        enabled: !SettingsState.busy;
+                        clicked => { SettingsState.add-source(); }
+                    }
+                    Button {
+                        text: "Refresh all";
+                        enabled: !SettingsState.busy;
+                        clicked => { SettingsState.refresh-all(); }
+                    }
+                    Button {
+                        text: "Clear history";
+                        enabled: !SettingsState.busy;
+                        clicked => { SettingsState.clear-history(); }
+                    }
+                    Button {
+                        text: "Clear EPG cache";
+                        enabled: !SettingsState.busy;
+                        clicked => { SettingsState.clear-epg-cache(); }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: center;
+                    Button {
+                        text: "Export data";
+                        enabled: !SettingsState.busy;
+                        clicked => { SettingsState.export-data(); }
+                    }
+                    Button {
+                        text: "Import data";
+                        enabled: !SettingsState.busy;
+                        clicked => { SettingsState.import-data(); }
+                    }
+                    Button {
+                        text: "Delete everything";
+                        enabled: !SettingsState.busy;
+                        clicked => { SettingsState.delete-everything(); }
+                    }
+                }
+
+                Heading { text: "Sources"; }
+
+                for source[i] in SettingsState.sources: SourceTile {
+                    source: source;
+                    index: i;
+                }
+            }
+        }
+    }
+}

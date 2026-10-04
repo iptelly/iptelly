@@ -8,8 +8,11 @@ people contributing code, not end users - if you just want to use the app, see t
 
 IPTelly is a [Tauri v2](https://v2.tauri.app/) desktop app:
 
-- **Backend**: Rust, in `src-tauri/` (SQLite for storage, `mpv`/`vlc` spawned as external
-  player processes).
+- **Backend**: Rust, in a Cargo workspace at the repo root:
+  - `crates/iptelly-core/` - everything except the UI (SQLite for storage, source and EPG
+    parsing, downloads, restreaming, `mpv`/`vlc` spawned as external player processes).
+    It has no Tauri dependency, so any frontend can use it.
+  - `src-tauri/` - the Tauri app: its commands are thin wrappers around `iptelly-core`.
 - **Frontend**: Angular 22, in `src/` (renders inside the Tauri webview).
 
 ## Prerequisites
@@ -73,7 +76,7 @@ npx tauri dev
 
 This starts the Angular dev server (`ng serve`, with hot reload) and builds/launches the
 Rust backend (`cargo run`) pointed at it, opening the app window. Editing frontend files
-reloads the webview live; editing Rust files under `src-tauri/` triggers a recompile and
+reloads the webview live; editing Rust files under `src-tauri/` or `crates/` triggers a recompile and
 restart of the backend, which the Tauri CLI handles automatically - just keep an eye on
 the terminal for compile errors.
 
@@ -83,7 +86,7 @@ Useful things while developing:
   e.g. `~/.local/share/dev.iptelly.iptelly/db.sqlite` on Linux. Handy to inspect directly
   with `sqlite3` when debugging data issues.
 - **Quick backend-only check** (faster than a full `tauri dev` cycle when you just want to
-  know if Rust changes compile): `cd src-tauri && cargo check --no-default-features`.
+  know if Rust changes compile): `cargo check --workspace --no-default-features`.
 - **Quick frontend-only check**: `npx ng build --configuration development`.
 
 ## Building everything locally
@@ -106,16 +109,16 @@ npx tauri build --bundles appimage  # just the AppImage
 npx tauri build --bundles deb,rpm   # what CI builds on Linux
 ```
 
-Output lands in `src-tauri/target/release/bundle/<type>/`, e.g.
-`src-tauri/target/release/bundle/rpm/IPTelly-0.0.0-1.x86_64.rpm`. The plain, unbundled
-binary itself is at `src-tauri/target/release/iptelly` if you just want to run it directly
+Output lands in `target/release/bundle/<type>/`, e.g.
+`target/release/bundle/rpm/IPTelly-0.0.0-1.x86_64.rpm`. The plain, unbundled
+binary itself is at `target/release/iptelly` if you just want to run it directly
 without installing a package.
 
 To install the RPM you just built (Fedora; `ffmpeg` needs RPM Fusion enabled, since the
 package depends on it):
 
 ```
-sudo dnf install ./src-tauri/target/release/bundle/rpm/IPTelly-*.rpm
+sudo dnf install ./target/release/bundle/rpm/IPTelly-*.rpm
 ```
 
 Use `dnf reinstall` instead to replace a build of the same version that's already installed.
@@ -137,14 +140,14 @@ Windows via WiX, `.dmg`/`.app` on macOS) the same way.
 
 ## Verifying before committing
 
-There's a small backend test suite (`src-tauri/src/**/test_*` modules, plus
-`src-tauri/tests/`), and these practical checks:
+There's a small backend test suite (`#[cfg(test)]` modules in `crates/iptelly-core/src/`,
+plus `crates/iptelly-core/tests/`), and these practical checks, run from the repo root:
 
 ```
-cd src-tauri && cargo check --no-default-features    # backend compiles
-cd src-tauri && RUSTFLAGS="-D warnings" cargo test --no-default-features
+cargo check --workspace --no-default-features        # backend compiles
+RUSTFLAGS="-D warnings" cargo test --workspace --no-default-features
                                                        # backend tests pass, no warnings
-cd .. && npx ng build --configuration development     # frontend compiles
+npx ng build --configuration development              # frontend compiles
 npm run lint                                           # frontend lint + formatting
 npx ng test --watch=false                              # frontend tests pass
 npm audit --omit=dev --audit-level=high                # no high/critical advisories in shipped deps
@@ -215,7 +218,7 @@ because existing code has a backlog of them. Fix those case by case (`==` to `==
 change behaviour if a value arrives as a string), then switch each rule back to its
 default once its backlog is cleared.
 
-### `src-tauri/tests/` - parser integration tests
+### `crates/iptelly-core/tests/` - parser integration tests
 
 `tests/m3u_parser_test.rs` runs the real m3u parser (`m3u::read_m3u8`) end-to-end against a
 real, messy, third-party-generated playlist (`tests/fixtures/samsung_tvplus_playlist.m3u8`,
@@ -229,9 +232,9 @@ process, so this can't affect a real running app's database.
 Regenerate the fixtures with `samsung_tvplus_fetch.py` (ask Claude, or see its own `-h`) if
 you need a fresher/larger one.
 
-### `src-tauri/benches/` - parser benchmarks
+### `crates/iptelly-core/benches/` - parser benchmarks
 
-`cargo bench --no-default-features` runs `benches/m3u_parse.rs`, which benchmarks
+`cargo bench -p iptelly-core` runs `benches/m3u_parse.rs`, which benchmarks
 `m3u::get_channel_from_lines` against the same real 2471-channel fixture, plus a synthetic
 500,000-channel/20,000-category playlist for seeing how the parser scales well past
 anything a real fixture reaches - useful before/after a parsing change to see whether it

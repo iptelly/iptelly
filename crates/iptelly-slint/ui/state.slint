@@ -1,0 +1,445 @@
+// Data the Rust side pushes into the UI, and the callbacks it handles.
+// Numbers match iptelly-core: media types (live=0, movie=1, serie=2,
+// group=3, season=4), view types (all=0, favorites=1, categories=2,
+// history=3, hidden=4) and sort types (asc=0, desc=1, provider=2).
+
+// A programme on a channel's EPG timeline. Times are seconds since the
+// app started (HomeState.epg-now is in the same units), since Slint's int
+// is 32-bit.
+export struct EpgBlock {
+    title: string,
+    start: int,
+    end: int,
+}
+
+// A label on the EPG timeline header's ruler.
+export struct EpgTick {
+    label: string,
+    at: int,
+}
+
+export struct ChannelItem {
+    name: string,
+    source-name: string,
+    logo: image,
+    has-logo: bool,
+    media-type: int,
+    favorite: bool,
+    hidden: bool,
+    archive: bool,
+    custom: bool,
+    // Set while the player is starting; clicking again cancels.
+    starting: bool,
+    // Unfavourited or hidden since the list loaded; it disappears on reload.
+    faded: bool,
+    // A download of this item is queued, running or paused; progress is 0-1.
+    downloading: bool,
+    progress: float,
+    // Live channels in the list layout.
+    epg: [EpgBlock],
+    epg-loaded: bool,
+}
+
+// One row of the playlist sidebar's flattened tree.
+export struct SidebarRow {
+    // 0 = All playlists, 1 = source, 2 = category, 3 = a message
+    // ("Loading...", "No categories").
+    kind: int,
+    name: string,
+    selected: bool,
+    expanded: bool,
+    // A category of a custom source, which can be edited, shared and deleted.
+    custom: bool,
+}
+
+// Matches RailItem in the Angular app, where it's persisted as
+// settings.default_view, so the numbers can't change.
+export enum Rail { favourites, channels, movies, series, history, manage-categories, settings, downloads }
+
+export global HomeState {
+    in-out property <Rail> rail: Rail.channels;
+    // The playlist sidebar, collapsed to a strip, or its dragged width.
+    in-out property <bool> sidebar-collapsed;
+    in-out property <length> sidebar-width: 260px;
+    in-out property <[ChannelItem]> channels;
+    // Every page of `channels` is loaded.
+    in-out property <bool> channels-complete;
+    // Favourites' second section, favourite movies and series, below the
+    // channels. Its tiles' indexes start at fav-offset.
+    in-out property <bool> show-fav-media;
+    in-out property <[ChannelItem]> fav-media;
+    in-out property <int> fav-offset;
+    in-out property <bool> fav-complete;
+    in-out property <int> fav-scroll-reset;
+    in-out property <[SidebarRow]> sidebar;
+    in-out property <bool> show-sidebar: true;
+    in-out property <bool> loading;
+    // Fades the grid out between typing and the search results arriving.
+    in-out property <bool> channels-visible: true;
+    // Shown above the grid when drilled into a series or season.
+    in-out property <string> back-title;
+    in-out property <string> empty-text: "Nothing to show here.";
+    in-out property <string> search-text;
+    in-out property <bool> use-keywords;
+    in-out property <int> sort: 2;
+    in-out property <int> view-type;
+    // Incremented by Rust to scroll the grid back to the top.
+    in-out property <int> scroll-reset;
+    in-out property <bool> adult-pin-set;
+    in-out property <bool> adult-unlocked;
+
+    // Live channels only: one row per channel with its EPG timeline, which
+    // shows a 4 hour window starting 30 minutes before (now + offset).
+    in-out property <bool> list-mode;
+    in-out property <bool> show-epg;
+    in-out property <int> epg-now;
+    in-out property <int> epg-offset;
+    in-out property <string> epg-date;
+    in-out property <[EpgTick]> epg-ticks;
+    // -1 = back 3 hours, 0 = back to now, 1 = forward 3 hours.
+    callback epg-pan(int);
+    // Row index and programme index.
+    callback epg-clicked(int, int);
+    // Keyboard guide mode: the row whose programmes the cursor is in (-1 =
+    // none) and the start of the programme it's on.
+    in-out property <int> guide-row: -1;
+    in-out property <int> guide-start;
+    // A key on a row in list mode: 0 = Right (enters the guide, or next
+    // programme), 1 = Left, 2 = leave the guide, 3 = open the programme.
+    // Returns whether it was handled.
+    callback guide-key(int, int) -> bool;
+
+    callback rail-selected(Rail);
+    callback toggle-adult-lock();
+    callback search-edited(string);
+    callback toggle-keywords();
+    callback sort-selected(int);
+    callback load-more();
+    callback load-more-fav();
+    callback go-back();
+    callback clear-history();
+    callback sidebar-clicked(int);
+    callback sidebar-toggled(int);
+    callback sidebar-hide-category(int);
+    callback sidebar-edit-category(int);
+    callback sidebar-share-category(int);
+    callback sidebar-delete-category(int);
+    // BulkActionType: 0 = hide, 1 = unhide, 2 = favorite, 3 = unfavorite;
+    // applied to everything the current filters match.
+    callback bulk-action(int);
+    // Inside a series but not a season, where bulk actions don't apply.
+    in-out property <bool> bulk-disabled;
+
+    // Keyboard navigation: the highlighted tile, shown while the grid has
+    // focus.
+    in-out property <int> focused;
+    // Bumped to give the grid keyboard focus (after a dialog closes, or a
+    // tile is clicked).
+    in-out property <int> focus-grid;
+    // Bumped to open the highlighted tile's context menu.
+    in-out property <int> open-menu;
+    // The F1 keyboard shortcuts help.
+    in-out property <bool> show-help;
+    // Esc: clears the search, or else goes back a level.
+    callback escape-pressed();
+    // Ctrl+Q/W/E: adds or removes a media type (MediaType number) from the grid.
+    callback toggle-media-type(int);
+
+    callback tile-activated(int);
+    callback tile-favorite(int);
+    callback tile-hide(int);
+    callback tile-remove-history(int);
+    callback tile-copy-url(int);
+    callback tile-record(int);
+    callback tile-restream(int);
+    // Custom sources only.
+    callback tile-edit(int);
+    callback tile-share(int);
+    callback tile-delete(int);
+    callback tile-download(int);
+    callback tile-cancel-download(int);
+    // A series or season: queues all its episodes.
+    callback tile-download-all(int);
+    // Whether a series or season queue is running (only one at a time).
+    in-out property <bool> batch-running;
+}
+
+export struct SourceItem {
+    name: string,
+    // SourceType numbers: M3U=0, M3U link=1, Xtream=2, Custom=3.
+    source-type: int,
+    type-name: string,
+    url: string,
+    user-agent: string,
+    stream-user-agent: string,
+    max-streams: string,
+    username: string,
+    password: string,
+    expires: string,
+    timezone: string,
+    epg-url: string,
+    epg-retention: string,
+    use-tvg-id: bool,
+    refreshed: string,
+    enabled: bool,
+}
+
+export enum SourceAction {
+    toggle, edit, save, cancel, browse, refresh, refresh-epg, refresh-provider-epg,
+    prune-epg, backup-favs, restore-favs, share, delete,
+}
+
+export global SettingsState {
+    in-out property <bool> is-flatpak;
+    // The tray icon only exists on Windows and macOS.
+    in-out property <bool> has-tray;
+
+    in-out property <string> recording-path;
+    in-out property <string> mpv-params;
+    in-out property <string> vlc-params;
+    // ComboBox indexes: theme (modern, classic), player (mpv, vlc),
+    // default view (a Rail number) and default sort (a sort type).
+    in-out property <int> theme;
+    in-out property <int> player;
+    in-out property <int> default-view;
+    in-out property <int> default-sort;
+    in-out property <int> volume;
+    in-out property <string> restream-port;
+    // UI zoom in percent.
+    in-out property <int> zoom: 100;
+    // "System default" followed by each network interface.
+    in-out property <[string]> interfaces;
+    in-out property <int> interface;
+    in-out property <string> interface-warning;
+    in-out property <bool> stream-caching;
+    in-out property <bool> hwdec;
+    in-out property <bool> gpu;
+    in-out property <bool> always-ask-save;
+    in-out property <bool> refresh-on-start;
+    in-out property <bool> tray;
+    in-out property <bool> lightweight;
+
+    in-out property <bool> pin-set;
+    in-out property <string> new-pin;
+    in-out property <string> confirm-pin;
+    in-out property <string> pin-error;
+
+    in-out property <[SourceItem]> sources;
+    // Index of the source being edited, or -1. Its fields are in edit-*.
+    in-out property <int> editing: -1;
+    in-out property <string> edit-url;
+    in-out property <string> edit-user-agent;
+    in-out property <string> edit-stream-user-agent;
+    in-out property <string> edit-max-streams;
+    in-out property <string> edit-username;
+    in-out property <string> edit-password;
+    in-out property <string> edit-epg-url;
+    in-out property <string> edit-epg-retention;
+    in-out property <bool> edit-use-tvg-id;
+    // Set while a long operation runs; disables the buttons that start one.
+    in-out property <bool> busy;
+
+    // Any setting changed; saved after a short delay.
+    callback changed();
+    callback browse-recording-path();
+    callback refresh-interfaces();
+    callback set-pin();
+    callback remove-pin();
+    callback add-source();
+    callback refresh-all();
+    callback clear-history();
+    callback clear-epg-cache();
+    callback export-data();
+    callback import-data();
+    callback delete-everything();
+    callback source-action(int, SourceAction);
+    // Custom sources: add a channel or a category, or import one.
+    callback add-channel(int);
+    callback add-group(int);
+    callback import(int);
+}
+
+// One row of Manage Categories' flattened sections.
+export struct CategoryRow {
+    // 0 = section header, 1 = category, 2 = hidden channel, 3 = a message.
+    kind: int,
+    // 0-2 = channel/movie/series categories, 3 = individually hidden channels.
+    section: int,
+    name: string,
+    checked: bool,
+    hidden: bool,
+    expanded: bool,
+}
+
+export global CategoriesState {
+    in-out property <[string]> sources;
+    in-out property <int> source;
+    in-out property <string> filter;
+    in-out property <[CategoryRow]> rows;
+    in-out property <bool> any-selected;
+    in-out property <bool> any-channels-selected;
+    in-out property <bool> busy;
+
+    callback source-selected(int);
+    callback filter-edited(string);
+    // Row index, and whether Shift was held (selects the range from the
+    // last clicked row).
+    callback row-clicked(int, bool);
+    callback hide-selected();
+    callback unhide-selected();
+    callback unhide-channels();
+}
+
+export struct DownloadRow {
+    id: string,
+    name: string,
+    // "Queued", "45% (1.2 GB / 2.6 GB)", "Completed - 2.6 GB", ...
+    detail: string,
+    // 0-1, for active downloads.
+    progress: float,
+    // 0 = queued, 1 = downloading, 2 = paused, 3 = completed,
+    // 4 = cancelled, 5 = failed.
+    status: int,
+}
+
+export enum DownloadAction { pause, resume, restart, cancel, play, delete-file, delete-entry }
+
+export global DownloadsState {
+    // 0 = queued (active), 1 = downloaded, 2 = cancelled/failed/paused.
+    in-out property <int> category;
+    in-out property <[DownloadRow]> rows;
+    in-out property <int> queued-count;
+    in-out property <int> completed-count;
+    in-out property <int> cancelled-count;
+
+    callback category-selected(int);
+    callback action(string, DownloadAction);
+    callback pause-all();
+    callback cancel-all();
+    callback restart-all();
+    callback clear-all();
+}
+
+// The programme dialog opened from an EPG timeline.
+export global EpgState {
+    in-out property <bool> open;
+    in-out property <string> channel-name;
+    in-out property <string> date;
+    in-out property <string> title;
+    in-out property <string> time;
+    in-out property <string> description;
+    in-out property <bool> now-playing;
+    // Catch-up is available, so it can be played or downloaded.
+    in-out property <bool> has-archive;
+    // A reminder is set for this programme.
+    in-out property <bool> reminder;
+    in-out property <bool> can-prev;
+    in-out property <bool> can-next;
+    in-out property <bool> downloading;
+    in-out property <float> progress;
+
+    callback prev();
+    callback next();
+    callback close();
+    callback play();
+    callback download();
+    callback cancel-download();
+    callback toggle-reminder();
+}
+
+// Re-streaming a live channel to other devices through ffmpeg and a small
+// web server.
+export global RestreamState {
+    in-out property <bool> open;
+    in-out property <string> channel-name;
+    // Waiting for the restream to start.
+    in-out property <bool> loading;
+    in-out property <bool> started;
+    in-out property <bool> watching;
+    in-out property <[string]> local-ips;
+    in-out property <string> wan-ip;
+    // The local IPs and the WAN IP, for the share picker.
+    in-out property <[string]> share-ips;
+    in-out property <int> share-ip;
+
+    callback start();
+    callback stop();
+    callback watch();
+    callback share();
+    callback close();
+}
+
+export enum CustomKind { none, channel, group, delete-group, import }
+
+// The dialogs for custom sources: adding or editing a channel or a category,
+// choosing where a deleted category's channels go, and importing a shared
+// channel or category.
+export global CustomState {
+    in-out property <CustomKind> kind;
+    in-out property <string> title;
+    // Editing rather than adding.
+    in-out property <bool> editing;
+    // The channel or category name; for an import, the name override.
+    in-out property <string> name;
+    in-out property <string> image;
+    in-out property <string> url;
+    // 0 = livestream, 1 = movie.
+    in-out property <int> media-type;
+    // Category choices, "(None)" first. For delete-group, the replacements.
+    in-out property <[string]> groups;
+    in-out property <int> group;
+    in-out property <string> user-agent;
+    in-out property <string> origin;
+    in-out property <string> referrer;
+    in-out property <bool> ignore-ssl;
+    // The channel (name and URL) or category name is already in the source.
+    in-out property <bool> exists;
+    in-out property <bool> busy;
+
+    callback name-edited();
+    callback url-edited();
+    callback save();
+    callback close();
+}
+
+export enum DialogKind { none, confirm, pin, error }
+
+// A single modal dialog, drawn over the whole window.
+export global DialogState {
+    in-out property <DialogKind> kind;
+    in-out property <string> title;
+    in-out property <string> message;
+    in-out property <string> confirm-label: "OK";
+    in-out property <string> cancel-label: "Cancel";
+    in-out property <string> pin;
+    in-out property <string> pin-error;
+    // The full error, for the error dialog's copyable text box.
+    in-out property <string> details;
+
+    callback confirmed();
+    callback cancelled();
+}
+
+export global SetupState {
+    // 0 = M3U file, 1 = M3U URL, 2 = Xtream, 3 = Custom, 4 = Custom import
+    // (SourceType numbers).
+    in-out property <int> source-type: 0;
+    in-out property <string> name;
+    in-out property <string> url;
+    in-out property <string> user-agent;
+    in-out property <string> epg-url;
+    in-out property <string> username;
+    in-out property <string> password;
+    in-out property <bool> use-tvg-id;
+    in-out property <bool> name-taken;
+    in-out property <bool> loading;
+    // False on first run (no sources yet), when there's nowhere to go back to.
+    in-out property <bool> can-go-back;
+
+    callback name-edited(string);
+    callback submit();
+    callback back();
+    // First run only: restore an app data export, or wipe everything.
+    callback import-backup();
+    callback delete-everything();
+}

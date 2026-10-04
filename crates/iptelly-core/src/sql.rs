@@ -1,0 +1,2771 @@
+use std::vec;
+use std::{
+    collections::HashMap,
+    sync::{LazyLock, OnceLock},
+};
+
+use crate::log::log;
+use crate::sort_type;
+use crate::types::{
+    ChannelPreserve, CustomChannel, CustomChannelExtraData, DownloadHistoryItem, EPG, EPGNotify,
+    ExportedGroup, Group, IdName, Season, SeriesEpisode,
+};
+use crate::{
+    media_type, source_type,
+    types::{Channel, ChannelHttpHeaders, Filters, Source},
+    view_type,
+};
+use anyhow::{Context, Result, anyhow};
+use directories::ProjectDirs;
+use r2d2::{Pool, PooledConnection};
+use r2d2_sqlite::SqliteConnectionManager;
+use rusqlite::{OptionalExtension, Row, Transaction, params, params_from_iter};
+use rusqlite_migration::{M, Migrations};
+
+pub const PAGE_SIZE: u8 = 36;
+pub const DB_NAME: &str = "db.sqlite";
+static CONN: LazyLock<Pool<SqliteConnectionManager>> = LazyLock::new(|| create_connection_pool());
+
+pub fn get_conn() -> Result<PooledConnection<SqliteConnectionManager>> {
+    CONN.try_get().context("No sqlite conns available")
+}
+
+fn create_connection_pool() -> Pool<SqliteConnectionManager> {
+    // SQLite disables foreign key enforcement by default on every new
+    // connection, for backwards compatibility - the FOREIGN KEY/ON DELETE
+    // CASCADE clauses already declared throughout this schema do nothing
+    // unless this is turned on for each connection the pool hands out.
+    //
+    // Tried journal_mode=WAL + synchronous=NORMAL after profiling a bulk
+    // xtream refresh (see benches/xtream_parse.rs) showed most time going
+    // into SQLite's own journal/page-cache machinery - measured 18% slower
+    // for a single 500k-row transaction (WAL only gets one checkpoint
+    // opportunity, at that one commit, likely turning into one large
+    // merge-back), and committing in chunks to give it more checkpoint
+    // opportunities measured slower still. Reverted - the plain default is
+    // the fastest of the three for this app's actual access pattern (one
+    // large bulk transaction per refresh, not many small concurrent ones).
+    let manager = SqliteConnectionManager::file(get_and_create_sqlite_db_path())
+        .with_init(|c| c.execute_batch("PRAGMA foreign_keys = ON;"));
+    r2d2::Pool::builder()
+        .max_size(20)
+        .build(manager)
+        .expect("Failed to build the SQLite connection pool")
+}
+
+// The app has no way to function at all without its database, so failure
+// here is deliberately fatal (same rationale as the Tauri app's
+// main-window .expect() calls) - unlike the other cache/log directories, this isn't
+// something that can degrade gracefully. Using .expect() with a message
+// instead of a bare .unwrap() at least makes the crash diagnosable.
+fn get_and_create_sqlite_db_path() -> String {
+    if let Some(path) = db_path_override() {
+        return path;
+    }
+    let mut path = ProjectDirs::from("dev", "iptelly", "iptelly")
+        .expect("Could not determine the app data directory")
+        .data_dir()
+        .to_owned();
+    if !path.exists() {
+        std::fs::create_dir_all(&path).expect("Failed to create app data directory");
+    }
+    path.push(DB_NAME);
+    return path.to_string_lossy().to_string();
+}
+
+static DB_PATH: OnceLock<String> = OnceLock::new();
+
+/// Points the database at `path` rather than the user's, for the tests of
+/// the apps built on the core. Only works before the first sql:: call.
+pub fn use_db_path(path: String) {
+    let _ = DB_PATH.set(path);
+}
+
+// Lets integration tests point this at a throwaway file instead of the
+// real user database - CONN is a LazyLock, so this only needs to be set
+// before the first sql:: call in the process (each file under tests/ is
+// its own process, so this can't affect a real running app).
+#[cfg(not(test))]
+fn db_path_override() -> Option<String> {
+    DB_PATH
+        .get()
+        .cloned()
+        .or_else(|| std::env::var("OPEN_TV_DB_PATH").ok())
+}
+
+// Lib unit tests always get a throwaway database, with no env var to
+// forget to set - see test_db.rs.
+#[cfg(test)]
+fn db_path_override() -> Option<String> {
+    Some(crate::test_db::path())
+}
+
+fn create_structure() -> Result<()> {
+    let sql = get_conn()?;
+    sql.execute_batch(
+        r#"
+CREATE TABLE "sources" (
+  "id"          INTEGER PRIMARY KEY,
+  "name"        varchar(100),
+  "source_type" integer,
+  "url"         varchar(500),
+  "username"    varchar(100),
+  "password"    varchar(100),
+  "enabled"     integer DEFAULT 1
+);
+
+CREATE TABLE "channels" (
+  "id" INTEGER PRIMARY KEY,
+  "name" varchar(100),
+  "image" varchar(500),
+  "url" varchar(500),
+  "media_type" integer,
+  "source_id" integer,
+  "favorite" integer,
+  "series_id" integer,
+  "group_id" integer,
+  FOREIGN KEY (source_id) REFERENCES sources(id)
+  FOREIGN KEY (group_id) REFERENCES groups(id)
+);
+
+CREATE TABLE "settings" (
+  "key" VARCHAR(50) PRIMARY KEY,
+  "value" VARCHAR(100)
+);
+
+CREATE TABLE "groups" (
+  "id" INTEGER PRIMARY KEY,
+  "name" varchar(100),
+  "image" varchar(500),
+  "source_id" integer,
+  FOREIGN KEY (source_id) REFERENCES sources(id)
+);
+
+CREATE INDEX index_channel_name ON channels(name);
+CREATE UNIQUE INDEX channels_unique ON channels(name, url);
+
+CREATE UNIQUE INDEX index_source_name ON sources(name);
+CREATE INDEX index_source_enabled ON sources(enabled);
+
+CREATE UNIQUE INDEX index_group_unique ON groups(name, source_id);
+CREATE INDEX index_group_name ON groups(name);
+
+CREATE INDEX index_channel_source_id ON channels(source_id);
+CREATE INDEX index_channel_favorite ON channels(favorite);
+CREATE INDEX index_channel_series_id ON channels(series_id);
+CREATE INDEX index_channel_group_id ON channels(group_id);
+CREATE INDEX index_channel_media_type ON channels(media_type);
+
+CREATE INDEX index_group_source_id ON groups(source_id);
+"#,
+    )?;
+    Ok(())
+}
+
+fn structure_exists() -> Result<bool> {
+    let sql = get_conn()?;
+    let table_exists: bool = sql
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'channels' LIMIT 1",
+            [],
+            |row| row.get::<_, u8>(0),
+        )
+        .optional()?
+        .is_some();
+    Ok(table_exists)
+}
+
+pub fn create_or_initialize_db() -> Result<()> {
+    if !structure_exists()? {
+        create_structure()?;
+    }
+    apply_migrations()?;
+    Ok(())
+}
+
+fn apply_migrations() -> Result<()> {
+    let mut sql = get_conn()?;
+    let migrations = Migrations::new(vec![
+        M::up(
+            r#"
+                DROP INDEX IF EXISTS channels_unique;
+                CREATE UNIQUE INDEX channels_unique ON channels(name, url, source_id);
+                CREATE TABLE IF NOT EXISTS "channel_http_headers" (
+                    "id" INTEGER PRIMARY KEY,
+                    "channel_id" integer,
+                    "referrer" varchar(500),
+                    "user_agent" varchar(500),
+                    "http_origin" varchar(500),
+                    "ignore_ssl" integer DEFAULT 0,
+                    FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS index_channel_http_headers_channel_id ON channel_http_headers(channel_id);
+                ALTER TABLE sources ADD COLUMN use_tvg_id integer;
+                UPDATE sources SET use_tvg_id = 1 WHERE source_type in (0,1);
+            "#,
+        ),
+        M::up(
+            r#"
+                ALTER TABLE channels ADD COLUMN stream_id integer;
+                CREATE INDEX IF NOT EXISTS index_channels_stream_id on channels(stream_id);
+                CREATE TABLE IF NOT EXISTS "epg" (
+                  "id" INTEGER PRIMARY KEY,
+                  "epg_id" varchar(25),
+                  "channel_name" varchar(100),
+                  "title" varchar(100),
+                  "start_timestamp" INTEGER
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS index_epg_epg_id on epg(epg_id);
+            "#,
+        ),
+        M::up(
+            r#"
+              ALTER TABLE channels ADD COLUMN last_watched integer;
+              CREATE INDEX index_channels_last_watched on channels(last_watched);
+
+              DROP INDEX IF EXISTS channels_unique;
+              DELETE FROM channels
+              WHERE ROWID NOT IN (
+                  SELECT MIN(ROWID)
+                  FROM channels
+                  GROUP BY name, source_id
+              );
+              CREATE UNIQUE INDEX channels_unique ON channels(name, source_id);
+            "#,
+        ),
+        M::up(
+            r#"
+              ALTER TABLE channels ADD COLUMN tv_archive integer;
+              CREATE INDEX index_channels_tv_archive on channels(tv_archive);
+            "#,
+        ),
+        M::up(
+            r#"
+              ALTER TABLE groups
+              ADD COLUMN media_type INTEGER;
+              CREATE INDEX index_groups_media_type ON groups(media_type);
+
+              ALTER TABLE channels
+              ADD COLUMN season_id INTEGER;
+              CREATE INDEX index_channels_season_id ON channels(season_id);
+
+              ALTER TABLE channels
+              ADD COLUMN episode_num INTEGER;
+              CREATE INDEX index_channels_episode_num on channels(episode_num);
+
+              CREATE TABLE IF NOT EXISTS "seasons" (
+                "id" INTEGER PRIMARY KEY,
+                "name" VARCHAR(50),
+                "season_number" INTEGER,
+                "series_id" INTEGER,
+                "source_id" INTEGER,
+                "image" varchar(200),
+                FOREIGN KEY (source_id) REFERENCES sources(id) ON DELETE CASCADE
+              );
+              CREATE INDEX index_seasons_name ON seasons(name);
+              CREATE UNIQUE INDEX unique_seasons ON seasons(season_number, series_id, source_id);
+            "#,
+        ),
+        M::up(
+            r#"
+              DROP INDEX IF EXISTS channels_unique;
+              CREATE UNIQUE INDEX channels_unique ON channels(name, source_id, url, series_id, season_id);
+        "#,
+        ),
+        M::up(
+            r#"
+              ALTER TABLE sources ADD COLUMN user_agent varchar(500);
+              ALTER TABLE sources ADD COLUMN max_streams integer;
+              ALTER TABLE sources ADD COLUMN stream_user_agent varchar(500);
+              ALTER TABLE channels ADD COLUMN hidden integer DEFAULT 0;
+              ALTER TABLE groups ADD COLUMN hidden integer DEFAULT 0;
+              CREATE INDEX index_channels_hidden ON channels(hidden);
+              CREATE INDEX index_groups_hidden ON groups(hidden);
+              ANALYZE;
+            "#,
+        ),
+        M::up(
+            r#"
+              ALTER TABLE sources ADD COLUMN last_updated integer;
+              ANALYZE;
+            "#,
+        ),
+        M::up(
+            r#"
+              ALTER TABLE channels ADD COLUMN tvg_id varchar(255);
+              CREATE INDEX IF NOT EXISTS idx_channels_tvg_id ON channels(tvg_id);
+
+              CREATE TABLE IF NOT EXISTS "epg_programmes" (
+                "id" INTEGER PRIMARY KEY,
+                "source_id" INTEGER NOT NULL,
+                "tvg_id" varchar(255) NOT NULL,
+                "title" varchar(500),
+                "description" TEXT,
+                "start_timestamp" INTEGER NOT NULL,
+                "end_timestamp" INTEGER NOT NULL,
+                FOREIGN KEY (source_id) REFERENCES sources(id)
+              );
+              CREATE INDEX IF NOT EXISTS idx_epg_programmes_source ON epg_programmes(source_id);
+              CREATE INDEX IF NOT EXISTS idx_epg_programmes_lookup ON epg_programmes(tvg_id, start_timestamp);
+            "#,
+        ),
+        M::up(
+            r#"
+              ALTER TABLE sources ADD COLUMN epg_url varchar(500);
+            "#,
+        ),
+        M::up(
+            r#"
+              ALTER TABLE epg_programmes ADD COLUMN cached_at INTEGER NOT NULL DEFAULT 0;
+              ALTER TABLE epg_programmes ADD COLUMN has_archive INTEGER NOT NULL DEFAULT 0;
+              ALTER TABLE epg_programmes ADD COLUMN timeshift_url varchar(500);
+              CREATE INDEX IF NOT EXISTS idx_epg_programmes_source_tvg ON epg_programmes(source_id, tvg_id);
+            "#,
+        ),
+        M::up(
+            r#"
+              CREATE TABLE IF NOT EXISTS "epg_cache_status" (
+                "source_id" INTEGER NOT NULL,
+                "tvg_id" varchar(255) NOT NULL,
+                "checked_at" INTEGER NOT NULL,
+                PRIMARY KEY (source_id, tvg_id)
+              );
+            "#,
+        ),
+        M::up(
+            r#"
+              ALTER TABLE sources ADD COLUMN timezone varchar(64);
+            "#,
+        ),
+        M::up(
+            r#"
+              -- idx_epg_programmes_source is a strict prefix of
+              -- idx_epg_programmes_source_tvg (source_id, tvg_id), so it can
+              -- never serve a query the latter can't already serve just as
+              -- well. idx_epg_programmes_lookup (tvg_id, start_timestamp)
+              -- dates from when EPG was looked up by tvg_id alone; every
+              -- remaining query now also filters by source_id, which
+              -- idx_epg_programmes_source_tvg already covers. Both are dead
+              -- weight on every insert/delete against this table (which gets
+              -- fully rewritten per source on every EPG refresh).
+              DROP INDEX IF EXISTS idx_epg_programmes_source;
+              DROP INDEX IF EXISTS idx_epg_programmes_lookup;
+              -- epg_cache_status tracked per-channel live-Xtream-EPG fetch
+              -- timestamps for a caching scheme that no longer exists (EPG
+              -- is now bulk-fetched per source, not lazily per channel) -
+              -- nothing reads or writes it anymore.
+              DROP TABLE IF EXISTS epg_cache_status;
+            "#,
+        ),
+        M::up(
+            r#"
+              ALTER TABLE sources ADD COLUMN epg_retention_days INTEGER;
+            "#,
+        ),
+        M::up(
+            r#"
+              CREATE TABLE IF NOT EXISTS downloads (
+                id TEXT PRIMARY KEY,
+                channel_id INTEGER,
+                source_id INTEGER,
+                name TEXT NOT NULL,
+                path TEXT NOT NULL,
+                status TEXT NOT NULL,
+                downloaded_bytes INTEGER NOT NULL DEFAULT 0,
+                total_bytes INTEGER,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+              );
+            "#,
+        ),
+        M::up(
+            r#"
+              ALTER TABLE channels ADD COLUMN is_adult INTEGER NOT NULL DEFAULT 0;
+            "#,
+        ),
+        // season_id never had a real FK to seasons(id) (unlike series_id/
+        // stream_id, which are provider-scoped ids and genuinely can't be
+        // one) - SQLite can't add a constraint to an existing column via
+        // ALTER TABLE, only by recreating the whole table.
+        M::up(
+            r#"
+              CREATE TABLE "channels_new" (
+                "id" INTEGER PRIMARY KEY,
+                "name" varchar(100),
+                "image" varchar(500),
+                "url" varchar(500),
+                "media_type" integer,
+                "source_id" integer,
+                "favorite" integer,
+                "series_id" integer,
+                "group_id" integer,
+                stream_id integer,
+                last_watched integer,
+                tv_archive integer,
+                season_id INTEGER,
+                episode_num INTEGER,
+                hidden integer DEFAULT 0,
+                tvg_id varchar(255),
+                is_adult INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (source_id) REFERENCES sources(id),
+                FOREIGN KEY (group_id) REFERENCES groups(id),
+                FOREIGN KEY (season_id) REFERENCES seasons(id) ON DELETE CASCADE
+              );
+              INSERT INTO channels_new (id, name, image, url, media_type, source_id, favorite, series_id, group_id, stream_id, last_watched, tv_archive, season_id, episode_num, hidden, tvg_id, is_adult)
+              SELECT id, name, image, url, media_type, source_id, favorite, series_id, group_id, stream_id, last_watched, tv_archive, season_id, episode_num, hidden, tvg_id, is_adult FROM channels;
+              DROP TABLE channels;
+              ALTER TABLE channels_new RENAME TO channels;
+
+              CREATE INDEX index_channel_name ON channels(name);
+              CREATE INDEX index_channel_source_id ON channels(source_id);
+              CREATE INDEX index_channel_favorite ON channels(favorite);
+              CREATE INDEX index_channel_series_id ON channels(series_id);
+              CREATE INDEX index_channel_group_id ON channels(group_id);
+              CREATE INDEX index_channel_media_type ON channels(media_type);
+              CREATE INDEX index_channels_stream_id on channels(stream_id);
+              CREATE INDEX index_channels_last_watched on channels(last_watched);
+              CREATE INDEX index_channels_tv_archive on channels(tv_archive);
+              CREATE INDEX index_channels_season_id ON channels(season_id);
+              CREATE INDEX index_channels_episode_num on channels(episode_num);
+              CREATE UNIQUE INDEX channels_unique ON channels(name, source_id, url, series_id, season_id);
+              CREATE INDEX index_channels_hidden ON channels(hidden);
+              CREATE INDEX idx_channels_tvg_id ON channels(tvg_id);
+            "#,
+        )
+        .foreign_key_check(),
+        // Backs a whole-app data import (app_data.rs) - importing a source
+        // whose channels haven't been fetched yet (a brand new source, or
+        // any source on a freshly restored/empty database) can't restore
+        // favourites/history/hidden state right away, since restore_preserve
+        // only UPDATEs channels that already exist by name. This stages
+        // that data so the *next* refresh of this source (m3u.rs/xtream.rs,
+        // via sql::consume_pending_preserve) can apply it once real channel
+        // rows exist to match against.
+        M::up(
+            r#"
+              CREATE TABLE IF NOT EXISTS pending_preserve (
+                source_id INTEGER PRIMARY KEY,
+                data TEXT NOT NULL
+              );
+            "#,
+        ),
+    ]);
+    // foreign_keys can't be toggled from inside a migration itself (each
+    // one already runs inside its own transaction, where SQLite silently
+    // ignores the pragma) - this is rusqlite_migration's own documented
+    // pattern for a migration that recreates a table, not just this one.
+    sql.pragma_update(None, "foreign_keys", "OFF")?;
+    let result = migrations.to_latest(&mut sql);
+    sql.pragma_update(None, "foreign_keys", "ON")?;
+    result?;
+    Ok(())
+}
+
+pub fn drop_db() -> Result<()> {
+    let sql = get_conn()?;
+    sql.execute_batch(
+        "DROP TABLE channels; DROP TABLE groups; DROP TABLE sources; DROP TABLE settings;",
+    )?;
+    Ok(())
+}
+
+pub fn create_or_find_source_by_name(tx: &Transaction, source: &Source) -> Result<i64> {
+    let id: Option<i64> = tx
+        .query_row(
+            "SELECT id FROM sources WHERE name = ?1",
+            params![source.name],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if let Some(id) = id {
+        return Ok(id);
+    }
+    tx.execute(
+    "INSERT INTO sources (name, source_type, url, username, password, use_tvg_id, user_agent, max_streams, last_updated, epg_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    params![source.name, source.source_type.clone() as u8, source.url, source.username, source.password, source.use_tvg_id, source.user_agent, source.max_streams, chrono::Utc::now().timestamp(), source.epg_url],
+    )?;
+    Ok(tx.last_insert_rowid())
+}
+
+// Used by a whole-app data import (Settings > Import data) - unlike
+// create_or_find_source_by_name (which only fills in the subset of columns
+// a fresh M3U/Xtream/custom add ever needs), this writes every column a
+// source row can have, since an export captures a source's complete
+// config. If a source with the same name already exists, its row is left
+// untouched (never silently overwritten with the backup's credentials) and
+// its id is returned as-is, so the caller can still restore that source's
+// favourites/history/hidden entries onto it.
+pub fn import_source_full(tx: &Transaction, source: &Source) -> Result<i64> {
+    let id: Option<i64> = tx
+        .query_row(
+            "SELECT id FROM sources WHERE name = ?1",
+            params![source.name],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if let Some(id) = id {
+        return Ok(id);
+    }
+    tx.execute(
+        r#"
+        INSERT INTO sources
+          (name, source_type, url, username, password, enabled, use_tvg_id, user_agent, max_streams, stream_user_agent, last_updated, epg_url, timezone, epg_retention_days)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "#,
+        params![
+            source.name,
+            source.source_type,
+            source.url,
+            source.username,
+            source.password,
+            source.enabled,
+            source.use_tvg_id,
+            source.user_agent,
+            source.max_streams,
+            source.stream_user_agent,
+            source.last_updated,
+            source.epg_url,
+            source.timezone,
+            source.epg_retention_days,
+        ],
+    )?;
+    Ok(tx.last_insert_rowid())
+}
+
+pub fn insert_season(tx: &Transaction, season: Season) -> Result<i64> {
+    tx.execute(
+        r#"
+        INSERT INTO seasons (name, image, series_id, season_number, source_id)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT (series_id, season_number, source_id)
+        DO UPDATE SET
+          image = excluded.image,
+          name = excluded.name
+        "#,
+        params![
+            season.name,
+            season.image,
+            season.series_id,
+            season.season_number,
+            season.source_id,
+        ],
+    )?;
+    Ok(tx.query_row(
+        r#"
+        SELECT id
+        FROM seasons
+        WHERE series_id = ?
+        AND season_number = ?
+        AND source_id = ?
+      "#,
+        params![season.series_id, season.season_number, season.source_id],
+        |r| r.get(0),
+    )?)
+}
+
+pub fn insert_channel(tx: &Transaction, channel: Channel) -> Result<()> {
+    // prepare_cached instead of execute() - this runs once per channel (up
+    // to thousands per refresh), and plain execute() re-parses/re-plans the
+    // SQL text from scratch on every call. prepare_cached compiles it once
+    // per connection and reuses the compiled statement on every subsequent
+    // call with the same SQL text.
+    tx.prepare_cached(
+        r#"
+INSERT INTO channels (name, group_id, image, url, source_id, media_type, series_id, favorite, stream_id, tv_archive, tvg_id, season_id, episode_num, is_adult)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (name, source_id, url, series_id, season_id)
+DO UPDATE SET
+    url = excluded.url,
+    media_type = excluded.media_type,
+    stream_id = excluded.stream_id,
+    image = excluded.image,
+    series_id = excluded.series_id,
+    tv_archive = excluded.tv_archive,
+    tvg_id = excluded.tvg_id,
+    season_id = excluded.season_id,
+    is_adult = excluded.is_adult;
+"#,
+    )?
+    .execute(params![
+        channel.name,
+        channel.group_id,
+        channel.image,
+        channel.url,
+        channel.source_id,
+        channel.media_type as u8,
+        channel.series_id,
+        channel.favorite,
+        channel.stream_id,
+        channel.tv_archive,
+        channel.tvg_id,
+        channel.season_id,
+        channel.episode_num,
+        channel.is_adult
+    ])?;
+    Ok(())
+}
+
+// Batched version of insert_channel() for process_xtream()'s bulk
+// live/vod/series import specifically - a playlist can have tens of
+// thousands of channels, and even with a cached statement, that many
+// individual execute() calls each pay their own FFI/bind/step/reset
+// round-trip. Not used by the other insert_channel() call sites (M3U
+// import, custom-channel import, series episode import) since those are
+// either much smaller in scale or insert one row at a time as they go.
+const CHANNEL_INSERT_BATCH_SIZE: usize = 500;
+
+pub(crate) fn insert_channels_batch(tx: &Transaction, channels: &[Channel]) -> Result<()> {
+    for chunk in channels.chunks(CHANNEL_INSERT_BATCH_SIZE) {
+        let placeholders =
+            vec!["(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"; chunk.len()].join(", ");
+        let sql = format!(
+            r#"
+INSERT INTO channels (name, group_id, image, url, source_id, media_type, series_id, favorite, stream_id, tv_archive, tvg_id, season_id, episode_num, is_adult)
+VALUES {placeholders}
+ON CONFLICT (name, source_id, url, series_id, season_id)
+DO UPDATE SET
+    url = excluded.url,
+    media_type = excluded.media_type,
+    stream_id = excluded.stream_id,
+    image = excluded.image,
+    series_id = excluded.series_id,
+    tv_archive = excluded.tv_archive,
+    tvg_id = excluded.tvg_id,
+    season_id = excluded.season_id,
+    is_adult = excluded.is_adult;
+"#
+        );
+        let mut params: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(chunk.len() * 14);
+        for channel in chunk {
+            params.push(&channel.name);
+            params.push(&channel.group_id);
+            params.push(&channel.image);
+            params.push(&channel.url);
+            params.push(&channel.source_id);
+            params.push(&channel.media_type);
+            params.push(&channel.series_id);
+            params.push(&channel.favorite);
+            params.push(&channel.stream_id);
+            params.push(&channel.tv_archive);
+            params.push(&channel.tvg_id);
+            params.push(&channel.season_id);
+            params.push(&channel.episode_num);
+            params.push(&channel.is_adult);
+        }
+        tx.prepare_cached(&sql)?.execute(params_from_iter(params))?;
+    }
+    Ok(())
+}
+
+// Batched instead of one execute() per row - a playlist's EPG can easily be
+// hundreds of thousands of rows, and even with a cached/precompiled
+// statement, that many individual execute() calls each pay their own
+// FFI/bind/step/reset round-trip. Building multi-row VALUES (...), (...)
+// statements amortizes that per-call overhead across up to
+// EPG_INSERT_BATCH_SIZE rows at once. has_archive/timeshift_url aren't
+// parameterized - this is only ever called from the XMLTV parse path, which
+// never sets either (catch-up URLs are built on demand instead, see
+// xtream::get_timeshift_url_for_epg), so they're just literals here.
+const EPG_INSERT_BATCH_SIZE: usize = 500;
+
+pub(crate) fn insert_epg_programmes_batch(
+    tx: &Transaction,
+    source_id: i64,
+    programmes: &[crate::xmltv::ParsedProgramme],
+    cached_at: i64,
+) -> Result<()> {
+    for chunk in programmes.chunks(EPG_INSERT_BATCH_SIZE) {
+        let placeholders = vec!["(?, ?, ?, ?, ?, ?, ?, 0, NULL)"; chunk.len()].join(", ");
+        let sql = format!(
+            r#"INSERT INTO epg_programmes (source_id, tvg_id, title, description, start_timestamp, end_timestamp, cached_at, has_archive, timeshift_url) VALUES {placeholders}"#
+        );
+        let mut params: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(chunk.len() * 7);
+        for p in chunk {
+            params.push(&source_id);
+            params.push(&p.tvg_id);
+            params.push(&p.title);
+            params.push(&p.description);
+            params.push(&p.start_timestamp);
+            params.push(&p.end_timestamp);
+            params.push(&cached_at);
+        }
+        tx.prepare_cached(&sql)?.execute(params_from_iter(params))?;
+    }
+    Ok(())
+}
+
+pub fn get_epg_for_channel(
+    source_id: i64,
+    tvg_id: &str,
+    from_ts: i64,
+    to_ts: i64,
+) -> Result<Vec<EPG>> {
+    let sql = get_conn()?;
+    let now = chrono::Local::now();
+    let programmes: Vec<EPG> = sql
+        .prepare(
+            r#"
+        SELECT * FROM epg_programmes
+        WHERE source_id = ?
+        AND tvg_id = ?
+        AND end_timestamp >= ?
+        AND start_timestamp <= ?
+        ORDER BY start_timestamp
+    "#,
+        )?
+        .query_map(params![source_id, tvg_id, from_ts, to_ts], |row| {
+            row_to_epg_programme(row, &now)
+        })?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(programmes)
+}
+
+pub fn get_tvg_ids_for_source(source_id: i64) -> Result<std::collections::HashSet<String>> {
+    let sql = get_conn()?;
+    let tvg_ids: std::collections::HashSet<String> = sql
+        .prepare("SELECT DISTINCT tvg_id FROM channels WHERE source_id = ? AND tvg_id IS NOT NULL")?
+        .query_map(params![source_id], |row| row.get::<_, String>(0))?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(tvg_ids)
+}
+
+fn row_to_epg_programme(row: &Row, now: &chrono::DateTime<chrono::Local>) -> rusqlite::Result<EPG> {
+    let start_timestamp: i64 = row.get("start_timestamp")?;
+    let end_timestamp: i64 = row.get("end_timestamp")?;
+    let now_playing = start_timestamp <= now.timestamp() && end_timestamp > now.timestamp();
+    Ok(EPG {
+        epg_id: row.get::<_, i64>("id")?.to_string(),
+        title: row.get("title")?,
+        description: row.get("description")?,
+        start_time: crate::utils::get_local_time(start_timestamp)
+            .map(|t| t.format("%B %d, %H:%M").to_string())
+            .unwrap_or_default(),
+        start_timestamp,
+        end_time: crate::utils::get_local_time(end_timestamp)
+            .map(|t| t.format("%B %d, %H:%M").to_string())
+            .unwrap_or_default(),
+        end_timestamp,
+        timeshift_url: row.get("timeshift_url")?,
+        has_archive: row.get("has_archive")?,
+        now_playing,
+    })
+}
+
+pub fn insert_channel_headers(tx: &Transaction, headers: ChannelHttpHeaders) -> Result<()> {
+    tx.execute(
+        r#"
+INSERT OR IGNORE INTO channel_http_headers (channel_id, referrer, user_agent, http_origin, ignore_ssl)
+VALUES (?, ?, ?, ?, ?);
+"#,
+        params![
+            headers.channel_id,
+            headers.referrer,
+            headers.user_agent,
+            headers.http_origin,
+            headers.ignore_ssl
+        ],
+    )?;
+    Ok(())
+}
+
+fn get_or_insert_group(
+    tx: &Transaction,
+    group: &str,
+    image: &Option<String>,
+    source_id: &i64,
+    media_type: u8,
+) -> Result<i64> {
+    let rows_changed = tx.execute(
+        r#"
+        INSERT OR IGNORE INTO groups (name, image, source_id, media_type)
+        VALUES (?, ?, ?, ?);
+        "#,
+        params![group, &image, source_id, media_type],
+    )?;
+    if rows_changed == 0 {
+        return Ok(tx.query_row(
+            "SELECT id FROM groups WHERE name = ? and source_id = ?",
+            params![group, source_id],
+            |row| row.get::<_, i64>("id"),
+        )?);
+    }
+    Ok(tx.last_insert_rowid())
+}
+
+pub fn set_channel_group_id(
+    groups: &mut HashMap<String, i64>,
+    channel: &mut Channel,
+    tx: &Transaction,
+    source_id: &i64,
+) -> Result<()> {
+    if channel.group.is_none() {
+        return Ok(());
+    }
+    if !groups.contains_key(channel.group.as_ref().unwrap()) {
+        let id = get_or_insert_group(
+            tx,
+            channel.group.as_ref().unwrap(),
+            &channel.image,
+            source_id,
+            channel.media_type,
+        )?;
+        groups.insert(channel.group.clone().unwrap(), id);
+        channel.group_id = Some(id);
+    } else {
+        channel.group_id = groups
+            .get(channel.group.as_ref().unwrap())
+            .map(|x| x.to_owned());
+    }
+    Ok(())
+}
+
+pub fn get_channel_headers_by_id(id: i64) -> Result<Option<ChannelHttpHeaders>> {
+    let sql = get_conn()?;
+    let headers = sql
+        .query_row(
+            "SELECT * FROM channel_http_headers WHERE channel_id = ?",
+            params![id],
+            row_to_channel_headers,
+        )
+        .optional()?;
+    Ok(headers)
+}
+
+fn row_to_channel_headers(row: &Row) -> Result<ChannelHttpHeaders, rusqlite::Error> {
+    Ok(ChannelHttpHeaders {
+        id: row.get("id")?,
+        channel_id: row.get("channel_id")?,
+        http_origin: row.get("http_origin")?,
+        referrer: row.get("referrer")?,
+        user_agent: row.get("user_agent")?,
+        ignore_ssl: row.get("ignore_ssl")?,
+    })
+}
+
+// One row per download attempt, keyed by the same download_id used at
+// runtime (a channel's own id, as a string) - upsert covers both the
+// initial "downloading" insert and every later status/byte-count update
+// (paused/completed/cancelled/failed) with a single statement.
+pub fn upsert_download_row(item: &DownloadHistoryItem) -> Result<()> {
+    let sql = get_conn()?;
+    sql.execute(
+        r#"
+        INSERT INTO downloads (id, channel_id, source_id, name, path, status, downloaded_bytes, total_bytes, created_at, updated_at)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)
+        ON CONFLICT(id) DO UPDATE SET
+            status = ?6,
+            downloaded_bytes = ?7,
+            total_bytes = ?8,
+            updated_at = ?9
+        "#,
+        params![
+            item.id,
+            item.channel_id,
+            item.source_id,
+            item.name,
+            item.path,
+            item.status,
+            item.downloaded_bytes,
+            item.total_bytes,
+            item.updated_at,
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn get_download_row(id: &str) -> Result<Option<DownloadHistoryItem>> {
+    let sql = get_conn()?;
+    sql.query_row(
+        "SELECT * FROM downloads WHERE id = ?",
+        params![id],
+        row_to_download_history_item,
+    )
+    .optional()
+    .map_err(Into::into)
+}
+
+// Only terminal statuses - a large active batch's queued/downloading/paused
+// rows all share a very recent updated_at, so without this filter they'd
+// dominate the ORDER BY ... LIMIT window and push genuinely-historical rows
+// out of it entirely (the frontend then has nothing left to show once it
+// excludes whatever's still active from this same list).
+// 'paused' included alongside the plainly-terminal statuses: a download the
+// user explicitly paused is meant to stay visible/resumable indefinitely,
+// including across a restart (its historyRow already has a Resume button
+// wired up for this status) - it's not "in progress" the way 'downloading'/
+// 'queued' are, which is exactly why those two are deliberately left out
+// (see list_download_history's own note on that further down, and
+// reconcile_interrupted_downloads below for what happens to them).
+pub fn list_download_history(limit: u32) -> Result<Vec<DownloadHistoryItem>> {
+    let sql = get_conn()?;
+    let items = sql
+        .prepare(
+            "SELECT * FROM downloads WHERE status IN ('completed', 'cancelled', 'failed', 'paused') ORDER BY updated_at DESC LIMIT ?",
+        )?
+        .query_map(params![limit], row_to_download_history_item)?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(items)
+}
+
+// Run once at startup. A row can only be left at 'downloading' or 'queued'
+// if the app (or its whole machine) was closed/killed while that download
+// was in flight - nothing else ever leaves it in either state, since every
+// normal exit path (complete/pause/cancel/fail) always updates it to a
+// resolved status. Without this, that row stays invisible forever: it's
+// excluded from history (not a terminal status) and the in-memory active
+// list doesn't survive a restart either, so the download just vanishes.
+// Reconciled to 'paused' (resumable, since we still have its byte
+// progress) when something was actually downloaded, or 'cancelled' (never
+// really started - e.g. still queued) otherwise.
+pub fn reconcile_interrupted_downloads() -> Result<()> {
+    let sql = get_conn()?;
+    sql.execute(
+        r#"
+        UPDATE downloads
+        SET status = CASE WHEN downloaded_bytes > 0 THEN 'paused' ELSE 'cancelled' END,
+            updated_at = ?1
+        WHERE status IN ('downloading', 'queued')
+        "#,
+        params![chrono::Utc::now().timestamp()],
+    )?;
+    Ok(())
+}
+
+pub fn delete_download_row(id: &str) -> Result<()> {
+    let sql = get_conn()?;
+    sql.execute("DELETE FROM downloads WHERE id = ?", params![id])?;
+    Ok(())
+}
+
+pub fn clear_download_history_by_status(statuses: &[&str]) -> Result<()> {
+    let sql = get_conn()?;
+    let placeholders = generate_placeholders(statuses.len());
+    sql.execute(
+        &format!("DELETE FROM downloads WHERE status IN ({placeholders})"),
+        params_from_iter(statuses),
+    )?;
+    Ok(())
+}
+
+fn row_to_download_history_item(
+    row: &Row,
+) -> std::result::Result<DownloadHistoryItem, rusqlite::Error> {
+    Ok(DownloadHistoryItem {
+        id: row.get("id")?,
+        channel_id: row.get("channel_id")?,
+        source_id: row.get("source_id")?,
+        name: row.get("name")?,
+        path: row.get("path")?,
+        status: row.get("status")?,
+        downloaded_bytes: row.get("downloaded_bytes")?,
+        total_bytes: row.get("total_bytes")?,
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
+    })
+}
+
+pub fn get_settings() -> Result<HashMap<String, String>> {
+    let sql = get_conn()?;
+    let map = sql
+        .prepare("SELECT key, value FROM Settings")?
+        .query_map([], |row| {
+            let key: String = row.get(0)?;
+            let value: String = row.get(1)?;
+            Ok((key, value))
+        })?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(map)
+}
+
+pub fn update_settings(map: HashMap<String, Option<String>>) -> Result<()> {
+    let mut sql: PooledConnection<SqliteConnectionManager> = get_conn()?;
+    let tx = sql.transaction()?;
+    for (key, value) in map {
+        tx.execute(
+            r#"
+            INSERT INTO Settings (key, value)
+            VALUES (?1, ?2)
+            ON CONFLICT(key) DO UPDATE SET value = ?2
+            "#,
+            params![key, value],
+        )?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+pub fn search(filters: Filters, hide_adult: bool) -> Result<Vec<Channel>> {
+    if filters.view_type == view_type::CATEGORIES
+        && filters.group_id.is_none()
+        && filters.series_id.is_none()
+    {
+        return search_group(filters);
+    }
+    if filters.view_type == view_type::HIDDEN {
+        return search_hidden(filters, hide_adult);
+    }
+    if filters.series_id.is_some() && filters.season.is_none() {
+        return search_series(filters);
+    }
+    let sql = get_conn()?;
+    // page.max(1) - 1, rather than page * PAGE_SIZE - PAGE_SIZE, so a page
+    // of 0 clamps to the first page instead of underflowing (page is only
+    // ever sent as 1-indexed by the frontend, but nothing enforces that at
+    // the IPC boundary, and the raw subtraction would panic in debug builds
+    // or silently return a huge bogus offset in release).
+    let offset: u16 = (filters.page.max(1) as u16 - 1) * PAGE_SIZE as u16;
+    let media_types = match filters.series_id.is_some() {
+        true => vec![1],
+        // Only reachable with series_id absent - the frontend always sends
+        // a real (possibly empty) array there, but that's an unenforced
+        // cross-language invariant, not a type-level guarantee, so fall
+        // back to "every channel type" instead of panicking if it's ever
+        // actually missing.
+        false => filters
+            .media_types
+            .clone()
+            .unwrap_or_else(|| vec![media_type::LIVESTREAM, media_type::MOVIE, media_type::SERIE]),
+    };
+    let query = filters.query.unwrap_or("".to_string());
+    let keywords: Vec<String> = match filters.use_keywords {
+        true => query
+            .split(" ")
+            .map(|f| format!("%{f}%").to_string())
+            .collect(),
+        false => vec![format!("%{query}%")],
+    };
+    let mut sql_query = format!(
+        r#"
+        SELECT * FROM CHANNELS
+        WHERE ({})
+        AND media_type IN ({})
+        AND source_id IN ({})
+        AND url IS NOT NULL
+        AND hidden = 0
+        AND NOT EXISTS (SELECT 1 FROM groups g WHERE g.id = channels.group_id AND g.hidden = 1)"#,
+        get_keywords_sql(keywords.len()),
+        generate_placeholders(media_types.len()),
+        generate_placeholders(filters.source_ids.len()),
+    );
+    let mut baked_params = 2;
+    if hide_adult {
+        sql_query += "\nAND is_adult = 0";
+    }
+    if filters.view_type == view_type::FAVORITES && filters.series_id.is_none() {
+        sql_query += "\nAND favorite = 1";
+    }
+
+    if filters.series_id.is_some() {
+        sql_query += &format!("\nAND series_id = ?");
+        baked_params += 1;
+    } else if filters.group_id.is_some() {
+        sql_query += &format!("\nAND group_id = ?");
+        baked_params += 1;
+    }
+    if filters.season.is_some() {
+        sql_query += &format!("\nAND season_id = ?");
+        baked_params += 1;
+    }
+    let order = match filters.sort {
+        sort_type::ALPHABETICAL_DESC => "DESC",
+        _ => "ASC",
+    };
+    if filters.view_type == view_type::HISTORY {
+        sql_query += "\nAND last_watched IS NOT NULL";
+        sql_query += "\nORDER BY last_watched DESC";
+    } else if filters.season.is_some() {
+        sql_query += &format!("\nORDER BY episode_num {0}, name {0}", order)
+    } else if filters.sort != sort_type::PROVIDER {
+        sql_query += &format!("\nORDER BY name {}", order);
+    }
+    sql_query += "\nLIMIT ?, ?";
+    let mut params: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(
+        baked_params + media_types.len() + filters.source_ids.len() + keywords.len(),
+    );
+    params.extend(to_to_sql(&keywords));
+    params.extend(to_to_sql(&media_types));
+    params.extend(to_to_sql(&filters.source_ids));
+    if let Some(ref series_id) = filters.series_id {
+        params.push(series_id);
+    } else if let Some(ref group) = filters.group_id {
+        params.push(group);
+    }
+    if let Some(ref season) = filters.season {
+        params.push(season);
+    }
+    params.push(&offset);
+    params.push(&PAGE_SIZE);
+    let channels: Vec<Channel> = sql
+        .prepare(&sql_query)?
+        .query_map(params_from_iter(params), row_to_channel)?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(channels)
+}
+
+fn search_series(filters: Filters) -> Result<Vec<Channel>> {
+    let sql = get_conn()?;
+    // page.max(1) - 1, rather than page * PAGE_SIZE - PAGE_SIZE, so a page
+    // of 0 clamps to the first page instead of underflowing (page is only
+    // ever sent as 1-indexed by the frontend, but nothing enforces that at
+    // the IPC boundary, and the raw subtraction would panic in debug builds
+    // or silently return a huge bogus offset in release).
+    let offset: u16 = (filters.page.max(1) as u16 - 1) * PAGE_SIZE as u16;
+    let query = filters.query.unwrap_or("".to_string());
+    let keywords: Vec<String> = match filters.use_keywords {
+        true => query
+            .split(" ")
+            .map(|f| format!("%{f}%").to_string())
+            .collect(),
+        false => vec![format!("%{query}%")],
+    };
+    let mut sql_query = format!(
+        r#"
+      SELECT *
+      FROM seasons
+      WHERE ({})
+      AND source_id = ?
+      AND series_id = ?
+      "#,
+        get_keywords_sql(keywords.len()),
+    );
+    let order = match filters.sort {
+        sort_type::ALPHABETICAL_DESC => "DESC",
+        _ => "ASC",
+    };
+    sql_query += &format!("\nORDER BY season_number {}", order);
+    sql_query += "\nLIMIT ?, ?";
+    let mut params: Vec<&dyn rusqlite::ToSql> =
+        Vec::with_capacity(2 + filters.source_ids.len() + keywords.len());
+    params.extend(to_to_sql(&keywords));
+    params.push(filters.source_ids.first().context("no source ids")?);
+    params.push(filters.series_id.as_ref().context("no series id")?);
+    params.push(&offset);
+    params.push(&PAGE_SIZE);
+    let channels: Vec<Channel> = sql
+        .prepare(&sql_query)?
+        .query_map(params_from_iter(params), season_row_to_channel)?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(channels)
+}
+
+fn season_row_to_channel(row: &Row) -> std::result::Result<Channel, rusqlite::Error> {
+    Ok(Channel {
+        id: row.get("id")?,
+        image: row.get("image")?,
+        favorite: false,
+        group: None,
+        group_id: None,
+        media_type: media_type::SEASON,
+        name: row.get("name")?,
+        series_id: row.get("series_id")?,
+        season_id: None,
+        source_id: row.get("source_id")?,
+        stream_id: None,
+        tv_archive: None,
+        tvg_id: None,
+        url: None,
+        episode_num: None,
+        hidden: Some(false),
+        is_adult: false,
+    })
+}
+
+// Every episode across every season of a series in one unpaginated query,
+// joined with the season's name for folder placement - unlike search_series
+// (which returns just the season list) or search() (which needs both
+// series_id AND a specific season set to return episodes), there's no
+// existing path that returns a whole series' episodes at once. Used by
+// get_series_episodes_for_download - see xtream.rs.
+pub fn get_series_episodes(source_id: i64, series_id: u64) -> Result<Vec<SeriesEpisode>> {
+    let sql = get_conn()?;
+    let episodes: Vec<SeriesEpisode> = sql
+        .prepare(
+            r#"
+        SELECT channels.*, seasons.name as season_name, seasons.season_number
+        FROM channels
+        JOIN seasons ON channels.season_id = seasons.id
+        WHERE channels.series_id = ? AND channels.source_id = ? AND channels.media_type = ?
+        ORDER BY seasons.season_number, channels.episode_num
+    "#,
+        )?
+        .query_map(params![series_id, source_id, media_type::MOVIE], |row| {
+            Ok(SeriesEpisode {
+                channel: row_to_channel(row)?,
+                season_name: row.get("season_name")?,
+            })
+        })?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(episodes)
+}
+
+// Episodes of a single season only, for "Download Season" - season_id here
+// is the season pseudo-channel's own id (season_row_to_channel reads it
+// straight from seasons.id), so no join is needed.
+pub fn get_season_episodes(season_id: i64) -> Result<Vec<Channel>> {
+    let sql = get_conn()?;
+    let episodes: Vec<Channel> = sql
+        .prepare(
+            r#"
+        SELECT * FROM channels
+        WHERE season_id = ? AND media_type = ?
+        ORDER BY episode_num
+    "#,
+        )?
+        .query_map(params![season_id, media_type::MOVIE], row_to_channel)?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(episodes)
+}
+
+// The show's own name, looked up by the raw Xtream series_id rather than a
+// foreign key - there's no separate "series" table, a series is just the
+// channels row with media_type=SERIE whose url happens to be that same
+// series_id (see xtream::get_episodes/insert_episode, which is where that
+// id is threaded onto every episode/season row in the first place).
+pub fn get_series_name(source_id: i64, series_id: u64) -> Result<Option<String>> {
+    let sql = get_conn()?;
+    sql.query_row(
+        "SELECT name FROM channels WHERE source_id = ? AND media_type = ? AND url = ?",
+        params![source_id, media_type::SERIE, series_id.to_string()],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(Into::into)
+}
+
+// Given just an episode's own channel id (always reliable, unlike
+// Channel.series_id which row_to_channel never populates when sending
+// episodes to the frontend - see get_series_episodes above), resolves
+// (series_name, season_name) for building its download folder path. Used
+// by download() for the single-episode/movie download case; returns None
+// for a genuine standalone movie (no season_id at all) rather than erroring,
+// so that case can fall back to the existing flat download path.
+pub fn get_episode_folder_names(episode_id: i64) -> Result<Option<(String, String)>> {
+    let sql = get_conn()?;
+    sql.query_row(
+        r#"
+        SELECT series.name, seasons.name
+        FROM channels episode
+        JOIN seasons ON episode.season_id = seasons.id
+        JOIN channels series
+            ON series.media_type = ?
+            AND series.source_id = episode.source_id
+            AND series.url = CAST(episode.series_id AS TEXT)
+        WHERE episode.id = ?
+    "#,
+        params![media_type::SERIE, episode_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .optional()
+    .map_err(Into::into)
+}
+
+use crate::bulk_action_type;
+
+fn get_action_params(action: u8) -> Result<(&'static str, u8)> {
+    match action {
+        bulk_action_type::HIDE => Ok((bulk_action_type::FIELD_HIDDEN, 1)),
+        bulk_action_type::UNHIDE => Ok((bulk_action_type::FIELD_HIDDEN, 0)),
+        bulk_action_type::FAVORITE => Ok((bulk_action_type::FIELD_FAVORITE, 1)),
+        bulk_action_type::UNFAVORITE => Ok((bulk_action_type::FIELD_FAVORITE, 0)),
+        _ => Err(anyhow!("Invalid action")),
+    }
+}
+
+pub fn bulk_update(filters: Filters, action: u8) -> Result<()> {
+    if filters.series_id.is_some() && filters.season.is_none() {
+        return Ok(());
+    }
+
+    let (field, value) = get_action_params(action)?;
+
+    let query = filters.query.as_deref().unwrap_or("");
+    let keywords: Vec<String> = match filters.use_keywords {
+        true => query
+            .split(" ")
+            .map(|f| format!("%{f}%").to_string())
+            .collect(),
+        false => vec![format!("%{query}%")],
+    };
+
+    if filters.view_type == view_type::CATEGORIES
+        && filters.group_id.is_none()
+        && filters.series_id.is_none()
+    {
+        return apply_bulk_categories(&filters, field, value, &keywords);
+    }
+
+    if filters.view_type == view_type::HIDDEN {
+        return apply_bulk_hidden(&filters, field, value, &keywords);
+    }
+
+    apply_bulk_channels(&filters, field, value, &keywords)
+}
+
+fn apply_bulk_categories(
+    filters: &Filters,
+    field: &str,
+    value: u8,
+    keywords: &[String],
+) -> Result<()> {
+    if field == bulk_action_type::FIELD_FAVORITE {
+        return Ok(());
+    }
+
+    let sql = get_conn()?;
+    let media_types = filters
+        .media_types
+        .as_ref()
+        .context("media types not found")?;
+
+    let mut sql_query = format!(
+        r#"
+        UPDATE groups
+        SET {} = {}
+        WHERE ({})
+        AND source_id in ({})
+        AND (media_type IS NULL OR media_type in ({}))
+        "#,
+        field,
+        value,
+        get_keywords_sql(keywords.len()),
+        generate_placeholders(filters.source_ids.len()),
+        generate_placeholders(media_types.len())
+    );
+
+    sql_query += "\nAND hidden = 0";
+
+    let mut params: Vec<&dyn rusqlite::ToSql> =
+        Vec::with_capacity(keywords.len() + filters.source_ids.len() + media_types.len());
+    params.extend(to_to_sql(keywords));
+    params.extend(to_to_sql(&filters.source_ids));
+    params.extend(to_to_sql(media_types));
+
+    sql.execute(&sql_query, params_from_iter(params))?;
+    Ok(())
+}
+
+fn apply_bulk_hidden(filters: &Filters, field: &str, value: u8, keywords: &[String]) -> Result<()> {
+    let sql = get_conn()?;
+    let media_types = match filters.series_id.is_some() {
+        true => vec![1],
+        false => filters
+            .media_types
+            .clone()
+            .context("media types not found")?,
+    };
+
+    let mut params: Vec<&dyn rusqlite::ToSql> = Vec::new();
+
+    let sql_query_channels = format!(
+        r#"
+        UPDATE channels
+        SET {} = {}
+        WHERE ({})
+        AND media_type IN ({})
+        AND source_id IN ({})
+        AND url IS NOT NULL
+        AND hidden = 1
+        "#,
+        field,
+        value,
+        get_keywords_sql(keywords.len()),
+        generate_placeholders(media_types.len()),
+        generate_placeholders(filters.source_ids.len())
+    );
+    params.extend(to_to_sql(keywords));
+    params.extend(to_to_sql(&media_types));
+    params.extend(to_to_sql(&filters.source_ids));
+
+    sql.execute(&sql_query_channels, params_from_iter(params))?;
+
+    if field != bulk_action_type::FIELD_FAVORITE {
+        let mut params_groups: Vec<&dyn rusqlite::ToSql> = Vec::new();
+        let sql_query_groups = format!(
+            r#"
+            UPDATE groups
+            SET {} = {}
+            WHERE ({})
+            AND source_id IN ({})
+            AND (media_type IS NULL OR media_type IN ({}))
+            AND hidden = 1
+            "#,
+            field,
+            value,
+            get_keywords_sql(keywords.len()),
+            generate_placeholders(filters.source_ids.len()),
+            generate_placeholders(media_types.len())
+        );
+        params_groups.extend(to_to_sql(keywords));
+        params_groups.extend(to_to_sql(&filters.source_ids));
+        params_groups.extend(to_to_sql(&media_types));
+        sql.execute(&sql_query_groups, params_from_iter(params_groups))?;
+    }
+    Ok(())
+}
+
+fn apply_bulk_channels(
+    filters: &Filters,
+    field: &str,
+    value: u8,
+    keywords: &[String],
+) -> Result<()> {
+    let sql = get_conn()?;
+    let media_types = match filters.series_id.is_some() {
+        true => vec![1],
+        false => filters
+            .media_types
+            .clone()
+            .context("media types not found")?,
+    };
+
+    let mut sql_query = format!(
+        r#"
+        UPDATE channels
+        SET {} = {}
+        WHERE ({})
+        AND media_type IN ({})
+        AND source_id IN ({})
+        AND url IS NOT NULL
+        AND hidden = 0"#,
+        field,
+        value,
+        get_keywords_sql(keywords.len()),
+        generate_placeholders(media_types.len()),
+        generate_placeholders(filters.source_ids.len()),
+    );
+
+    if filters.view_type == view_type::FAVORITES && filters.series_id.is_none() {
+        sql_query += "\nAND favorite = 1";
+    }
+
+    if filters.series_id.is_some() {
+        sql_query += "\nAND series_id = ?";
+    } else if filters.group_id.is_some() {
+        sql_query += "\nAND group_id = ?";
+    }
+    if filters.season.is_some() {
+        sql_query += "\nAND season_id = ?";
+    }
+
+    if filters.view_type == view_type::HISTORY {
+        sql_query += "\nAND last_watched IS NOT NULL";
+    }
+
+    let mut params: Vec<&dyn rusqlite::ToSql> =
+        Vec::with_capacity(media_types.len() + filters.source_ids.len() + keywords.len() + 3);
+    params.extend(to_to_sql(keywords));
+    params.extend(to_to_sql(&media_types));
+    params.extend(to_to_sql(&filters.source_ids));
+    if let Some(ref series_id) = filters.series_id {
+        params.push(series_id);
+    } else if let Some(ref group) = filters.group_id {
+        params.push(group);
+    }
+    if let Some(ref season) = filters.season {
+        params.push(season);
+    }
+
+    sql.execute(&sql_query, params_from_iter(params))?;
+    Ok(())
+}
+
+fn search_hidden(filters: Filters, hide_adult: bool) -> Result<Vec<Channel>> {
+    let sql = get_conn()?;
+    // page.max(1) - 1, rather than page * PAGE_SIZE - PAGE_SIZE, so a page
+    // of 0 clamps to the first page instead of underflowing (page is only
+    // ever sent as 1-indexed by the frontend, but nothing enforces that at
+    // the IPC boundary, and the raw subtraction would panic in debug builds
+    // or silently return a huge bogus offset in release).
+    let offset: u16 = (filters.page.max(1) as u16 - 1) * PAGE_SIZE as u16;
+
+    let media_types = match filters.series_id.is_some() {
+        true => vec![1],
+        // Only reachable with series_id absent - the frontend always sends
+        // a real (possibly empty) array there, but that's an unenforced
+        // cross-language invariant, not a type-level guarantee, so fall
+        // back to "every channel type" instead of panicking if it's ever
+        // actually missing.
+        false => filters
+            .media_types
+            .clone()
+            .unwrap_or_else(|| vec![media_type::LIVESTREAM, media_type::MOVIE, media_type::SERIE]),
+    };
+
+    let query = filters.query.unwrap_or("".to_string());
+    let keywords: Vec<String> = match filters.use_keywords {
+        true => query
+            .split(" ")
+            .map(|f| format!("%{f}%").to_string())
+            .collect(),
+        false => vec![format!("%{query}%")],
+    };
+
+    let keywords_sql = get_keywords_sql(keywords.len());
+    let media_placeholders = generate_placeholders(media_types.len());
+    let source_placeholders = generate_placeholders(filters.source_ids.len());
+    // Groups have no is_adult column of their own to filter (never any 0
+    // as is_adult below is always 0 regardless), so this only needs adding
+    // to the channels branch.
+    let adult_filter = if hide_adult { "AND is_adult = 0" } else { "" };
+
+    let sql_query = format!(
+        r#"
+        SELECT id, image, name, series_id, source_id, stream_id, tv_archive, url, episode_num, hidden, media_type, NULL as group_id, NULL as season_id, favorite, is_adult
+        FROM channels
+        WHERE ({})
+        AND media_type IN ({})
+        AND source_id IN ({})
+        AND hidden = 1
+        {adult_filter}
+        UNION ALL
+        SELECT id, image, name, NULL as series_id, source_id, NULL as stream_id, NULL as tv_archive, NULL as url, NULL as episode_num, hidden, 3 as media_type, NULL as group_id, NULL as season_id, 0 as favorite, 0 as is_adult
+        FROM groups
+        WHERE ({})
+        AND source_id IN ({})
+        AND (media_type IS NULL OR media_type IN ({}))
+        AND hidden = 1
+        ORDER BY name ASC
+        LIMIT ?, ?
+        "#,
+        keywords_sql,
+        media_placeholders,
+        source_placeholders,
+        keywords_sql,
+        source_placeholders,
+        media_placeholders
+    );
+
+    let mut params: Vec<&dyn rusqlite::ToSql> = Vec::new();
+
+    // Channels params
+    params.extend(to_to_sql(&keywords));
+    params.extend(to_to_sql(&media_types));
+    params.extend(to_to_sql(&filters.source_ids));
+
+    // Groups params
+    params.extend(to_to_sql(&keywords));
+    params.extend(to_to_sql(&filters.source_ids));
+    params.extend(to_to_sql(&media_types));
+
+    params.push(&offset);
+    params.push(&PAGE_SIZE);
+
+    let channels: Vec<Channel> = sql
+        .prepare(&sql_query)?
+        .query_map(params_from_iter(params), row_to_channel)?
+        .filter_map(Result::ok)
+        .collect();
+
+    Ok(channels)
+}
+
+fn to_to_sql<T: rusqlite::ToSql>(values: &[T]) -> Vec<&dyn rusqlite::ToSql> {
+    values.iter().map(|x| x as &dyn rusqlite::ToSql).collect()
+}
+
+fn get_keywords_sql(size: usize) -> String {
+    std::iter::repeat("name LIKE ?")
+        .take(size)
+        .collect::<Vec<_>>()
+        .join(" AND ")
+}
+
+fn generate_placeholders(size: usize) -> String {
+    std::iter::repeat("?")
+        .take(size)
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+pub fn series_has_episodes(series_id: u64, source_id: i64) -> Result<bool> {
+    let sql = get_conn()?;
+    let series_exists = sql
+        .query_row(
+            r#"
+      SELECT 1
+      FROM channels
+      WHERE series_id = ? AND source_id = ?
+      LIMIT 1
+    "#,
+            params![series_id, source_id],
+            |row| row.get::<_, u8>(0),
+        )
+        .optional()?
+        .is_some();
+    Ok(series_exists)
+}
+
+fn to_sql_like(query: Option<String>) -> String {
+    query.map(|x| format!("%{x}%")).unwrap_or("%".to_string())
+}
+
+pub fn search_group(filters: Filters) -> Result<Vec<Channel>> {
+    let sql = get_conn()?;
+    // page.max(1) - 1, rather than page * PAGE_SIZE - PAGE_SIZE, so a page
+    // of 0 clamps to the first page instead of underflowing (page is only
+    // ever sent as 1-indexed by the frontend, but nothing enforces that at
+    // the IPC boundary, and the raw subtraction would panic in debug builds
+    // or silently return a huge bogus offset in release).
+    let offset: u16 = (filters.page.max(1) as u16 - 1) * PAGE_SIZE as u16;
+    let query = filters.query.unwrap_or("".to_string());
+    let media_types = filters.media_types.context("no media types")?;
+    let keywords: Vec<String> = match filters.use_keywords {
+        true => query
+            .split(" ")
+            .map(|f| format!("%{f}%").to_string())
+            .collect(),
+        false => vec![format!("%{query}%")],
+    };
+    let mut params: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(2 + filters.source_ids.len());
+    let mut sql_query = format!(
+        r#"
+        SELECT *
+        FROM groups
+        WHERE ({})
+        AND source_id in ({})
+        AND (media_type IS NULL OR media_type in ({}))
+    "#,
+        get_keywords_sql(keywords.len()),
+        generate_placeholders(filters.source_ids.len()),
+        generate_placeholders(media_types.len())
+    );
+    sql_query += "\nAND hidden = 0";
+    if filters.sort != sort_type::PROVIDER {
+        let order = match filters.sort {
+            sort_type::ALPHABETICAL_ASC => "ASC",
+            sort_type::ALPHABETICAL_DESC => "DESC",
+            _ => "ASC",
+        };
+        sql_query += &format!("\nORDER BY name {}", order);
+    }
+    sql_query += "\nLIMIT ?, ?";
+    params.extend(to_to_sql(&keywords));
+    params.extend(to_to_sql(&filters.source_ids));
+    params.extend(to_to_sql(&media_types));
+    params.push(&offset);
+    params.push(&PAGE_SIZE);
+    let channels: Vec<Channel> = sql
+        .prepare(&sql_query)?
+        .query_map(params_from_iter(params), row_to_group)?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(channels)
+}
+
+fn row_to_group(row: &Row) -> std::result::Result<Channel, rusqlite::Error> {
+    let channel = Channel {
+        id: row.get("id")?,
+        name: row.get("name")?,
+        group: None,
+        image: row.get("image")?,
+        media_type: media_type::GROUP,
+        url: None,
+        series_id: None,
+        group_id: None,
+        favorite: false,
+        source_id: row.get("source_id")?,
+        stream_id: None,
+        tv_archive: None,
+        tvg_id: None,
+        season_id: None,
+        episode_num: None,
+        hidden: row.get("hidden")?,
+        is_adult: false,
+    };
+    Ok(channel)
+}
+
+fn row_to_channel(row: &Row) -> std::result::Result<Channel, rusqlite::Error> {
+    let channel = Channel {
+        id: row.get("id")?,
+        name: row.get("name")?,
+        group_id: row.get("group_id")?,
+        image: row.get("image")?,
+        media_type: row.get("media_type")?,
+        source_id: row.get("source_id")?,
+        url: row.get("url")?,
+        favorite: row.get("favorite")?,
+        episode_num: row.get("episode_num")?,
+        series_id: None,
+        group: None,
+        stream_id: row.get("stream_id")?,
+        tv_archive: row.get("tv_archive")?,
+        tvg_id: row.get("tvg_id")?,
+        season_id: row.get("season_id")?,
+        hidden: row.get("hidden")?,
+        is_adult: row.get("is_adult")?,
+    };
+    Ok(channel)
+}
+
+// For resuming a download that's only in history (e.g. after an app
+// restart) - the frontend no longer has the full Channel by then, only the
+// history row's channel_id.
+pub fn get_channel_by_id(id: i64) -> Result<Channel> {
+    let sql = get_conn()?;
+    sql.query_row(
+        "SELECT * FROM channels WHERE id = ?",
+        params![id],
+        row_to_channel,
+    )
+    .map_err(Into::into)
+}
+
+pub fn delete_channels_by_source(tx: &Transaction, source_id: i64) -> Result<()> {
+    tx.execute(
+        r#"
+        DELETE FROM channels
+        WHERE source_id = ?
+    "#,
+        params![source_id.to_string()],
+    )?;
+    Ok(())
+}
+
+pub fn delete_seasons_by_source(tx: &Transaction, source_id: i64) -> Result<()> {
+    tx.execute(
+        r#"
+        DELETE FROM seasons
+        WHERE source_id = ?
+    "#,
+        params![source_id],
+    )?;
+    Ok(())
+}
+
+pub fn delete_groups_by_source(tx: &Transaction, source_id: i64) -> Result<()> {
+    tx.execute(
+        r#"
+        DELETE FROM groups
+        WHERE source_id = ?
+    "#,
+        params!(source_id),
+    )?;
+    Ok(())
+}
+
+pub fn delete_epg_programmes_by_source(tx: &Transaction, source_id: i64) -> Result<()> {
+    tx.execute(
+        r#"
+        DELETE FROM epg_programmes
+        WHERE source_id = ?
+    "#,
+        params![source_id],
+    )?;
+    Ok(())
+}
+
+pub fn prune_old_epg(source_id: i64, cutoff: i64) -> Result<()> {
+    let sql = get_conn()?;
+    sql.execute(
+        "DELETE FROM epg_programmes WHERE source_id = ? AND end_timestamp < ?",
+        params![source_id, cutoff],
+    )?;
+    Ok(())
+}
+
+pub fn delete_source(id: i64) -> Result<()> {
+    let sql = get_conn()?;
+    sql.execute(
+        r#"
+        DELETE FROM channels
+        WHERE source_id = ?;
+    "#,
+        params![id],
+    )?;
+    sql.execute(
+        r#"
+        DELETE FROM groups
+        WHERE source_id = ?;
+    "#,
+        params![id],
+    )?;
+    sql.execute(
+        r#"
+        DELETE FROM seasons
+        WHERE source_id = ?;
+    "#,
+        params![id],
+    )?;
+    // epg_programmes.source_id has no ON DELETE CASCADE, so this needs its
+    // own explicit delete - without it, deleting a source with any cached
+    // EPG data would fail once foreign key enforcement is actually turned
+    // on (see create_connection_pool's PRAGMA foreign_keys).
+    sql.execute(
+        r#"
+        DELETE FROM epg_programmes
+        WHERE source_id = ?;
+    "#,
+        params![id],
+    )?;
+    sql.execute(
+        r#"
+        DELETE FROM pending_preserve
+        WHERE source_id = ?;
+    "#,
+        params![id],
+    )?;
+    let count = sql.execute(
+        r#"
+        DELETE FROM sources
+        WHERE id = ?;
+    "#,
+        params![id],
+    )?;
+    if count != 1 {
+        return Err(anyhow!("No sources were deleted"));
+    }
+    sql.execute("ANALYZE;", params![])?;
+    Ok(())
+}
+
+pub fn get_channel_count_by_source(id: i64) -> Result<u64> {
+    let sql = get_conn()?;
+    let count = sql.query_row(
+        "SELECT COUNT(*) FROM channels WHERE source_id = ?",
+        params![id],
+        |row| row.get::<_, u64>(0),
+    )?;
+    Ok(count)
+}
+
+pub fn source_name_exists(name: &str) -> Result<bool> {
+    let sql = get_conn()?;
+    Ok(sql
+        .query_row(
+            r#"
+    SELECT 1
+    FROM sources
+    WHERE name = ?1
+    "#,
+            [name],
+            |row| row.get::<_, u8>(0),
+        )
+        .optional()?
+        .is_some())
+}
+
+pub fn favorite_channel(channel_id: i64, favorite: bool) -> Result<()> {
+    let sql = get_conn()?;
+    sql.execute(
+        r#"
+        UPDATE channels
+        SET favorite = ?1
+        WHERE id = ?2
+    "#,
+        params![favorite, channel_id],
+    )?;
+    Ok(())
+}
+
+pub fn hide_channel(channel_id: i64, hidden: bool) -> Result<()> {
+    let sql = get_conn()?;
+    sql.execute(
+        r#"
+        UPDATE channels
+        SET hidden = ?1
+        WHERE id = ?2
+    "#,
+        params![hidden, channel_id],
+    )?;
+    Ok(())
+}
+
+pub fn hide_group(group_id: i64, hidden: bool) -> Result<()> {
+    let sql = get_conn()?;
+    sql.execute(
+        r#"
+        UPDATE groups
+        SET hidden = ?1
+        WHERE id = ?2
+    "#,
+        params![hidden, group_id],
+    )?;
+    Ok(())
+}
+
+// Unlike every other group query (search_group filters hidden = 0,
+// search_hidden filters hidden = 1), this deliberately returns every
+// category regardless of state - it backs the Manage Categories page,
+// which needs to show and let you toggle both hidden and visible ones.
+pub fn get_all_groups() -> Result<Vec<Group>> {
+    let sql = get_conn()?;
+    let result = sql
+        .prepare(
+            r#"
+        SELECT * FROM groups
+        ORDER BY source_id, media_type, name
+    "#,
+        )?
+        .query_map(params![], row_to_custom_group)?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(result)
+}
+
+pub fn set_groups_hidden(ids: &[i64], hidden: bool) -> Result<()> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let sql = get_conn()?;
+    let sql_query = format!(
+        "UPDATE groups SET hidden = ? WHERE id IN ({})",
+        generate_placeholders(ids.len())
+    );
+    let mut params: Vec<&dyn rusqlite::ToSql> = vec![&hidden];
+    params.extend(to_to_sql(ids));
+    sql.execute(&sql_query, params.as_slice())?;
+    Ok(())
+}
+
+// Individually-hidden channels have no browsable path back to them once
+// hidden (they're excluded from every normal listing), so this backs the
+// Manage Categories page's "Individual Channels" section - the only place
+// they can be found again to unhide.
+pub fn get_hidden_channels(source_id: i64) -> Result<Vec<Channel>> {
+    let sql = get_conn()?;
+    let result = sql
+        .prepare(
+            r#"
+        SELECT * FROM channels
+        WHERE source_id = ? AND hidden = 1
+        ORDER BY name
+    "#,
+        )?
+        .query_map(params![source_id], row_to_channel)?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(result)
+}
+
+pub fn set_channels_hidden(ids: &[i64], hidden: bool) -> Result<()> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let sql = get_conn()?;
+    let sql_query = format!(
+        "UPDATE channels SET hidden = ? WHERE id IN ({})",
+        generate_placeholders(ids.len())
+    );
+    let mut params: Vec<&dyn rusqlite::ToSql> = vec![&hidden];
+    params.extend(to_to_sql(ids));
+    sql.execute(&sql_query, params.as_slice())?;
+    Ok(())
+}
+
+pub fn remove_last_watched(channel_id: i64) -> Result<()> {
+    let sql = get_conn()?;
+    sql.execute(
+        r#"
+        UPDATE channels
+        SET last_watched = NULL
+        WHERE id = ?1
+    "#,
+        params![channel_id],
+    )?;
+    Ok(())
+}
+
+pub fn get_sources() -> Result<Vec<Source>> {
+    let sql = get_conn()?;
+    let sources: Vec<Source> = sql
+        .prepare("SELECT * FROM sources")?
+        .query_map([], row_to_source)?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(sources)
+}
+
+pub fn get_sources_by_type(source_type: u8) -> Result<Vec<Source>> {
+    let sql = get_conn()?;
+    let sources: Vec<Source> = sql
+        .prepare("SELECT * FROM sources WHERE source_type = ?")?
+        .query_map([source_type], row_to_source)?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(sources)
+}
+
+pub fn get_enabled_sources() -> Result<Vec<Source>> {
+    let sql = get_conn()?;
+    let sources: Vec<Source> = sql
+        .prepare("SELECT * FROM sources WHERE enabled = 1")?
+        .query_map([], row_to_source)?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(sources)
+}
+
+fn row_to_source(row: &Row) -> std::result::Result<Source, rusqlite::Error> {
+    Ok(Source {
+        id: row.get("id")?,
+        name: row.get("name")?,
+        username: row.get("username")?,
+        password: row.get("password")?,
+        url: row.get("url")?,
+        source_type: row.get("source_type")?,
+        url_origin: None,
+        enabled: row.get("enabled")?,
+        use_tvg_id: row.get("use_tvg_id")?,
+        user_agent: row.get("user_agent")?,
+        max_streams: row.get("max_streams")?,
+        stream_user_agent: row.get("stream_user_agent")?,
+        last_updated: row.get("last_updated")?,
+        epg_url: row.get("epg_url")?,
+        timezone: row.get("timezone")?,
+        epg_retention_days: row.get("epg_retention_days")?,
+    })
+}
+
+pub fn get_source_from_id(source_id: i64) -> Result<Source> {
+    let sql = get_conn()?;
+    Ok(sql.query_row(
+        r#"
+    SELECT * FROM sources where id = ?"#,
+        [source_id],
+        row_to_source,
+    )?)
+}
+
+pub fn set_source_enabled(value: bool, source_id: i64) -> Result<()> {
+    let sql = get_conn()?;
+    sql.execute(
+        r#"
+        UPDATE sources
+        SET enabled = ?
+        WHERE id = ?
+    "#,
+        params![value, source_id],
+    )?;
+    Ok(())
+}
+
+pub fn add_custom_channel(tx: &Transaction, channel: CustomChannel) -> Result<()> {
+    insert_channel(tx, channel.data)?;
+    if let Some(mut headers) = channel.headers {
+        if channel_headers_empty(&headers) {
+            return Ok(());
+        }
+        headers.channel_id = Some(tx.last_insert_rowid());
+        insert_channel_headers(tx, headers)?;
+    }
+    Ok(())
+}
+
+fn channel_headers_empty(headers: &ChannelHttpHeaders) -> bool {
+    return headers.ignore_ssl.is_none()
+        && headers.http_origin.is_none()
+        && headers.referrer.is_none()
+        && headers.user_agent.is_none();
+}
+
+pub fn get_custom_source(name: String) -> Source {
+    Source {
+        id: None,
+        name: name.to_string(),
+        enabled: true,
+        username: None,
+        password: None,
+        source_type: source_type::CUSTOM,
+        url: None,
+        url_origin: None,
+        use_tvg_id: None,
+        user_agent: None,
+        max_streams: None,
+        stream_user_agent: None,
+        last_updated: None,
+        epg_url: None,
+        timezone: None,
+        epg_retention_days: None,
+    }
+}
+
+pub fn edit_custom_channel(channel: CustomChannel) -> Result<()> {
+    let mut sql = get_conn()?;
+    let tx = sql.transaction()?;
+    match edit_custom_channel_tx(channel, &tx) {
+        Ok(_) => {
+            tx.commit()?;
+            Ok(())
+        }
+        Err(e) => {
+            tx.rollback().unwrap_or_else(|e| log(format!("{:?}", e)));
+            return Err(e);
+        }
+    }
+}
+
+fn edit_custom_channel_tx(channel: CustomChannel, tx: &Transaction) -> Result<()> {
+    tx.execute(
+        r#"
+        UPDATE channels
+        SET name = ?, image = ?, url = ?, media_type = ?, group_id = ?
+        WHERE id = ?
+    "#,
+        params![
+            channel.data.name,
+            channel.data.image,
+            channel.data.url,
+            channel.data.media_type,
+            channel.data.group_id,
+            channel.data.id
+        ],
+    )?;
+    if let Some(mut headers) = channel.headers {
+        headers.channel_id = channel.data.id;
+        tx.execute(
+            r#"
+            INSERT INTO channel_http_headers (referrer, user_agent, http_origin, ignore_ssl, channel_id)
+            VALUES (?1, ?2, ?3, ?4, ?5)
+            ON CONFLICT(channel_id) DO UPDATE SET
+                referrer = ?1,
+                user_agent = ?2,
+                http_origin = ?3,
+                ignore_ssl = ?4
+        "#,
+            params![
+                headers.referrer,
+                headers.user_agent,
+                headers.http_origin,
+                headers.ignore_ssl,
+                headers.channel_id
+            ],
+        )?;
+    } else {
+        tx.execute(
+            "DELETE FROM channel_http_headers WHERE channel_id = ?",
+            params![channel.data.id],
+        )?;
+    }
+    Ok(())
+}
+
+pub fn delete_custom_channel(id: i64) -> Result<()> {
+    let sql = get_conn()?;
+    sql.execute("DELETE FROM channels WHERE id = ?", params![id])?;
+    Ok(())
+}
+
+pub fn group_exists(name: &str, source_id: i64) -> Result<bool> {
+    let sql = get_conn()?;
+    Ok(sql
+        .query_row(
+            r#"
+            SELECT 1
+            FROM groups
+            WHERE name = ? AND source_id = ?
+        "#,
+            params![name, source_id],
+            |row| row.get::<_, u8>(0),
+        )
+        .optional()?
+        .is_some())
+}
+
+pub fn channel_exists(name: &str, url: &str, source_id: i64) -> Result<bool> {
+    let sql = get_conn()?;
+    Ok(sql
+        .query_row(
+            r#"
+            SELECT 1
+            FROM channels
+            WHERE name = ? AND source_id = ? AND url = ?
+        "#,
+            params![name, source_id, url],
+            |row| row.get::<_, u8>(0),
+        )
+        .optional()?
+        .is_some())
+}
+
+pub fn add_custom_group(tx: &Transaction, group: Group) -> Result<i64> {
+    tx.execute(
+        r#"
+        INSERT INTO groups (name, image, source_id)
+        VALUES (?, ?, ?)
+    "#,
+        params!(group.name, group.image, group.source_id),
+    )?;
+    Ok(tx.last_insert_rowid())
+}
+
+pub fn group_auto_complete(query: Option<String>, source_id: i64) -> Result<Vec<IdName>> {
+    let sql = get_conn()?;
+    let groups = sql
+        .prepare(
+            r#"
+        SELECT id, name
+        FROM groups
+        WHERE name LIKE ?
+        AND source_id = ?
+    "#,
+        )?
+        .query_map(params![to_sql_like(query), source_id], row_to_id_name)?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(groups)
+}
+
+fn row_to_id_name(row: &Row) -> Result<IdName, rusqlite::Error> {
+    Ok(IdName {
+        id: row.get("id")?,
+        name: row.get("name")?,
+    })
+}
+
+pub fn edit_custom_group(group: Group) -> Result<()> {
+    let sql = get_conn()?;
+    sql.execute(
+        r#"
+        UPDATE groups
+        SET name = ?, image = ?
+        WHERE id = ?
+    "#,
+        params![group.name, group.image, group.id],
+    )?;
+    Ok(())
+}
+
+fn get_group_by_id(id: i64) -> Result<Option<Group>> {
+    let sql = get_conn()?;
+    let group: Option<Group> = sql
+        .query_row(
+            "SELECT * FROM groups WHERE id = ?",
+            params![id],
+            row_to_custom_group,
+        )
+        .optional()?;
+    Ok(group)
+}
+
+fn row_to_custom_group(row: &Row) -> Result<Group, rusqlite::Error> {
+    Ok(Group {
+        id: row.get("id")?,
+        name: row.get("name")?,
+        image: row.get("image")?,
+        source_id: row.get("source_id")?,
+        hidden: row.get("hidden")?,
+        media_type: row.get("media_type")?,
+    })
+}
+
+pub fn get_custom_channel_extra_data(
+    id: i64,
+    group_id: Option<i64>,
+) -> Result<CustomChannelExtraData> {
+    Ok(CustomChannelExtraData {
+        headers: get_channel_headers_by_id(id)?,
+        group: match group_id {
+            None => None,
+            Some(group) => get_group_by_id(group)?,
+        },
+    })
+}
+
+pub fn delete_custom_group(id: i64, new_id: Option<i64>, do_channels_update: bool) -> Result<()> {
+    let sql = get_conn()?;
+    if do_channels_update {
+        sql.execute(
+            r#"
+        UPDATE channels
+        SET group_id = ?
+        WHERE group_id = ?
+    "#,
+            params![new_id, id],
+        )?;
+    }
+    sql.execute(
+        r#"
+        DELETE FROM groups
+        WHERE id = ?
+    "#,
+        params![id],
+    )?;
+    Ok(())
+}
+
+pub fn group_not_empty(id: i64) -> Result<bool> {
+    let sql = get_conn()?;
+    Ok(sql
+        .query_row(
+            r#"
+                SELECT 1
+                FROM channels
+                WHERE group_id = ?
+            "#,
+            params![id],
+            |row| row.get::<_, u8>(0),
+        )
+        .optional()?
+        .is_some())
+}
+
+pub fn get_custom_channels(group_id: Option<i64>, source_id: i64) -> Result<Vec<CustomChannel>> {
+    let sql = get_conn()?;
+    let mut sql_query = r#"
+        SELECT c.name, c.image, c.url, c.media_type, ch.referrer, ch.user_agent, ch.http_origin, ch.ignore_ssl
+        FROM channels c
+        LEFT JOIN channel_http_headers ch on ch.channel_id = c.id
+        WHERE source_id = ?
+    "#.to_string();
+    let mut params: Vec<i64> = Vec::with_capacity(2);
+    params.push(source_id);
+    if let Some(id) = group_id {
+        sql_query.push_str("\nAND group_id = ?");
+        params.push(id);
+    } else {
+        sql_query.push_str("\nAND group_id IS NULL");
+    }
+    let result = sql
+        .prepare(&sql_query)?
+        .query_map(params_from_iter(params), row_to_custom_channel)?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(result)
+}
+
+fn row_to_custom_channel(row: &Row) -> Result<CustomChannel, rusqlite::Error> {
+    Ok(CustomChannel {
+        data: Channel {
+            name: row.get("name")?,
+            image: row.get("image")?,
+            url: row.get("url")?,
+            media_type: row.get("media_type")?,
+            favorite: false,
+            group_id: None,
+            group: None,
+            id: None,
+            series_id: None,
+            source_id: None,
+            stream_id: None,
+            tv_archive: None,
+            tvg_id: None,
+            season_id: None,
+            episode_num: None,
+            hidden: Some(false),
+            is_adult: false,
+        },
+        headers: Some(ChannelHttpHeaders {
+            http_origin: row.get("http_origin")?,
+            ignore_ssl: row.get("ignore_ssl")?,
+            referrer: row.get("referrer")?,
+            user_agent: row.get("user_agent")?,
+            channel_id: None,
+            id: None,
+        }),
+    })
+}
+
+fn get_groups_by_source_id(id: i64) -> Result<Vec<Group>> {
+    let sql = get_conn()?;
+    let result = sql
+        .prepare(
+            r#"
+        SELECT *
+        FROM groups
+        WHERE source_id = ?
+    "#,
+        )?
+        .query_map(params![id], row_to_custom_group)?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(result)
+}
+
+pub fn get_custom_groups(source_id: i64) -> Result<Vec<ExportedGroup>> {
+    let groups = get_groups_by_source_id(source_id)?;
+    let mut export: Vec<ExportedGroup> = Vec::new();
+    for group in groups {
+        export.push(ExportedGroup {
+            group: Group {
+                name: group.name,
+                image: group.image,
+                source_id: None,
+                id: None,
+                hidden: Some(false),
+                media_type: None,
+            },
+            channels: get_custom_channels(group.id, source_id)?,
+        });
+    }
+    Ok(export)
+}
+
+pub fn do_tx<F, T>(f: F) -> Result<T>
+where
+    F: FnOnce(&Transaction) -> Result<T>,
+{
+    let mut sql = get_conn()?;
+    let tx = sql.transaction()?;
+    let result = f(&tx)?;
+    tx.commit()?;
+    Ok(result)
+}
+
+pub fn update_source(source: Source) -> Result<()> {
+    let sql = get_conn()?;
+    sql.execute(
+        r#"
+        UPDATE sources
+        SET username = ?, password = ?, url = ?, use_tvg_id = ?, user_agent = ?, max_streams = ?, stream_user_agent = ?, epg_url = ?, epg_retention_days = ?
+        WHERE id = ?"#,
+        params![
+            source.username,
+            source.password,
+            source.url,
+            source.use_tvg_id,
+            source.user_agent,
+            source.max_streams,
+            source.stream_user_agent,
+            source.epg_url,
+            source.epg_retention_days,
+            source.id
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn wipe(tx: &Transaction, id: i64) -> Result<()> {
+    delete_seasons_by_source(tx, id)?;
+    delete_channels_by_source(tx, id)?;
+    delete_groups_by_source(tx, id)?;
+    // channel_http_headers isn't cleaned up by the delete above (its
+    // ON DELETE CASCADE FK is never actually enforced - SQLite has FK
+    // enforcement off by default and this connection never turns it on),
+    // so every past refresh has left the old, now-deleted channel's header
+    // row behind as dead weight. restore_preserve() re-attaches the
+    // relevant header values to the new channel row right after this, so
+    // this only needs to sweep out rows nothing points to any more.
+    tx.execute(
+        "DELETE FROM channel_http_headers WHERE channel_id NOT IN (SELECT id FROM channels)",
+        [],
+    )?;
+    Ok(())
+}
+
+pub fn clean_epgs() -> Result<()> {
+    let sql = get_conn()?;
+    sql.execute_batch(
+        r#"
+          DELETE FROM epg
+          WHERE start_timestamp < strftime('%s', 'now')
+        "#,
+    )?;
+    Ok(())
+}
+
+pub fn add_epg(epg: EPGNotify) -> Result<()> {
+    let sql = get_conn()?;
+    sql.execute(
+        "INSERT INTO epg (epg_id, channel_name, title, start_timestamp) VALUES (?,?,?,?)",
+        params![epg.epg_id, epg.channel_name, epg.title, epg.start_timestamp],
+    )?;
+    Ok(())
+}
+
+pub fn remove_epg(epg_id: String) -> Result<()> {
+    let sql = get_conn()?;
+    sql.execute("DELETE FROM epg WHERE epg_id = ?", params![epg_id])?;
+    Ok(())
+}
+
+pub fn get_epgs() -> Result<Vec<EPGNotify>> {
+    let sql = get_conn()?;
+    let epgs = sql
+        .prepare("SELECT * FROM epg")?
+        .query_map(params![], row_to_epg)?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(epgs)
+}
+
+pub fn get_epg_ids() -> Result<Vec<String>> {
+    let sql = get_conn()?;
+    let epgs = sql
+        .prepare("SELECT epg_id FROM epg")?
+        .query_map(params![], |row| row.get::<_, String>(0))?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(epgs)
+}
+
+fn row_to_epg(row: &Row) -> Result<EPGNotify, rusqlite::Error> {
+    Ok(EPGNotify {
+        epg_id: row.get("epg_id")?,
+        channel_name: row.get("channel_name")?,
+        start_timestamp: row.get("start_timestamp")?,
+        title: row.get("title")?,
+    })
+}
+
+pub fn get_preserve(tx: &Transaction, source_id: i64) -> Result<Vec<ChannelPreserve>> {
+    let mut channels: Vec<ChannelPreserve> = tx
+        .prepare(
+            r#"
+              SELECT c.name, c.favorite, c.last_watched, c.hidden,
+                     h.referrer, h.user_agent, h.http_origin, h.ignore_ssl
+              FROM channels c
+              LEFT JOIN channel_http_headers h ON h.channel_id = c.id
+              WHERE (c.favorite = 1 OR c.last_watched IS NOT NULL OR c.hidden = 1 OR h.channel_id IS NOT NULL)
+              AND c.series_id IS NULL
+              AND c.source_id = ?
+            "#,
+        )?
+        .query_map(params![source_id], row_to_channel_preserve)?
+        .filter_map(Result::ok)
+        .collect();
+
+    let groups: Vec<ChannelPreserve> = tx
+        .prepare(
+            r#"
+              SELECT name, hidden
+              FROM groups
+              WHERE hidden = 1
+              AND source_id = ?
+            "#,
+        )?
+        .query_map(params![source_id], row_to_group_preserve)?
+        .filter_map(Result::ok)
+        .collect();
+
+    channels.extend(groups);
+    Ok(channels)
+}
+
+fn row_to_channel_preserve(row: &Row) -> Result<ChannelPreserve, rusqlite::Error> {
+    let referrer: Option<String> = row.get("referrer")?;
+    let user_agent: Option<String> = row.get("user_agent")?;
+    let http_origin: Option<String> = row.get("http_origin")?;
+    let ignore_ssl: Option<bool> = row.get("ignore_ssl")?;
+    let headers = if referrer.is_none()
+        && user_agent.is_none()
+        && http_origin.is_none()
+        && ignore_ssl.is_none()
+    {
+        None
+    } else {
+        Some(ChannelHttpHeaders {
+            id: None,
+            channel_id: None,
+            referrer,
+            user_agent,
+            http_origin,
+            ignore_ssl,
+        })
+    };
+    Ok(ChannelPreserve {
+        name: row.get("name")?,
+        favorite: row.get("favorite")?,
+        last_watched: row.get("last_watched")?,
+        hidden: row.get("hidden")?,
+        is_group: false,
+        headers,
+    })
+}
+
+fn row_to_group_preserve(row: &Row) -> Result<ChannelPreserve, rusqlite::Error> {
+    Ok(ChannelPreserve {
+        name: row.get("name")?,
+        hidden: row.get("hidden")?,
+        favorite: false,
+        last_watched: None,
+        is_group: true,
+        headers: None,
+    })
+}
+
+pub fn restore_preserve(
+    tx: &Transaction,
+    source_id: i64,
+    preserve: Vec<ChannelPreserve>,
+) -> Result<()> {
+    for item in preserve {
+        if item.is_group {
+            tx.execute(
+                r#"
+                  UPDATE groups
+                  SET hidden = ?
+                  WHERE name = ?
+                  AND source_id = ?
+                "#,
+                params![item.hidden, item.name, source_id],
+            )?;
+        } else {
+            tx.execute(
+                r#"
+                  UPDATE channels
+                  SET favorite = ?, last_watched = ?, hidden = ?
+                  WHERE name = ?
+                  AND source_id = ?
+                "#,
+                params![
+                    item.favorite,
+                    item.last_watched,
+                    item.hidden,
+                    item.name,
+                    source_id
+                ],
+            )?;
+            // Refreshing deletes and re-inserts channels with new ids, so
+            // any header row from before the refresh is now orphaned under
+            // the old id - re-attach it to whichever channel now has this
+            // name/source_id instead of just leaving it dangling.
+            if let Some(headers) = item.headers {
+                tx.execute(
+                    r#"
+                      INSERT INTO channel_http_headers (channel_id, referrer, user_agent, http_origin, ignore_ssl)
+                      SELECT id, ?1, ?2, ?3, ?4 FROM channels WHERE name = ?5 AND source_id = ?6
+                      ON CONFLICT(channel_id) DO UPDATE SET
+                          referrer = ?1,
+                          user_agent = ?2,
+                          http_origin = ?3,
+                          ignore_ssl = ?4
+                    "#,
+                    params![
+                        headers.referrer,
+                        headers.user_agent,
+                        headers.http_origin,
+                        headers.ignore_ssl,
+                        item.name,
+                        source_id
+                    ],
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
+// See pending_preserve's own migration comment - stages a whole-app
+// import's per-source favourites/history/hidden data for a source whose
+// channels don't exist yet, so the next refresh can apply it once they do.
+pub fn set_pending_preserve(
+    tx: &Transaction,
+    source_id: i64,
+    preserve: &[ChannelPreserve],
+) -> Result<()> {
+    let data = serde_json::to_string(preserve)?;
+    tx.execute(
+        r#"
+          INSERT INTO pending_preserve (source_id, data)
+          VALUES (?1, ?2)
+          ON CONFLICT(source_id) DO UPDATE SET data = ?2
+        "#,
+        params![source_id, data],
+    )?;
+    Ok(())
+}
+
+// Reads back (and clears) whatever was staged for this source by
+// set_pending_preserve - called right before a refresh wipes and
+// re-inserts its channels, so the merged result (this plus whatever
+// get_preserve captured from the current, about-to-be-wiped state) can be
+// restore_preserve'd against the freshly re-inserted rows. Returns an empty
+// Vec, not an error, when nothing was staged - the common case for every
+// refresh that didn't follow a data import.
+pub fn consume_pending_preserve(tx: &Transaction, source_id: i64) -> Result<Vec<ChannelPreserve>> {
+    let data: Option<String> = tx
+        .query_row(
+            "SELECT data FROM pending_preserve WHERE source_id = ?",
+            params![source_id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let Some(data) = data else {
+        return Ok(Vec::new());
+    };
+    tx.execute(
+        "DELETE FROM pending_preserve WHERE source_id = ?",
+        params![source_id],
+    )?;
+    Ok(serde_json::from_str(&data)?)
+}
+
+pub fn analyze(tx: &Transaction) -> Result<()> {
+    tx.execute("ANALYZE;", params![])?;
+    Ok(())
+}
+
+pub fn add_last_watched(id: i64) -> Result<()> {
+    let sql = get_conn()?;
+    sql.execute(
+        r#"
+          UPDATE channels
+          SET last_watched = strftime('%s', 'now')
+          WHERE id = ?
+        "#,
+        params![id],
+    )?;
+    sql.execute(
+        r#"
+		  UPDATE channels
+          SET last_watched = NULL
+          WHERE last_watched IS NOT NULL
+		  AND id NOT IN (
+				SELECT id
+				FROM channels
+				WHERE last_watched IS NOT NULL
+				ORDER BY last_watched DESC
+				LIMIT 36
+		  )
+        "#,
+        params![],
+    )?;
+    Ok(())
+}
+
+pub fn clear_history() -> Result<()> {
+    let sql = get_conn()?;
+    sql.execute(
+        r#"
+          UPDATE channels
+          SET last_watched = NULL
+          WHERE last_watched IS NOT NULL
+        "#,
+        params![],
+    )?;
+    Ok(())
+}
+
+pub fn clear_epg_cache() -> Result<()> {
+    let mut sql = get_conn()?;
+    let tx = sql.transaction()?;
+    tx.execute("DELETE FROM epg_programmes", params![])?;
+    tx.commit()?;
+    Ok(())
+}
+
+pub fn find_all_episodes_after(channel: &Channel) -> Result<Vec<String>> {
+    let sql = get_conn()?;
+    Ok(sql
+        .prepare(
+            r#"
+        SELECT url FROM channels
+        WHERE season_id = ?
+        AND episode_num > ?
+        ORDER BY episode_num
+      "#,
+        )?
+        .query_map(params![channel.season_id, channel.episode_num], |row| {
+            row.get::<_, String>(0)
+        })?
+        .filter_map(Result::ok)
+        .collect())
+}
+
+pub fn update_source_last_updated(source_id: i64) -> Result<()> {
+    let sql = get_conn()?;
+    sql.execute(
+        "UPDATE sources SET last_updated = ? WHERE id = ?",
+        params![chrono::Utc::now().timestamp(), source_id],
+    )?;
+    Ok(())
+}

@@ -1,7 +1,7 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 use anyhow::{Context, Result};
-use iptelly_lib::log;
+use iptelly_core::log;
 #[cfg(target_os = "linux")]
 use std::env;
 #[cfg(target_os = "linux")]
@@ -9,10 +9,10 @@ use std::path::Path;
 
 fn main() -> Result<()> {
     apply_gpu_fixes();
-    _ = iptelly_lib::utils::check_nuke()
+    _ = iptelly_core::utils::check_nuke()
         .with_context(|| "Failed to delete db after nuke request")
         .inspect_err(|e| log::log(format!("{:?}", e)));
-    iptelly_lib::sql::create_or_initialize_db()?;
+    iptelly_core::sql::create_or_initialize_db()?;
     iptelly_lib::run();
     Ok(())
 }

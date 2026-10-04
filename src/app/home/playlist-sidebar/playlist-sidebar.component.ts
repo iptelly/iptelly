@@ -26,7 +26,7 @@ import { ViewMode } from "../../models/viewMode";
 
 const MIN_WIDTH_PX = 216; // 13.5rem
 const MAX_WIDTH_PX = 416; // 26rem
-const PAGE_SIZE = 36; // must match src-tauri/src/sql.rs PAGE_SIZE
+const PAGE_SIZE = 36; // must match crates/iptelly-core/src/sql.rs PAGE_SIZE
 
 @Component({
   selector: "app-playlist-sidebar",
