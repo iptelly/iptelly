@@ -16,7 +16,6 @@ use crate::{
     view_type,
 };
 use anyhow::{Context, Result, anyhow};
-use directories::ProjectDirs;
 use r2d2::{Pool, PooledConnection};
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{OptionalExtension, Row, Transaction, params, params_from_iter};
@@ -61,13 +60,7 @@ fn get_and_create_sqlite_db_path() -> String {
     if let Some(path) = db_path_override() {
         return path;
     }
-    let mut path = ProjectDirs::from("dev", "iptelly", "iptelly")
-        .expect("Could not determine the app data directory")
-        .data_dir()
-        .to_owned();
-    if !path.exists() {
-        std::fs::create_dir_all(&path).expect("Failed to create app data directory");
-    }
+    let mut path = crate::paths::data_dir().expect("Could not create the app data directory");
     path.push(DB_NAME);
     return path.to_string_lossy().to_string();
 }

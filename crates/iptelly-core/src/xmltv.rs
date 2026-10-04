@@ -118,13 +118,7 @@ pub fn prune_old_epg(source: Source) -> Result<()> {
 }
 
 fn get_tmp_path() -> Result<String> {
-    let mut path = directories::ProjectDirs::from("dev", "iptelly", "iptelly")
-        .context("Could not determine the app cache directory")?
-        .cache_dir()
-        .to_owned();
-    if !path.exists() {
-        std::fs::create_dir_all(&path).context("Failed to create EPG cache directory")?;
-    }
+    let mut path = crate::paths::cache_dir()?;
     path.push("get_epg.dat");
     Ok(path.to_string_lossy().to_string())
 }

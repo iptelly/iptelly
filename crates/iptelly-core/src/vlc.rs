@@ -1,8 +1,8 @@
-use crate::external_player;
-use crate::types::{AppState, ChannelHttpHeaders, Source};
+use crate::playback::{self, PlayRequest};
+use crate::types::{AppState, Source};
 use crate::utils::get_bin;
-use crate::{media_type, settings::get_settings, sql, types::Channel};
-use anyhow::{Context, Result};
+use crate::{external_player, settings::get_settings, types::Channel};
+use anyhow::Result;
 
 use std::sync::LazyLock;
 use tokio::sync::Mutex;
@@ -23,14 +23,7 @@ static VLC_PATH: LazyLock<String> = LazyLock::new(|| get_bin(VLC_BIN_NAME));
 // working --stream-record equivalent wired up), so this is narrower than
 // mpv::play: no record/record_path params.
 pub async fn play(channel: Channel, state: &Mutex<AppState>) -> Result<()> {
-    let source = channel
-        .source_id
-        .and_then(|id| {
-            sql::get_source_from_id(id)
-                .with_context(|| format!("failed to fetch source with id {}", id))
-                .ok()
-        })
-        .or(None);
+    let source = playback::get_source(&channel);
     let args = get_play_args(&channel, &source)?;
     external_player::run(&VLC_PATH, args, &channel, &source, state).await
 }
@@ -38,24 +31,24 @@ pub async fn play(channel: Channel, state: &Mutex<AppState>) -> Result<()> {
 fn get_play_args(channel: &Channel, source: &Option<Source>) -> Result<Vec<String>> {
     let mut args = Vec::new();
     let settings = get_settings()?;
-    let headers = sql::get_channel_headers_by_id(channel.id.context("no channel id?")?)?;
+    let request = playback::build(channel, source, &settings)?;
     args.push(ARG_PLAY_AND_EXIT.to_string());
-    args.push(format!("{ARG_TITLE}{}", channel.name));
-    if settings.use_stream_caching == Some(false) {
+    args.push(format!("{ARG_TITLE}{}", request.title));
+    if !request.stream_caching {
         args.push(format!("{ARG_NETWORK_CACHING}300"));
     }
-    if settings.enable_hwdec.unwrap_or(true) {
+    if request.hardware_decoding {
         args.push(ARG_HWDEC_ON.to_string());
     } else {
         args.push(ARG_HWDEC_OFF.to_string());
     }
-    if channel.media_type == media_type::LIVESTREAM {
+    if request.live {
         args.push("--loop".to_string());
     }
-    if let Some(volume) = settings.volume {
+    if let Some(volume) = request.volume {
         args.push(format!("{ARG_GAIN}{}", volume as f32 / 100.0));
     }
-    set_headers(headers, &mut args, source);
+    set_headers(&request, &mut args);
     if let Some(vlc_params) = settings.vlc_params {
         #[cfg(not(target_os = "windows"))]
         let mut params = shell_words::split(&vlc_params)?;
@@ -67,28 +60,15 @@ fn get_play_args(channel: &Channel, source: &Option<Source>) -> Result<Vec<Strin
     // protects against a malicious playlist/provider crafting a channel
     // URL that looks like a VLC flag.
     args.push("--".to_string());
-    args.push(channel.url.clone().context("no url")?);
-    if channel.episode_num.is_some() {
-        for url in sql::find_all_episodes_after(channel)? {
-            args.push(url);
-        }
-    }
+    args.extend(request.urls);
     Ok(args)
 }
 
-fn set_headers(
-    headers: Option<ChannelHttpHeaders>,
-    args: &mut Vec<String>,
-    source: &Option<Source>,
-) {
-    let headers = headers.unwrap_or_default();
-    if let Some(referrer) = headers.referrer {
+fn set_headers(request: &PlayRequest, args: &mut Vec<String>) {
+    if let Some(referrer) = &request.referrer {
         args.push(format!("{ARG_REFERRER}{referrer}"));
     }
-    if let Some(user_agent) = headers
-        .user_agent
-        .or_else(|| source.as_ref().and_then(|f| f.stream_user_agent.clone()))
-    {
+    if let Some(user_agent) = &request.user_agent {
         args.push(format!("{ARG_USER_AGENT}{user_agent}"));
     }
 }
@@ -96,18 +76,12 @@ fn set_headers(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{settings, test_db};
+    use crate::{media_type, settings, test_db};
 
-    fn header_args(headers: Option<ChannelHttpHeaders>, source: &Option<Source>) -> Vec<String> {
+    fn header_args(request: PlayRequest) -> Vec<String> {
         let mut args = Vec::new();
-        set_headers(headers, &mut args, source);
+        set_headers(&request, &mut args);
         args
-    }
-
-    fn source_with_user_agent(user_agent: &str) -> Option<Source> {
-        let mut source = sql::get_custom_source("unused".to_string());
-        source.stream_user_agent = Some(user_agent.to_string());
-        Some(source)
     }
 
     // Everything before the "--" separator - the options VLC will parse.
@@ -133,20 +107,17 @@ mod tests {
     }
 
     #[test]
-    fn set_headers_adds_nothing_without_headers_or_a_source() {
-        assert!(header_args(None, &None).is_empty());
+    fn set_headers_adds_nothing_without_headers() {
+        assert!(header_args(PlayRequest::default()).is_empty());
     }
 
     #[test]
-    fn set_headers_passes_the_referrer_and_channel_user_agent() {
-        let args = header_args(
-            Some(ChannelHttpHeaders {
-                referrer: Some("https://referrer.example".to_string()),
-                user_agent: Some("Channel UA".to_string()),
-                ..Default::default()
-            }),
-            &source_with_user_agent("Source UA"),
-        );
+    fn set_headers_passes_the_referrer_and_user_agent() {
+        let args = header_args(PlayRequest {
+            referrer: Some("https://referrer.example".to_string()),
+            user_agent: Some("Channel UA".to_string()),
+            ..Default::default()
+        });
         assert_eq!(
             args,
             [
@@ -154,12 +125,6 @@ mod tests {
                 "--http-user-agent=Channel UA",
             ]
         );
-    }
-
-    #[test]
-    fn set_headers_falls_back_to_the_source_user_agent() {
-        let args = header_args(None, &source_with_user_agent("Source UA"));
-        assert_eq!(args, ["--http-user-agent=Source UA"]);
     }
 
     #[test]

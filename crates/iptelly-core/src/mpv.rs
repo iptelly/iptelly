@@ -1,8 +1,9 @@
+use crate::playback::{self, PlayRequest};
 use crate::settings::get_default_record_path;
-use crate::types::{AppState, ChannelHttpHeaders, Source};
+use crate::types::{AppState, Source};
 use crate::utils::{find_macos_bin, get_bin};
-use crate::{external_player, log, sql};
-use crate::{media_type, settings::get_settings, types::Channel};
+use crate::{external_player, log};
+use crate::{settings::get_settings, types::Channel};
 use anyhow::{Context, Result};
 use chrono::Local;
 
@@ -46,14 +47,7 @@ pub async fn play(
         "{} playing",
         channel.url.as_ref().context("no channel url")?
     );
-    let source = channel
-        .source_id
-        .and_then(|id| {
-            sql::get_source_from_id(id)
-                .with_context(|| format!("failed to fetch source with id {}", id))
-                .ok()
-        })
-        .or(None);
+    let source = playback::get_source(&channel);
     let args = get_play_args(&channel, record, record_path, &source)?;
     external_player::run(&MPV_PATH, args, &channel, &source, state).await
 }
@@ -74,28 +68,18 @@ fn get_play_args(
 ) -> Result<Vec<String>> {
     let mut args = Vec::new();
     let settings = get_settings()?;
-    let headers = sql::get_channel_headers_by_id(channel.id.context("no channel id?")?)?;
-    if channel.episode_num.is_some() {
+    let request = playback::build(channel, source, &settings)?;
+    if !request.resume {
         args.push(ARG_NO_RESUME_PLAYBACK.to_string());
     }
-    if channel.media_type != media_type::LIVESTREAM {
+    if request.save_position {
         args.push(ARG_SAVE_POSITION_ON_QUIT.to_string());
     }
-    if settings.use_stream_caching == Some(false) {
+    if !request.stream_caching {
         let stream_caching_arg = format!("{ARG_CACHE}{ARG_NO}",);
         args.push(stream_caching_arg);
     }
-    // Catch-up/timeshift streams commonly don't start exactly on a clean
-    // keyframe boundary (the server seeks into an already-recorded
-    // segment), which hardware decoding tends to choke on - confirmed via
-    // testing: the same URL played fine with --hwdec=no but produced
-    // "non-existing PPS referenced" / decoder failures with --hwdec=auto.
-    // Regular live/VOD playback is unaffected and keeps using hwdec.
-    let is_timeshift = channel
-        .url
-        .as_deref()
-        .is_some_and(|url| url.contains("/timeshift/"));
-    if settings.enable_hwdec.unwrap_or(true) && !is_timeshift {
+    if request.hardware_decoding {
         args.push(ARG_HWDEC.to_string());
     }
     if settings.enable_gpu.unwrap_or(false) {
@@ -120,18 +104,16 @@ fn get_play_args(
     if OS == "macos" && *MPV_PATH != MPV_BIN_NAME {
         args.push(format!("{}{}", ARG_YTDLP_PATH, *YTDLP_PATH));
     }
-    args.push(format!("{}{}", ARG_TITLE, channel.name));
+    args.push(format!("{}{}", ARG_TITLE, request.title));
     args.push(ARG_MSG_LEVEL.to_string());
-    if channel.media_type == media_type::LIVESTREAM {
+    if request.live {
         args.push(ARG_PREFETCH_PLAYLIST.to_string());
         args.push(ARG_LOOP_PLAYLIST.to_string());
     }
-    if let Some(volume) = settings.volume {
+    if let Some(volume) = request.volume {
         args.push(format!("{ARG_VOLUME}{volume}"));
     }
-    if headers.is_some() || source.is_some() {
-        set_headers(headers, &mut args, source);
-    }
+    set_headers(&request, &mut args);
     if let Some(mpv_params) = settings.mpv_params {
         #[cfg(not(target_os = "windows"))]
         let mut params = shell_words::split(&mpv_params)?;
@@ -145,38 +127,23 @@ fn get_play_args(
     // --input-ipc-server=...), which mpv would otherwise happily parse as
     // one regardless of its position in argv.
     args.push("--".to_string());
-    args.push(channel.url.clone().context("no url")?);
-    if channel.episode_num.is_some() {
-        for url in sql::find_all_episodes_after(channel)? {
-            args.push(url);
-        }
-    }
+    args.extend(request.urls);
     Ok(args)
 }
 
-fn set_headers(
-    headers: Option<ChannelHttpHeaders>,
-    args: &mut Vec<String>,
-    source: &Option<Source>,
-) {
-    let headers = headers.unwrap_or_default();
+fn set_headers(request: &PlayRequest, args: &mut Vec<String>) {
     let mut headers_vec: Vec<String> = Vec::with_capacity(2);
-    if let Some(origin) = headers.http_origin {
+    if let Some(origin) = &request.origin {
         headers_vec.push(format!("{HTTP_ORIGIN}{origin}"));
     }
-    if let Some(referrer) = headers.referrer {
+    if let Some(referrer) = &request.referrer {
         headers_vec.push(format!("{HTTP_REFERRER}{referrer}"));
     }
-    if let Some(user_agent) = headers
-        .user_agent
-        .or_else(|| source.as_ref().and_then(|f| f.stream_user_agent.clone()))
-    {
+    if let Some(user_agent) = &request.user_agent {
         args.push(format!("{ARG_USER_AGENT}{user_agent}"));
     }
-    if let Some(ignore_ssl) = headers.ignore_ssl {
-        if ignore_ssl == true {
-            args.push(ARG_IGNORE_SSL.to_string());
-        }
+    if request.ignore_ssl {
+        args.push(ARG_IGNORE_SSL.to_string());
     }
     if headers_vec.len() > 0 {
         let headers = headers_vec.join(",");
@@ -199,21 +166,16 @@ fn get_file_name() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{settings, test_db};
+    use crate::types::ChannelHttpHeaders;
+    use crate::{media_type, settings, test_db};
 
     fn headers() -> ChannelHttpHeaders {
         ChannelHttpHeaders::default()
     }
 
-    fn source_with_user_agent(user_agent: &str) -> Option<Source> {
-        let mut source = sql::get_custom_source("unused".to_string());
-        source.stream_user_agent = Some(user_agent.to_string());
-        Some(source)
-    }
-
-    fn header_args(headers: Option<ChannelHttpHeaders>, source: &Option<Source>) -> Vec<String> {
+    fn header_args(request: PlayRequest) -> Vec<String> {
         let mut args = Vec::new();
-        set_headers(headers, &mut args, source);
+        set_headers(&request, &mut args);
         args
     }
 
@@ -231,21 +193,17 @@ mod tests {
     }
 
     #[test]
-    fn set_headers_adds_nothing_without_headers_or_a_source() {
-        assert!(header_args(None, &None).is_empty());
-        assert!(header_args(Some(headers()), &None).is_empty());
+    fn set_headers_adds_nothing_without_headers() {
+        assert!(header_args(PlayRequest::default()).is_empty());
     }
 
     #[test]
     fn set_headers_combines_origin_and_referrer_into_one_argument() {
-        let args = header_args(
-            Some(ChannelHttpHeaders {
-                http_origin: Some("https://origin.example".to_string()),
-                referrer: Some("https://referrer.example".to_string()),
-                ..headers()
-            }),
-            &None,
-        );
+        let args = header_args(PlayRequest {
+            origin: Some("https://origin.example".to_string()),
+            referrer: Some("https://referrer.example".to_string()),
+            ..Default::default()
+        });
         assert_eq!(
             args,
             ["--http-header-fields=origin:https://origin.example,referer:https://referrer.example"]
@@ -253,33 +211,21 @@ mod tests {
     }
 
     #[test]
-    fn set_headers_prefers_the_channel_user_agent_over_the_source() {
-        let args = header_args(
-            Some(ChannelHttpHeaders {
-                user_agent: Some("Channel UA".to_string()),
-                ..headers()
-            }),
-            &source_with_user_agent("Source UA"),
-        );
+    fn set_headers_passes_the_user_agent() {
+        let args = header_args(PlayRequest {
+            user_agent: Some("Channel UA".to_string()),
+            ..Default::default()
+        });
         assert_eq!(args, ["--user-agent=Channel UA"]);
     }
 
     #[test]
-    fn set_headers_falls_back_to_the_source_user_agent() {
-        let args = header_args(None, &source_with_user_agent("Source UA"));
-        assert_eq!(args, ["--user-agent=Source UA"]);
-    }
-
-    #[test]
     fn set_headers_only_skips_certificate_checks_when_asked_to() {
-        let ignore = |value| {
-            header_args(
-                Some(ChannelHttpHeaders {
-                    ignore_ssl: Some(value),
-                    ..headers()
-                }),
-                &None,
-            )
+        let ignore = |ignore_ssl| {
+            header_args(PlayRequest {
+                ignore_ssl,
+                ..Default::default()
+            })
         };
         assert_eq!(ignore(true), [ARG_IGNORE_SSL]);
         assert!(ignore(false).is_empty());
