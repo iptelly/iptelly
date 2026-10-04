@@ -1,0 +1,11 @@
+{
+  "extends": "@react-native/typescript-config",
+  "compilerOptions": {
+    "types": ["jest"],
+    // Reads packages/react-native-iptelly from source, as Metro does (see
+    // metro.config.js), rather than from a build of it.
+    "customConditions": ["react-native", "react-native-iptelly-source"],
+  },
+  "include": ["**/*.ts", "**/*.tsx"],
+  "exclude": ["**/node_modules", "**/Pods"]
+}

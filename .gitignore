@@ -8,6 +8,11 @@
 /.cargo/config.toml
 /tmp
 
+# The TV app's JavaScript workspace (apps/, packages/)
+node_modules/
+.yarn/*
+!.yarn/releases
+
 # IDEs and editors
 .idea/
 .project
