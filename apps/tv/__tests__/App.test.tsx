@@ -4,24 +4,208 @@
 
 import ReactTestRenderer from 'react-test-renderer';
 import App from '../App';
+import type { Key } from '../src/remote';
 
-// Jest has no native modules, so the Rust core and the file system are
-// stand-ins here.
-jest.mock('react-native-iptelly', () => ({
-  init: jest.fn(() => Promise.resolve()),
-  getSources: jest.fn(() => Promise.resolve([{ id: 1n, name: 'My channels' }])),
+// Jest has no native modules, so the Rust core, the file system, the video
+// player and SVG are stand-ins here, and the test presses the remote's keys
+// itself.
+const mockRemote: { press?: (key: Key) => boolean | void } = {};
+
+jest.mock('../src/remote', () => ({
+  useRemote: (onKey: (key: Key) => boolean | void, enabled = true) => {
+    if (enabled) {
+      mockRemote.press = onKey;
+    }
+  },
 }));
+
+jest.mock('react-native-iptelly', () => {
+  const channel = (id: bigint, name: string) => ({
+    id,
+    name,
+    url: `http://example.com/${id}.m3u8`,
+    mediaType: 0,
+    sourceId: 1n,
+    favorite: false,
+    isAdult: false,
+  });
+  const channels = [channel(1n, 'Channel One'), channel(2n, 'Channel Two')];
+  const movies = [
+    { ...channel(21n, 'Film One'), mediaType: 1, rating: 6.5 },
+    { ...channel(22n, 'Film Two'), mediaType: 1 },
+  ];
+  return {
+    init: jest.fn(() => Promise.resolve()),
+    getSources: jest.fn(() =>
+      Promise.resolve([
+        { id: 1n, name: 'My playlist', enabled: true, sourceType: 2 },
+      ]),
+    ),
+    search: jest.fn(
+      (filters: {
+        viewType: number;
+        groupId?: bigint;
+        page: number;
+        mediaTypes: ArrayBuffer;
+      }) => {
+        if (filters.page > 1 || filters.viewType === 3) {
+          return Promise.resolve([]);
+        }
+        if (filters.viewType === 2 && filters.groupId == null) {
+          return Promise.resolve([{ id: 10n, name: 'News', mediaType: 3 }]);
+        }
+        const mediaType = new Uint8Array(filters.mediaTypes)[0];
+        return Promise.resolve(mediaType === 1 ? movies : channels);
+      },
+    ),
+    getMediaInfo: jest.fn(() =>
+      Promise.resolve({ year: '2025', genre: 'Thriller', plot: 'A plot.' }),
+    ),
+    getGuide: jest.fn((list: unknown[]) => Promise.resolve(list.map(() => []))),
+    playRequest: jest.fn((c: { name: string; url: string }) =>
+      Promise.resolve({ title: c.name, urls: [c.url], volume: 50 }),
+    ),
+    addToHistory: jest.fn(() => Promise.resolve()),
+  };
+});
+
 jest.mock('@dr.pogodin/react-native-fs', () => ({
   DocumentDirectoryPath: '/data',
   CachesDirectoryPath: '/cache',
 }));
 
-test('starts the core and lists the sources', async () => {
-  const { init } = jest.requireMock('react-native-iptelly');
+jest.mock('react-native-video', () => {
+  const { View } = require('react-native');
+  return (props: object) => <View testID="video" {...props} />;
+});
+
+jest.mock('react-native-svg', () => {
+  const { View } = require('react-native');
+  const Stub = () => <View />;
+  return {
+    __esModule: true,
+    default: Stub,
+    Path: Stub,
+    Defs: Stub,
+    LinearGradient: Stub,
+    Rect: Stub,
+    Stop: Stub,
+  };
+});
+
+async function settle() {
+  for (let i = 0; i < 5; i++) {
+    await ReactTestRenderer.act(async () => {
+      await Promise.resolve();
+    });
+  }
+}
+
+async function press(key: Key) {
+  await ReactTestRenderer.act(async () => {
+    mockRemote.press!(key);
+  });
+  await settle();
+}
+
+function text(renderer: ReactTestRenderer.ReactTestRenderer): string {
+  return JSON.stringify(renderer.toJSON());
+}
+
+test('browses the groups and guide and plays a channel', async () => {
+  const core = jest.requireMock('react-native-iptelly');
   let renderer!: ReactTestRenderer.ReactTestRenderer;
   await ReactTestRenderer.act(async () => {
     renderer = ReactTestRenderer.create(<App />);
   });
-  expect(init).toHaveBeenCalledWith('/data', '/cache');
-  expect(JSON.stringify(renderer.toJSON())).toContain('My channels');
+  await settle();
+
+  expect(core.init).toHaveBeenCalledWith('/data', '/cache');
+  expect(text(renderer)).toContain('All channels');
+  expect(text(renderer)).toContain('News');
+  expect(text(renderer)).toContain('Channel One');
+
+  // Into the guide, where the channels have no programmes.
+  await press('right');
+  expect(text(renderer)).toContain('No information');
+  expect(core.getGuide).toHaveBeenCalled();
+
+  // OK plays the highlighted channel in the preview.
+  await press('down');
+  await press('select');
+  expect(core.playRequest).toHaveBeenCalledWith(
+    expect.objectContaining({ name: 'Channel Two' }),
+  );
+  const video = renderer.root.findByProps({ testID: 'video' });
+  expect(video.props.source.uri).toBe('http://example.com/2.m3u8');
+  expect(video.props.volume).toBe(0.5);
+  expect(core.addToHistory).toHaveBeenCalledWith(2n);
+
+  // OK again goes full screen, and up changes channel.
+  await press('select');
+  expect(text(renderer)).not.toContain('All channels');
+  await press('up');
+  expect(renderer.root.findByProps({ testID: 'video' }).props.source.uri).toBe(
+    'http://example.com/1.m3u8',
+  );
+
+  // Back returns to the guide, then the groups, then the menu.
+  await press('back');
+  expect(text(renderer)).toContain('Channel Two');
+  await press('back');
+  await press('back');
+  expect(text(renderer)).toContain('Settings');
+  expect(text(renderer)).toContain('Favourites');
+
+  await ReactTestRenderer.act(async () => renderer.unmount());
+});
+
+test('browses the movies and plays one', async () => {
+  const core = jest.requireMock('react-native-iptelly');
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    renderer = ReactTestRenderer.create(<App />);
+  });
+  await settle();
+
+  // From the groups to the menu, then down to Movies.
+  await press('back');
+  await press('down');
+  await press('select');
+  expect(text(renderer)).toContain('All movies');
+  expect(text(renderer)).toContain('Film One');
+  expect(text(renderer)).toContain('6.5');
+
+  // The highlighted movie's details come once it's been highlighted a
+  // moment.
+  await ReactTestRenderer.act(
+    () => new Promise(resolve => setTimeout(resolve, 450)),
+  );
+  await settle();
+  expect(core.getMediaInfo).toHaveBeenCalledWith(
+    expect.objectContaining({ name: 'Film One' }),
+  );
+  expect(text(renderer)).toContain('2025 • Thriller');
+
+  // Into the grid, across to the second film, and play it full screen.
+  await press('right');
+  await press('right');
+  await press('select');
+  expect(core.playRequest).toHaveBeenCalledWith(
+    expect.objectContaining({ name: 'Film Two' }),
+  );
+  // The movies screen stays, hidden, so Back returns to the same place.
+  expect(text(renderer)).toContain('"display":"none"');
+  expect(text(renderer)).toContain('0:00');
+
+  // OK pauses it; Back stops it and goes back to the movies.
+  await press('select');
+  expect(renderer.root.findByProps({ testID: 'video' }).props.paused).toBe(
+    true,
+  );
+  await press('back');
+  expect(text(renderer)).not.toContain('"display":"none"');
+  expect(renderer.root.findAllByProps({ testID: 'video' })).toHaveLength(0);
+
+  await ReactTestRenderer.act(async () => renderer.unmount());
 });

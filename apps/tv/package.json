@@ -16,6 +16,7 @@
     "react-native": "npm:react-native-tvos@0.83.0-0",
     "react-native-iptelly": "workspace:*",
     "react-native-safe-area-context": "^5.5.2",
+    "react-native-svg": "^15.15.5",
     "react-native-video": "^6.19.3"
   },
   "devDependencies": {

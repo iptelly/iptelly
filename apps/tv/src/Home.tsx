@@ -1,0 +1,980 @@
+// The home screen, laid out like TiviMate's: the menu, the groups and the
+// guide side by side, with the playing channel in a preview above the
+// guide. Focus moves left to right and each column makes room for the next.
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import Video, { type VideoRef } from 'react-native-video';
+import {
+  addToHistory,
+  deleteSource,
+  getGuide,
+  playRequest,
+  refreshEpg,
+  refreshSource,
+  setFavorite,
+  type Channel,
+  type Epg,
+  type PlayRequest,
+  getSources,
+  type Source,
+} from 'react-native-iptelly';
+import { AddPlaylist } from './components/AddPlaylist';
+import { Details } from './components/Details';
+import {
+  GUIDE_TOP,
+  Guide,
+  VISIBLE_ROWS,
+  windowLength,
+  type GuideRow,
+} from './components/Guide';
+import { GroupList } from './components/GroupList';
+import { InfoBar } from './components/InfoBar';
+import { MENU_ITEMS, MENU_WIDTH, Menu, RAIL_WIDTH } from './components/Menu';
+import { PlayerBar } from './components/PlayerBar';
+import { useFirstVisible } from './components/scroll';
+import { SettingsList, SettingsPanel } from './components/SettingsPanel';
+import {
+  FIXED_LISTS,
+  MediaType,
+  PAGE_SIZE,
+  channelKey,
+  enabledSourceIds,
+  errorMessage,
+  lastWatched,
+  loadChannels,
+  loadGroups,
+  ready,
+  type ChannelList,
+} from './core';
+import { addDemoPlaylist } from './demo';
+import {
+  RANGE,
+  blockAt,
+  blocks,
+  floorHalfHour,
+  rangeStart,
+  scrollTo,
+  type Block,
+} from './guide';
+import { useRemote, type Key } from './remote';
+import { colors, fonts, px } from './theme';
+import { Vod } from './Vod';
+
+// 'vod' is the Movies or Series screen, which handles the remote itself.
+type Area =
+  | 'menu'
+  | 'groups'
+  | 'guide'
+  | 'settings'
+  | 'form'
+  | 'fullscreen'
+  | 'vod';
+
+// How far Left and Right move through a movie.
+const SEEK_SECONDS = 10;
+
+// Where each column starts, in design pixels, for the column that has focus.
+const LAYOUTS = {
+  menu: { groups: MENU_WIDTH, groupsWidth: 490, right: MENU_WIDTH + 490 },
+  groups: { groups: RAIL_WIDTH, groupsWidth: 450, right: RAIL_WIDTH + 450 },
+  guide: { groups: 0, groupsWidth: 0, right: 0 },
+};
+
+const PREVIEW = { top: 40, left: 40, width: 640, height: 360 };
+
+const CHANNELS = MENU_ITEMS.findIndex(i => i.key === 'channels');
+const MOVIES = MENU_ITEMS.findIndex(i => i.key === 'movies');
+const SERIES = MENU_ITEMS.findIndex(i => i.key === 'series');
+const FAVOURITES_LIST = FIXED_LISTS.findIndex(l => l.kind === 'favorites');
+const SETTINGS = MENU_ITEMS.findIndex(i => i.key === 'settings');
+
+const SETTINGS_ITEMS = [
+  'General',
+  'Playlists',
+  'EPG',
+  'Appearance',
+  'Playback',
+  'Remote control',
+  'Parental controls',
+  'Other',
+  'About',
+];
+
+// The settings panel's page, and for a playlist's page, the playlist.
+type SettingsPage = {
+  page: 'root' | 'playlists' | 'playlist';
+  index: number;
+  source?: Source;
+  confirmDelete?: boolean;
+};
+
+type Playing = { channel: Channel; request: PlayRequest; number?: number };
+
+function seconds(): number {
+  return Math.floor(Date.now() / 1000);
+}
+
+// The current time, updated every few seconds.
+function useNow(): number {
+  const [now, setNow] = useState(seconds);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(seconds()), 5000);
+    return () => clearInterval(timer);
+  }, []);
+  return now;
+}
+
+// Pages through a list as the highlight nears its end.
+type Paging = { page: number; done: boolean; loading: boolean };
+const firstPage = (): Paging => ({ page: 1, done: false, loading: false });
+
+export function Home() {
+  const now = useNow();
+  const [area, setArea] = useState<Area>('groups');
+  const [menuIndex, setMenuIndex] = useState(CHANNELS);
+  const [sources, setSources] = useState<Source[]>([]);
+  const [sourceIds, setSourceIds] = useState<bigint[]>();
+  const [groups, setGroups] = useState<ChannelList[]>(FIXED_LISTS);
+  const groupPaging = useRef(firstPage());
+  const [groupIndex, setGroupIndex] = useState(1);
+  const [openGroup, setOpenGroup] = useState(1);
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [channelsLoading, setChannelsLoading] = useState(true);
+  const channelPaging = useRef(firstPage());
+  const [row, setRow] = useState(0);
+  const [windowStart, setWindowStart] = useState(() =>
+    floorHalfHour(seconds()),
+  );
+  const [focusTime, setFocusTime] = useState(seconds);
+  const [guide, setGuide] = useState(() => new Map<string, Epg[]>());
+  const guidePending = useRef(new Set<string>());
+  const [playing, setPlaying] = useState<Playing>();
+  const [info, setInfo] = useState(false);
+  // Movies and episodes can be paused and moved through.
+  const video = useRef<VideoRef>(null);
+  const [paused, setPaused] = useState(false);
+  const [position, setPosition] = useState(0);
+  const [duration, setDuration] = useState(0);
+  // Where Left and Right have moved to, until the player gets there.
+  const [seekTo, setSeekTo] = useState<number>();
+  const [vodKind, setVodKind] = useState<number>();
+  const [settings, setSettings] = useState<SettingsPage>({
+    page: 'root',
+    index: 0,
+  });
+  const [toast, setToast] = useState<{ text: string; busy?: boolean }>();
+  const busy = toast?.busy === true;
+
+  // Shows a message at the bottom of the screen; '' takes it away.
+  const say = useCallback((text: string, isBusy = false) => {
+    setToast(text ? { text, busy: isBusy } : undefined);
+  }, []);
+
+  useEffect(() => {
+    if (!toast || toast.busy) {
+      return;
+    }
+    const timer = setTimeout(() => setToast(undefined), 4000);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  useEffect(() => {
+    if (!info) {
+      return;
+    }
+    const timer = setTimeout(() => setInfo(false), 5000);
+    return () => clearTimeout(timer);
+  }, [info, playing]);
+
+  // Sources and groups
+
+  const reload = useCallback(async () => {
+    await ready();
+    const all = await getSources();
+    const ids = await enabledSourceIds();
+    setSources(all);
+    setSourceIds(ids);
+    groupPaging.current = firstPage();
+    const first = ids.length > 0 ? await loadGroups(ids, 1) : [];
+    groupPaging.current.done = first.length < PAGE_SIZE;
+    setGroups([...FIXED_LISTS, ...first]);
+    setGuide(new Map());
+    return ids;
+  }, []);
+
+  const play = useCallback(
+    async (channel: Channel, number?: number) => {
+      try {
+        const request = await playRequest(channel);
+        setPlaying({ channel, request, number });
+        setPaused(false);
+        setPosition(0);
+        setDuration(0);
+        setSeekTo(undefined);
+        setInfo(true);
+        if (channel.id != null) {
+          addToHistory(channel.id).catch(() => {});
+        }
+      } catch (e) {
+        say(errorMessage(e));
+      }
+    },
+    [say],
+  );
+
+  // Holding Left or Right moves the target along; the player only seeks
+  // once it stops moving.
+  useEffect(() => {
+    if (seekTo === undefined) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      video.current?.seek(seekTo);
+      setPosition(seekTo);
+      setSeekTo(undefined);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [seekTo]);
+
+  const playVod = useCallback(
+    async (item: Channel) => {
+      await play(item);
+      setArea('fullscreen');
+    },
+    [play],
+  );
+
+  const closeVod = useCallback(() => {
+    setMenuIndex(vodKind === MediaType.SERIE ? SERIES : MOVIES);
+    setArea('menu');
+  }, [vodKind]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const ids = await reload();
+        if (ids.length === 0) {
+          setArea('menu');
+          setMenuIndex(SETTINGS);
+          say('Add a playlist in Settings, then Playlists.');
+          return;
+        }
+        const last = await lastWatched(ids);
+        if (last) {
+          await play(last);
+          setArea('fullscreen');
+        }
+      } catch (e) {
+        say(errorMessage(e));
+      }
+    })();
+  }, [reload, play, say]);
+
+  useEffect(() => {
+    const paging = groupPaging.current;
+    if (
+      !sourceIds ||
+      paging.done ||
+      paging.loading ||
+      groupIndex < groups.length - 6
+    ) {
+      return;
+    }
+    paging.loading = true;
+    loadGroups(sourceIds, paging.page + 1)
+      .then(more => {
+        paging.page += 1;
+        paging.done = more.length < PAGE_SIZE;
+        setGroups(g => [...g, ...more]);
+      })
+      .catch(e => say(errorMessage(e)))
+      .finally(() => {
+        paging.loading = false;
+      });
+  }, [groupIndex, groups.length, sourceIds, say]);
+
+  // Moving through the groups shows each one in the guide after a moment.
+  useEffect(() => {
+    if (area !== 'groups' || groupIndex === openGroup) {
+      return;
+    }
+    const timer = setTimeout(() => setOpenGroup(groupIndex), 300);
+    return () => clearTimeout(timer);
+  }, [area, groupIndex, openGroup]);
+
+  // Channels
+
+  const list = groups[openGroup];
+  useEffect(() => {
+    if (!sourceIds || !list) {
+      return;
+    }
+    let current = true;
+    channelPaging.current = { page: 1, done: false, loading: true };
+    setChannelsLoading(true);
+    loadChannels(list, sourceIds, 1)
+      .then(first => {
+        if (current) {
+          channelPaging.current = {
+            page: 1,
+            done: first.length < PAGE_SIZE,
+            loading: false,
+          };
+          setChannels(first);
+          setRow(0);
+        }
+      })
+      .catch(e => say(errorMessage(e)))
+      .finally(() => current && setChannelsLoading(false));
+    return () => {
+      current = false;
+    };
+  }, [list, sourceIds, say]);
+
+  useEffect(() => {
+    const paging = channelPaging.current;
+    if (
+      !sourceIds ||
+      !list ||
+      paging.done ||
+      paging.loading ||
+      row < channels.length - 10
+    ) {
+      return;
+    }
+    paging.loading = true;
+    loadChannels(list, sourceIds, paging.page + 1)
+      .then(more => {
+        paging.page += 1;
+        paging.done = more.length < PAGE_SIZE;
+        setChannels(c => [...c, ...more]);
+      })
+      .catch(e => say(errorMessage(e)))
+      .finally(() => {
+        paging.loading = false;
+      });
+  }, [row, channels.length, list, sourceIds, say]);
+
+  // The guide
+
+  const layout =
+    LAYOUTS[
+      area === 'settings' || area === 'form'
+        ? 'menu'
+        : area === 'fullscreen' || area === 'vod'
+        ? 'guide'
+        : area
+    ];
+  const guideX = layout.right;
+  const length = windowLength(guideX);
+  const range = rangeStart(windowStart);
+  const top = useFirstVisible(row, channels.length, VISIBLE_ROWS - 1);
+  const visible = useMemo(
+    () => channels.slice(top, top + VISIBLE_ROWS),
+    [channels, top],
+  );
+
+  const guideKey = useCallback(
+    (channel: Channel) => `${range}:${channelKey(channel)}`,
+    [range],
+  );
+
+  useEffect(() => {
+    const wanted = playing ? [...visible, playing.channel] : visible;
+    const missing = wanted.filter(c => {
+      const key = guideKey(c);
+      return !guide.has(key) && !guidePending.current.has(key);
+    });
+    if (missing.length === 0) {
+      return;
+    }
+    missing.forEach(c => guidePending.current.add(guideKey(c)));
+    getGuide(missing, BigInt(range), BigInt(range + RANGE))
+      .then(results =>
+        setGuide(previous => {
+          const next = new Map(previous);
+          missing.forEach((c, i) => next.set(guideKey(c), results[i] ?? []));
+          return next;
+        }),
+      )
+      .catch(e => say(errorMessage(e)))
+      .finally(() =>
+        missing.forEach(c => guidePending.current.delete(guideKey(c))),
+      );
+  }, [visible, playing, guide, guideKey, range, say]);
+
+  const blocksFor = useCallback(
+    (channel: Channel): Block[] =>
+      blocks(guide.get(guideKey(channel)) ?? [], range, range + RANGE),
+    [guide, guideKey, range],
+  );
+
+  const rows: GuideRow[] = useMemo(
+    () =>
+      visible.map((channel, i) => ({
+        channel,
+        number: top + i + 1,
+        blocks: blocksFor(channel),
+      })),
+    [visible, top, blocksFor],
+  );
+
+  const focusedChannel = channels[row];
+  const focusedBlocks = focusedChannel ? blocksFor(focusedChannel) : [];
+  const focusedBlock = focusedBlocks[blockAt(focusedBlocks, focusTime)];
+  const playingKey = playing ? channelKey(playing.channel) : undefined;
+  const playingVod =
+    playing != null && playing.channel.mediaType !== MediaType.LIVESTREAM;
+  const playingBlocks = playing ? blocksFor(playing.channel) : [];
+  const playingNow = blockAt(playingBlocks, now);
+  // Where the playing channel is in the open list, or -1.
+  const playingRow = channels.findIndex(c => channelKey(c) === playingKey);
+
+  const openGuide = () => {
+    if (playingRow >= 0) {
+      setRow(playingRow);
+    }
+    setFocusTime(now);
+    setWindowStart(floorHalfHour(now));
+    setArea('guide');
+  };
+
+  // Opens the guide on the list at `index` in the groups column.
+  const openList = (index: number) => {
+    if (index === openGroup) {
+      openGuide();
+      return;
+    }
+    setOpenGroup(index);
+    setRow(0);
+    setFocusTime(now);
+    setWindowStart(floorHalfHour(now));
+    setArea('guide');
+  };
+
+  // Settings
+
+  const settingsItems = (): string[] => {
+    switch (settings.page) {
+      case 'root':
+        return SETTINGS_ITEMS;
+      case 'playlists':
+        return [
+          ...sources.map(s => s.name),
+          'Add playlist',
+          ...(__DEV__ ? ['Add the demo playlist'] : []),
+        ];
+      case 'playlist':
+        return [
+          'Update playlist',
+          'Update guide',
+          settings.confirmDelete
+            ? 'Press OK again to delete'
+            : 'Delete playlist',
+        ];
+    }
+  };
+
+  const run = async (
+    busyText: string,
+    work: () => Promise<unknown>,
+    doneText: string,
+  ) => {
+    say(busyText, true);
+    try {
+      await work();
+      say(doneText);
+    } catch (e) {
+      say(errorMessage(e));
+    }
+  };
+
+  const chooseSetting = () => {
+    if (busy) {
+      return;
+    }
+    const items = settingsItems();
+    const item = items[settings.index];
+    if (settings.page === 'root') {
+      if (item === 'Playlists') {
+        setSettings({ page: 'playlists', index: 0 });
+      } else if (item === 'About') {
+        say('IPTelly for TVs, using the IPTelly core.');
+      } else {
+        say(`${item} isn't in the TV app yet.`);
+      }
+    } else if (settings.page === 'playlists') {
+      const source = sources[settings.index];
+      if (source) {
+        setSettings({ page: 'playlist', index: 0, source });
+      } else if (item === 'Add playlist') {
+        setArea('form');
+      } else {
+        run(
+          'Adding the demo playlist…',
+          async () => {
+            await addDemoPlaylist();
+            await reload();
+          },
+          'Added the demo playlist.',
+        );
+      }
+    } else {
+      const source = settings.source!;
+      const id = source.id!;
+      if (settings.index === 0) {
+        run(
+          `Updating ${source.name}…`,
+          async () => {
+            await refreshSource(id);
+            await reload();
+          },
+          `Updated ${source.name}.`,
+        );
+      } else if (settings.index === 1) {
+        run(
+          `Loading the guide for ${source.name}…`,
+          async () => {
+            await refreshEpg(id);
+            setGuide(new Map());
+          },
+          `Loaded the guide for ${source.name}.`,
+        );
+      } else if (!settings.confirmDelete) {
+        setSettings({ ...settings, confirmDelete: true });
+      } else {
+        run(
+          `Deleting ${source.name}…`,
+          async () => {
+            await deleteSource(id);
+            await reload();
+            setSettings({ page: 'playlists', index: 0 });
+          },
+          `Deleted ${source.name}.`,
+        );
+      }
+    }
+  };
+
+  const playlistAdded = (source?: Source) => {
+    setArea('settings');
+    if (!source?.id) {
+      return;
+    }
+    const id = source.id;
+    run(
+      `Loading ${source.name}…`,
+      async () => {
+        await reload();
+        await refreshEpg(id);
+        setGuide(new Map());
+      },
+      `Added ${source.name}.`,
+    );
+  };
+
+  // The remote
+
+  const clamp = (value: number, count: number) =>
+    Math.max(0, Math.min(value, count - 1));
+
+  const keys: Record<
+    Exclude<Area, 'form' | 'vod'>,
+    (key: Key) => boolean | void
+  > = {
+    menu: key => {
+      if (key === 'up' || key === 'down') {
+        setMenuIndex(i =>
+          clamp(i + (key === 'up' ? -1 : 1), MENU_ITEMS.length),
+        );
+      } else if (key === 'select' || key === 'right') {
+        const item = MENU_ITEMS[menuIndex];
+        if (item.key === 'channels') {
+          setArea('groups');
+        } else if (item.key === 'favourites') {
+          setGroupIndex(FAVOURITES_LIST);
+          openList(FAVOURITES_LIST);
+        } else if (item.key === 'movies' || item.key === 'series') {
+          setVodKind(item.key === 'movies' ? MediaType.MOVIE : MediaType.SERIE);
+          setArea('vod');
+        } else if (item.key === 'settings') {
+          setSettings({ page: 'root', index: 0 });
+          setArea('settings');
+        } else {
+          say(`${item.label} isn't in the TV app yet.`);
+        }
+      } else if (key === 'back') {
+        if (!playing) {
+          return false;
+        }
+        setArea('fullscreen');
+      }
+    },
+    groups: key => {
+      if (key === 'up' || key === 'down') {
+        setGroupIndex(i => clamp(i + (key === 'up' ? -1 : 1), groups.length));
+      } else if (key === 'right' || key === 'select') {
+        openList(groupIndex);
+      } else if (key === 'left' || key === 'back') {
+        setMenuIndex(CHANNELS);
+        setArea('menu');
+      }
+    },
+    guide: key => {
+      if (key === 'up' || key === 'down') {
+        setRow(r => clamp(r + (key === 'up' ? -1 : 1), channels.length));
+      } else if (key === 'right' && focusedBlock) {
+        const next = focusedBlocks[focusedBlocks.indexOf(focusedBlock) + 1];
+        if (next) {
+          setFocusTime(next.start);
+          setWindowStart(scrollTo(next, windowStart, length, now));
+        }
+      } else if (key === 'left') {
+        const previous =
+          focusedBlock &&
+          focusedBlocks[focusedBlocks.indexOf(focusedBlock) - 1];
+        if (!focusedBlock || focusedBlock.start <= now || !previous) {
+          setGroupIndex(openGroup);
+          setArea('groups');
+        } else {
+          setFocusTime(Math.max(previous.start, now));
+          setWindowStart(scrollTo(previous, windowStart, length, now));
+        }
+      } else if (key === 'select' && focusedChannel) {
+        if (channelKey(focusedChannel) === playingKey) {
+          setArea('fullscreen');
+          setInfo(true);
+        } else {
+          play(focusedChannel, row + 1);
+        }
+      } else if (key === 'longSelect' && focusedChannel?.id != null) {
+        const favorite = !focusedChannel.favorite;
+        setFavorite(focusedChannel.id, favorite)
+          .then(() => {
+            setChannels(c =>
+              c.map(ch => (ch === focusedChannel ? { ...ch, favorite } : ch)),
+            );
+            say(favorite ? 'Added to Favourites.' : 'Removed from Favourites.');
+          })
+          .catch(e => say(errorMessage(e)));
+      } else if (key === 'back') {
+        setGroupIndex(openGroup);
+        setArea('groups');
+      }
+    },
+    settings: key => {
+      const count = settingsItems().length;
+      if (key === 'up' || key === 'down') {
+        setSettings(s => ({
+          ...s,
+          index: clamp(s.index + (key === 'up' ? -1 : 1), count),
+          confirmDelete: false,
+        }));
+      } else if (key === 'select' || key === 'right') {
+        chooseSetting();
+      } else if (key === 'back' || key === 'left') {
+        if (settings.page === 'playlist') {
+          setSettings({ page: 'playlists', index: 0 });
+        } else if (settings.page === 'playlists') {
+          setSettings({
+            page: 'root',
+            index: SETTINGS_ITEMS.indexOf('Playlists'),
+          });
+        } else {
+          setArea('menu');
+        }
+      }
+    },
+    fullscreen: key => {
+      if (playingVod) {
+        return vodPlayerKey(key);
+      }
+      const at = playingRow;
+      if (
+        key === 'up' ||
+        key === 'down' ||
+        key === 'channelUp' ||
+        key === 'channelDown'
+      ) {
+        const step = key === 'up' || key === 'channelUp' ? -1 : 1;
+        const next = channels[at + step];
+        if (at >= 0 && next) {
+          setRow(at + step);
+          play(next, at + step + 1);
+        } else {
+          setInfo(true);
+        }
+      } else if (key === 'select') {
+        if (info) {
+          openGuide();
+        } else {
+          setInfo(true);
+        }
+      } else if (key === 'info') {
+        setInfo(i => !i);
+      } else if (key === 'back' || key === 'left') {
+        openGuide();
+      }
+    },
+  };
+
+  // A full-screen movie or episode: OK pauses, Left and Right move back
+  // and forward, and Back returns to the Movies or Series screen.
+  const vodPlayerKey = (key: Key) => {
+    if (key === 'select' || key === 'playPause') {
+      setPaused(p => !p);
+      setInfo(true);
+    } else if (key === 'left' || key === 'right') {
+      const from = seekTo ?? position;
+      const step = key === 'left' ? -SEEK_SECONDS : SEEK_SECONDS;
+      const end = duration > 0 ? duration : from + step;
+      setSeekTo(Math.max(0, Math.min(from + step, end)));
+      setInfo(true);
+    } else if (key === 'back') {
+      setPlaying(undefined);
+      setArea('vod');
+    } else {
+      setInfo(true);
+    }
+  };
+
+  useRemote(
+    key => (area === 'form' || area === 'vod' ? true : keys[area](key)),
+    area !== 'form' && area !== 'vod',
+  );
+
+  // Drawing
+
+  const fullscreen = area === 'fullscreen';
+  const inVod = area === 'vod';
+  const menuShown = area !== 'guide' && !fullscreen;
+  const previewStyle = [
+    styles.video,
+    fullscreen
+      ? StyleSheet.absoluteFill
+      : {
+          position: 'absolute' as const,
+          left: px(guideX + PREVIEW.left),
+          top: px(PREVIEW.top),
+          width: px(PREVIEW.width),
+          height: px(PREVIEW.height),
+        },
+  ];
+  const headers = playing
+    ? Object.fromEntries(
+        [
+          ['User-Agent', playing.request.userAgent],
+          ['Referer', playing.request.referrer],
+          ['Origin', playing.request.origin],
+        ].filter(([, value]) => value),
+      )
+    : {};
+
+  return (
+    <View style={styles.screen}>
+      {/* The highlight is drawn by the app, but Android only sends the
+          remote's keys while something has focus. */}
+      {area !== 'form' && (
+        <Pressable focusable hasTVPreferredFocus style={styles.focusAnchor} />
+      )}
+      {!fullscreen && !inVod && (
+        <>
+          <View
+            style={[
+              styles.previewFrame,
+              {
+                left: px(guideX + PREVIEW.left),
+                top: px(PREVIEW.top),
+                width: px(PREVIEW.width),
+                height: px(PREVIEW.height),
+              },
+            ]}
+          >
+            {!playing && (
+              <Text style={styles.hint}>Press OK on a channel to watch it</Text>
+            )}
+          </View>
+          <Details
+            x={guideX + PREVIEW.left + PREVIEW.width + 40}
+            block={area === 'guide' ? focusedBlock : playingBlocks[playingNow]}
+            channel={area === 'guide' ? focusedChannel : playing?.channel}
+            group={area === 'guide' ? list?.name : undefined}
+            now={now}
+          />
+          {channels.length > 0 ? (
+            <Guide
+              x={guideX}
+              rows={rows}
+              focusedRow={row}
+              focusedBlock={focusedBlock}
+              focused={area === 'guide'}
+              playing={playingKey}
+              windowStart={windowStart}
+              now={now}
+            />
+          ) : (
+            <Text style={[styles.empty, { left: px(guideX + 80) }]}>
+              {channelsLoading || !sourceIds
+                ? 'Loading…'
+                : sourceIds.length === 0
+                ? 'No playlists yet.'
+                : list?.kind === 'favorites'
+                ? 'No favourites yet. Hold OK on a channel to add it.'
+                : 'No channels here.'}
+            </Text>
+          )}
+        </>
+      )}
+      {sourceIds && vodKind != null && (
+        <Vod
+          key={vodKind}
+          kind={vodKind}
+          sourceIds={sourceIds}
+          active={inVod}
+          onExit={closeVod}
+          onPlay={playVod}
+          say={say}
+        />
+      )}
+      {playing && !inVod && (
+        <Video
+          ref={video}
+          key={channelKey(playing.channel)}
+          source={{ uri: playing.request.urls[0], headers }}
+          style={previewStyle}
+          resizeMode="contain"
+          paused={paused}
+          volume={(playing.request.volume ?? 100) / 100}
+          onLoad={data => setDuration(data.duration)}
+          onProgress={data => setPosition(data.currentTime)}
+          onError={() => say(`Couldn't play ${playing.channel.name}.`)}
+        />
+      )}
+      {fullscreen && playingVod && (info || paused || seekTo != null) && (
+        <PlayerBar
+          title={playing.channel.name}
+          position={seekTo ?? position}
+          duration={duration}
+          paused={paused}
+        />
+      )}
+      {fullscreen && info && playing && !playingVod && (
+        <InfoBar
+          channel={playing.channel}
+          number={
+            playing.number ?? (playingRow >= 0 ? playingRow + 1 : undefined)
+          }
+          current={playingBlocks[playingNow]}
+          next={playingBlocks[playingNow + 1]}
+          now={now}
+        />
+      )}
+      {menuShown && (
+        <View style={styles.columns}>
+          <Menu
+            expanded={area !== 'groups' && !inVod}
+            focused={area === 'menu'}
+            index={menuIndex}
+            section={
+              area === 'settings' || area === 'form'
+                ? SETTINGS
+                : inVod
+                ? vodKind === MediaType.SERIE
+                  ? SERIES
+                  : MOVIES
+                : CHANNELS
+            }
+          />
+          {!inVod && (
+            <GroupList
+              groups={groups}
+              index={groupIndex}
+              open={openGroup}
+              focused={area === 'groups'}
+              width={layout.groupsWidth}
+            />
+          )}
+        </View>
+      )}
+      {area === 'settings' && (
+        <SettingsPanel
+          title={
+            settings.page === 'root'
+              ? 'Settings'
+              : settings.page === 'playlists'
+              ? 'Playlists'
+              : settings.source?.name ?? ''
+          }
+        >
+          <SettingsList items={settingsItems()} index={settings.index} />
+        </SettingsPanel>
+      )}
+      {area === 'form' && (
+        <SettingsPanel title="Add playlist">
+          <AddPlaylist onDone={playlistAdded} />
+        </SettingsPanel>
+      )}
+      {toast && (
+        <View style={styles.toast}>
+          <Text style={styles.toastText}>{toast.text}</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  focusAnchor: {
+    position: 'absolute',
+    width: 1,
+    height: 1,
+    opacity: 0,
+  },
+  // Black bars, not the app's blue, around video that doesn't fill the box.
+  video: {
+    backgroundColor: 'black',
+  },
+  columns: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    bottom: 0,
+    flexDirection: 'row',
+  },
+  previewFrame: {
+    position: 'absolute',
+    borderRadius: px(12),
+    backgroundColor: colors.backgroundDark,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hint: {
+    color: colors.textDim,
+    fontSize: fonts.small,
+  },
+  empty: {
+    position: 'absolute',
+    top: px(GUIDE_TOP + 100),
+    color: colors.textDim,
+    fontSize: fonts.normal,
+  },
+  toast: {
+    position: 'absolute',
+    bottom: px(50),
+    alignSelf: 'center',
+    maxWidth: px(1200),
+    paddingVertical: px(20),
+    paddingHorizontal: px(36),
+    borderRadius: px(12),
+    backgroundColor: 'rgba(20, 28, 40, 0.92)',
+  },
+  toastText: {
+    color: colors.text,
+    fontSize: fonts.normal,
+  },
+});
