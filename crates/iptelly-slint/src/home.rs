@@ -860,10 +860,10 @@ fn download_movie(channel: Channel) {
     crate::spawn(
         async move {
             let path = if ask {
-                let file_name = utils::get_filename(
-                    channel.name.clone(),
-                    channel.url.clone().unwrap_or_default(),
-                )?;
+                let file_name = crate::file_name::for_stream(
+                    &channel.name,
+                    channel.url.as_deref().unwrap_or_default(),
+                );
                 let picked = rfd::AsyncFileDialog::new()
                     .set_title("Select where to download movie")
                     .set_file_name(file_name)
@@ -1155,7 +1155,7 @@ fn record(channel: Channel) {
         return;
     }
     let date = chrono::Local::now().format("%Y-%m-%d-%H-%M-%S");
-    let file_name = format!("{}_{date}.mp4", utils::sanitize(channel.name.clone()));
+    let file_name = format!("{}_{date}.mp4", crate::file_name::sanitize(&channel.name));
     crate::spawn(
         async move {
             Ok(rfd::AsyncFileDialog::new()

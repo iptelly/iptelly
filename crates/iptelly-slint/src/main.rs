@@ -7,6 +7,7 @@ mod dialog;
 mod downloads;
 mod epg;
 mod events;
+mod file_name;
 mod home;
 mod images;
 mod instance;

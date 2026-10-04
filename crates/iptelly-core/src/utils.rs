@@ -190,7 +190,7 @@ pub fn get_filename(channel_name: String, url: String) -> Result<String> {
 // get.php) serve the stream rather than a file of that type, so they fall
 // back to mp4 like URLs with no extension at all. Matches getExtension in
 // the frontend's utils.ts.
-fn get_extension(url: String) -> String {
+pub fn get_extension(url: String) -> String {
     let without_query = url.split(['?', '#']).next().unwrap_or_default();
     let path = match without_query.split_once("://") {
         Some((_, rest)) => rest.find('/').map_or("", |i| &rest[i..]),

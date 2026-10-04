@@ -6,12 +6,12 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use anyhow::Result;
-use chrono::{Local, TimeZone};
+use chrono::{Datelike, Local, NaiveDate, TimeZone};
 use iptelly_core::types::{NetworkInterface, Settings, Source};
 use iptelly_core::{app_data, settings, share, sort_type, source_type, sql, utils, xmltv, xtream};
 use slint::{ComponentHandle, ModelRc, SharedString, Timer, TimerMode, VecModel};
 
-use crate::{AppWindow, SettingsState, SourceAction, SourceItem, dialog};
+use crate::{AppWindow, SettingsState, SourceAction, SourceItem, dialog, file_name};
 
 const SAVE_DELAY: Duration = Duration::from_millis(400);
 
@@ -514,6 +514,7 @@ pub fn reload_sources() {
 }
 
 fn refresh_tiles(window: &AppWindow) {
+    let now = Local::now().timestamp();
     let items: Vec<SourceItem> = with_page(|page| {
         page.sources
             .iter()
@@ -536,7 +537,7 @@ fn refresh_tiles(window: &AppWindow) {
                     expires: page
                         .expiries
                         .get(&id)
-                        .map(|t| time_until(*t))
+                        .map(|t| time_until(*t, now))
                         .unwrap_or_default()
                         .into(),
                     timezone: page.timezones.get(&id).cloned().unwrap_or_default().into(),
@@ -549,7 +550,7 @@ fn refresh_tiles(window: &AppWindow) {
                     use_tvg_id: s.use_tvg_id == Some(true),
                     refreshed: s
                         .last_updated
-                        .map(time_ago)
+                        .map(|t| time_ago(t, now))
                         .unwrap_or_else(|| "Never".into())
                         .into(),
                     enabled: s.enabled,
@@ -575,8 +576,8 @@ fn plural(n: i64, unit: &str) -> String {
     format!("{n} {unit}{}", if n == 1 { "" } else { "s" })
 }
 
-fn time_ago(timestamp: i64) -> String {
-    let seconds = Local::now().timestamp() - timestamp;
+fn time_ago(timestamp: i64, now: i64) -> String {
+    let seconds = now - timestamp;
     if seconds < 29 {
         return "Just now".into();
     }
@@ -593,13 +594,13 @@ fn time_ago(timestamp: i64) -> String {
     "Just now".into()
 }
 
-fn time_until(timestamp: i64) -> String {
+fn time_until(timestamp: i64, now: i64) -> String {
     let date = Local
         .timestamp_opt(timestamp, 0)
         .single()
-        .map(|d| d.format("%B %-d %Y").to_string())
+        .map(|d| exact_date(d.date_naive()))
         .unwrap_or_default();
-    let seconds = timestamp - Local::now().timestamp();
+    let seconds = timestamp - now;
     if seconds <= 0 {
         return format!("Expired ({date})");
     }
@@ -615,6 +616,19 @@ fn time_until(timestamp: i64) -> String {
         }
     }
     format!("In less than an hour ({date})")
+}
+
+// "October 4th 2026".
+fn exact_date(date: NaiveDate) -> String {
+    let day = date.day();
+    let suffix = match day {
+        11..=13 => "th",
+        _ if day % 10 == 1 => "st",
+        _ if day % 10 == 2 => "nd",
+        _ if day % 10 == 3 => "rd",
+        _ => "th",
+    };
+    format!("{} {day}{suffix} {}", date.format("%B"), date.year())
 }
 
 pub async fn save_dialog(title: &str, file_name: &str, extension: &str) -> Option<String> {
@@ -759,7 +773,7 @@ fn source_action(window: &AppWindow, index: usize, action: SourceAction) {
             "Failed to clear old EPG data",
         ),
         SourceAction::BackupFavs => {
-            let file_name = format!("{name}_favs.otvf");
+            let file_name = format!("{}_favs.otvf", file_name::sanitize(&name));
             crate::spawn(
                 async move {
                     let Some(path) =
@@ -792,7 +806,7 @@ fn source_action(window: &AppWindow, index: usize, action: SourceAction) {
             },
         ),
         SourceAction::Share => {
-            let file_name = format!("{name}.otvp");
+            let file_name = format!("{}.otvp", file_name::sanitize(&name));
             crate::spawn(
                 async move {
                     let Some(path) =
@@ -825,5 +839,103 @@ fn source_action(window: &AppWindow, index: usize, action: SourceAction) {
                 )
             },
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const NOW: i64 = 1_790_000_000;
+    const MINUTE: i64 = 60;
+    const HOUR: i64 = 3600;
+    const DAY: i64 = 86400;
+
+    #[test]
+    fn time_ago_says_just_now_for_under_29_seconds() {
+        assert_eq!(time_ago(NOW, NOW), "Just now");
+        assert_eq!(time_ago(NOW - 28, NOW), "Just now");
+        // A clock that has gone backwards.
+        assert_eq!(time_ago(NOW + 60, NOW), "Just now");
+    }
+
+    #[test]
+    fn time_ago_counts_seconds_from_29_seconds() {
+        assert_eq!(time_ago(NOW - 29, NOW), "29 seconds ago");
+        assert_eq!(time_ago(NOW - 59, NOW), "59 seconds ago");
+    }
+
+    #[test]
+    fn time_ago_uses_the_singular_for_a_count_of_one() {
+        assert_eq!(time_ago(NOW - MINUTE, NOW), "1 minute ago");
+        assert_eq!(time_ago(NOW - HOUR, NOW), "1 hour ago");
+        assert_eq!(time_ago(NOW - DAY, NOW), "1 day ago");
+    }
+
+    #[test]
+    fn time_ago_uses_the_largest_whole_unit() {
+        assert_eq!(time_ago(NOW - 5 * MINUTE - 30, NOW), "5 minutes ago");
+        assert_eq!(time_ago(NOW - 2 * HOUR - 59 * MINUTE, NOW), "2 hours ago");
+        assert_eq!(time_ago(NOW - 40 * DAY, NOW), "40 days ago");
+    }
+
+    #[test]
+    fn time_until_marks_past_dates_as_expired() {
+        assert!(time_until(NOW - DAY, NOW).starts_with("Expired ("));
+        assert!(time_until(NOW, NOW).starts_with("Expired ("));
+    }
+
+    #[test]
+    fn time_until_says_less_than_an_hour_for_under_an_hour_away() {
+        assert!(time_until(NOW + 59 * MINUTE, NOW).starts_with("In less than an hour ("));
+    }
+
+    #[test]
+    fn time_until_uses_the_singular_for_a_count_of_one() {
+        assert!(time_until(NOW + HOUR, NOW).starts_with("In 1 hour ("));
+        assert!(time_until(NOW + DAY, NOW).starts_with("In 1 day ("));
+        assert!(time_until(NOW + 7 * DAY, NOW).starts_with("In 1 week ("));
+        assert!(time_until(NOW + 30 * DAY, NOW).starts_with("In 1 month ("));
+        assert!(time_until(NOW + 365 * DAY, NOW).starts_with("In 1 year ("));
+    }
+
+    #[test]
+    fn time_until_uses_the_largest_whole_unit() {
+        assert!(time_until(NOW + 5 * HOUR, NOW).starts_with("In 5 hours ("));
+        assert!(time_until(NOW + 3 * DAY, NOW).starts_with("In 3 days ("));
+        assert!(time_until(NOW + 20 * DAY, NOW).starts_with("In 2 weeks ("));
+        assert!(time_until(NOW + 100 * DAY, NOW).starts_with("In 3 months ("));
+        assert!(time_until(NOW + 800 * DAY, NOW).starts_with("In 2 years ("));
+    }
+
+    #[test]
+    fn time_until_ends_with_the_exact_date() {
+        let expiry = Local.with_ymd_and_hms(2027, 3, 2, 12, 0, 0).unwrap();
+        let text = time_until(expiry.timestamp(), NOW);
+        assert!(text.ends_with("(March 2nd 2027)"), "{text}");
+    }
+
+    #[test]
+    fn exact_date_uses_the_right_ordinal_suffix_for_each_day() {
+        let suffixes = [
+            (1, "1st"),
+            (2, "2nd"),
+            (3, "3rd"),
+            (4, "4th"),
+            (11, "11th"),
+            (12, "12th"),
+            (13, "13th"),
+            (20, "20th"),
+            (21, "21st"),
+            (22, "22nd"),
+            (23, "23rd"),
+            (24, "24th"),
+            (30, "30th"),
+            (31, "31st"),
+        ];
+        for (day, expected) in suffixes {
+            let date = NaiveDate::from_ymd_opt(2026, 1, day).unwrap();
+            assert_eq!(exact_date(date), format!("January {expected} 2026"));
+        }
     }
 }

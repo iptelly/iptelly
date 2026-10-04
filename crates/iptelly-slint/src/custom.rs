@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use iptelly_core::types::{Channel, ChannelHttpHeaders, CustomChannel, Group};
-use iptelly_core::{api, media_type, share, sql, utils};
+use iptelly_core::{api, media_type, share, sql};
 use slint::{ComponentHandle, ModelRc, SharedString, Timer, TimerMode, VecModel};
 
 use crate::settings_page::{open_dialog, save_dialog};
@@ -139,7 +139,7 @@ pub fn edit(window: &AppWindow, channel: Channel) {
 pub fn share(channel: Channel) {
     let group = channel.media_type == media_type::GROUP;
     let extension = if group { "otvg" } else { "otv" };
-    let file_name = format!("{}.{extension}", utils::sanitize(channel.name.clone()));
+    let file_name = format!("{}.{extension}", crate::file_name::sanitize(&channel.name));
     let title = if group {
         "Select where to export category"
     } else {
@@ -319,10 +319,7 @@ fn check_exists() {
             custom.check_token,
         )
     });
-    let unchanged = original.is_some_and(|o| {
-        o.name == name && (kind == CustomKind::Group || o.url.as_deref() == Some(url.as_str()))
-    });
-    if name.is_empty() || (kind == CustomKind::Channel && url.is_empty()) || unchanged {
+    if !needs_check(kind, &name, &url, original.as_ref()) {
         return;
     }
     with_custom(|custom| {
@@ -348,6 +345,15 @@ fn check_exists() {
                 )
             })
     });
+}
+
+// Whether to ask the database if the trimmed name (and URL) is taken: not
+// while a required field is blank, nor when editing leaves them unchanged.
+fn needs_check(kind: CustomKind, name: &str, url: &str, original: Option<&Channel>) -> bool {
+    let unchanged = original.is_some_and(|o| {
+        o.name == name && (kind == CustomKind::Group || o.url.as_deref() == Some(url))
+    });
+    !(name.is_empty() || (kind == CustomKind::Channel && url.is_empty()) || unchanged)
 }
 
 fn save(window: &AppWindow) {
@@ -502,4 +508,60 @@ fn new_channel(source_id: i64) -> Channel {
 fn optional(text: &str) -> Option<String> {
     let text = text.trim();
     (!text.is_empty()).then(|| text.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const URL: &str = "http://example.com/1.ts";
+
+    fn channel(name: &str, url: Option<&str>) -> Channel {
+        Channel {
+            name: name.into(),
+            url: url.map(Into::into),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn skips_the_check_while_a_required_field_is_blank() {
+        assert!(!needs_check(CustomKind::Group, "", "", None));
+        assert!(!needs_check(CustomKind::Channel, "", URL, None));
+        assert!(!needs_check(CustomKind::Channel, "News", "", None));
+    }
+
+    #[test]
+    fn checks_a_new_channel_or_category() {
+        assert!(needs_check(CustomKind::Group, "Sport", "", None));
+        assert!(needs_check(CustomKind::Channel, "News", URL, None));
+    }
+
+    #[test]
+    fn skips_the_check_when_editing_leaves_the_name_unchanged() {
+        let group = channel("Sport", None);
+        assert!(!needs_check(CustomKind::Group, "Sport", "", Some(&group)));
+        assert!(needs_check(CustomKind::Group, "Sports", "", Some(&group)));
+    }
+
+    #[test]
+    fn checks_an_edited_channel_when_its_name_or_url_changes() {
+        let news = channel("News", Some(URL));
+        assert!(!needs_check(CustomKind::Channel, "News", URL, Some(&news)));
+        assert!(needs_check(
+            CustomKind::Channel,
+            "News 24",
+            URL,
+            Some(&news)
+        ));
+        let other = "http://example.com/2.ts";
+        assert!(needs_check(CustomKind::Channel, "News", other, Some(&news)));
+    }
+
+    #[test]
+    fn optional_trims_and_drops_blank_text() {
+        assert_eq!(optional("  a b  "), Some("a b".into()));
+        assert_eq!(optional("   "), None);
+        assert_eq!(optional(""), None);
+    }
 }

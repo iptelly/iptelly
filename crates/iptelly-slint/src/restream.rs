@@ -82,10 +82,7 @@ pub fn setup(window: &AppWindow) {
         else {
             return;
         };
-        let file_name = format!(
-            "{}_rst.otv",
-            iptelly_core::utils::sanitize(channel.name.clone())
-        );
+        let file_name = format!("{}_rst.otv", crate::file_name::sanitize(&channel.name));
         crate::spawn(
             async move {
                 let Some(path) = rfd::AsyncFileDialog::new()

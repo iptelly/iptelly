@@ -258,8 +258,11 @@ fn history_row(h: &DownloadHistoryItem) -> DownloadRow {
 }
 
 fn format_bytes(bytes: i64) -> String {
-    let mut size = bytes as f64;
-    for unit in ["B", "KB", "MB", "GB"] {
+    if bytes < 1024 {
+        return format!("{} B", bytes.max(0));
+    }
+    let mut size = bytes as f64 / 1024.0;
+    for unit in ["KB", "MB", "GB"] {
         if size < 1024.0 {
             return format!("{size:.1} {unit}");
         }
@@ -541,4 +544,37 @@ pub async fn enqueue_series(
     with_downloads(|d| d.batches.retain(|b| !Arc::ptr_eq(b, &cancelled)));
     changed();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const KB: i64 = 1024;
+
+    #[test]
+    fn format_bytes_returns_0_b_for_zero_or_negative_sizes() {
+        assert_eq!(format_bytes(0), "0 B");
+        assert_eq!(format_bytes(-5), "0 B");
+    }
+
+    #[test]
+    fn format_bytes_shows_whole_bytes_without_decimals() {
+        assert_eq!(format_bytes(1), "1 B");
+        assert_eq!(format_bytes(1023), "1023 B");
+    }
+
+    #[test]
+    fn format_bytes_scales_to_larger_units_with_one_decimal_place() {
+        assert_eq!(format_bytes(KB), "1.0 KB");
+        assert_eq!(format_bytes(1536), "1.5 KB");
+        assert_eq!(format_bytes(5 * KB.pow(2)), "5.0 MB");
+        assert_eq!(format_bytes(5 * KB.pow(3) / 2), "2.5 GB");
+        assert_eq!(format_bytes(KB.pow(4)), "1.0 TB");
+    }
+
+    #[test]
+    fn format_bytes_caps_at_tb() {
+        assert_eq!(format_bytes(3 * KB.pow(5)), "3072.0 TB");
+    }
 }

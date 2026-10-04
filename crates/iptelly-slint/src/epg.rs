@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use chrono::{Local, TimeZone};
 use iptelly_core::types::{Channel, EPG, EPGNotify};
-use iptelly_core::{api, epg, media_type, sql, utils, xtream};
+use iptelly_core::{api, epg, media_type, sql, xtream};
 use slint::{ComponentHandle, ModelRc, Timer, TimerMode, VecModel};
 
 use crate::{AppWindow, EpgBlock, EpgState, EpgTick, HomeState, STATE};
@@ -491,7 +491,7 @@ fn current_download() -> Option<(String, Channel, String)> {
         let channel = catch_up_channel(&dialog.channel, p, channel_id)?;
         let date = Local::now().format("%Y-%m-%d-%H-%M-%S");
         let file_name =
-            utils::get_filename(format!("{}_{date}", p.title), channel.url.clone()?).ok()?;
+            crate::file_name::for_stream(&format!("{}_{date}", p.title), channel.url.as_deref()?);
         Some((format!("{channel_id}-{}", p.epg_id), channel, file_name))
     })
 }
