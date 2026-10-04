@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="windows-1252"?>
 <!--
   The Windows installer, built by cargo-wix (WiX 3) in
-  .github/workflows/buildAndUpload.yml: cargo wix -p iptelly --no-build.
+  .github/workflows/buildAndUpload.yml. XML comments can't contain two
+  dashes, so see there for the command.
   cargo-wix compiles every .wxs in this folder, so deps.wxs is included, and
   passes the Version, Platform and CargoTargetBinDir variables.
 
