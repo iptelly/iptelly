@@ -501,6 +501,7 @@ fn new_channel(source_id: i64) -> Channel {
         hidden: None,
         tvg_id: None,
         is_adult: false,
+        rating: None,
     }
 }
 

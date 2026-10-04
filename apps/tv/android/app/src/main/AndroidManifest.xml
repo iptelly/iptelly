@@ -6,6 +6,8 @@
     <uses-feature android:name="android.hardware.faketouch" android:required="false" />
     <uses-feature android:name="android.software.leanback" android:required="false" />
 
+    <!-- usesCleartextTraffic is true in release builds too: most IPTV
+         streams, playlists and posters are plain HTTP. -->
     <application
       android:name=".MainApplication"
       android:label="@string/app_name"
@@ -14,7 +16,7 @@
       android:allowBackup="false"
       android:theme="@style/AppTheme"
       android:banner="@drawable/tv_banner"
-      android:usesCleartextTraffic="${usesCleartextTraffic}"
+      android:usesCleartextTraffic="true"
       android:supportsRtl="true">
       <activity
         android:name=".MainActivity"

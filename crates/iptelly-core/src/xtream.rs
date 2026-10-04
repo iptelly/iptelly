@@ -5,6 +5,7 @@ use crate::sql;
 use crate::sql::insert_season;
 use crate::types::Channel;
 use crate::types::ChannelPreserve;
+use crate::types::MediaInfo;
 use crate::types::Season;
 use crate::types::Source;
 use crate::types::XtreamStatus;
@@ -54,6 +55,9 @@ struct XtreamStream {
     // (Value::Null) on panels that don't send it at all.
     #[serde(default)]
     is_adult: serde_json::Value,
+    // Movies and series only, out of 10 - "6.5", 6.5, "" or absent.
+    #[serde(default)]
+    rating: serde_json::Value,
 }
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct XtreamSeries {
@@ -445,7 +449,18 @@ fn convert_xtream_live_to_channel(
         episode_num: None,
         hidden: Some(false),
         is_adult: get_serde_json_bool(&stream.is_adult).unwrap_or(false),
+        rating: get_rating(&stream.rating),
     })
+}
+
+// Panels send 0 or "" for films nobody has rated.
+fn get_rating(value: &serde_json::Value) -> Option<f64> {
+    let rating = match value {
+        serde_json::Value::Number(n) => n.as_f64(),
+        serde_json::Value::String(s) => s.trim().parse().ok(),
+        _ => None,
+    }?;
+    (rating > 0.0 && rating <= 10.0).then_some(rating)
 }
 
 fn get_url(
@@ -716,6 +731,7 @@ fn episode_to_channel(
         // only the parent series' list entry does (already stored on that
         // series' own Channel row).
         is_adult: false,
+        rating: None,
     })
 }
 
@@ -842,6 +858,66 @@ pub async fn get_all_timezones() -> Result<HashMap<i64, String>> {
         .filter_map(|(id, status)| Some((id, status.server_info?.timezone?)))
         .collect();
     Ok(timezones)
+}
+
+const GET_VOD_INFO: &str = "get_vod_info";
+
+#[derive(Deserialize)]
+struct XtreamInfoPage {
+    #[serde(default)]
+    info: serde_json::Value,
+}
+
+// A movie's or series' details from its info page. Movies are looked up by
+// stream id, series by the series id kept in their url.
+pub async fn get_media_info(channel: Channel) -> Result<MediaInfo> {
+    let mut source = sql::get_source_from_id(channel.source_id.context("no source id")?)?;
+    let mut url = build_xtream_url(&mut source)?;
+    let user_agent = get_user_agent_from_source(&source)?;
+    let action = if channel.media_type == media_type::SERIE {
+        let series_id = channel.url.context("no series id")?;
+        url.query_pairs_mut().append_pair("series_id", &series_id);
+        GET_SERIES_INFO
+    } else {
+        let stream_id = channel.stream_id.context("no stream id")?;
+        url.query_pairs_mut()
+            .append_pair("vod_id", &stream_id.to_string());
+        GET_VOD_INFO
+    };
+    let page = get_xtream_http_data::<XtreamInfoPage>(url, action, &user_agent).await?;
+    Ok(media_info_from_json(&page.info))
+}
+
+// Panels differ in which keys they fill in, and send "" or [] for missing
+// ones, so this takes the first key with a real value.
+fn media_info_from_json(info: &serde_json::Value) -> MediaInfo {
+    let text = |keys: &[&str]| {
+        keys.iter().find_map(|key| {
+            let value = match &info[key] {
+                serde_json::Value::Array(items) => items.first()?.as_str()?.trim(),
+                value => value.as_str()?.trim(),
+            };
+            (!value.is_empty()).then(|| value.to_string())
+        })
+    };
+    let duration_secs = get_serde_json_u64(&info["duration_secs"])
+        .or_else(|| text(&["duration_secs"])?.parse().ok())
+        .or_else(|| {
+            let minutes: u64 = text(&["episode_run_time"])?.parse().ok()?;
+            Some(minutes * 60)
+        })
+        .filter(|secs| *secs > 0);
+    MediaInfo {
+        plot: text(&["plot", "description"]),
+        cast: text(&["cast", "actors"]),
+        director: text(&["director"]),
+        genre: text(&["genre"]),
+        year: text(&["releasedate", "releaseDate", "release_date"])
+            .and_then(|date| date.get(..4).map(str::to_string)),
+        duration_secs,
+        rating: get_rating(&info["rating"]),
+        backdrop: text(&["backdrop_path"]),
+    }
 }
 
 #[cfg(test)]
@@ -1081,6 +1157,7 @@ mod test_xtream {
             tv_archive: json!(null),
             epg_channel_id: json!("0"),
             is_adult: json!(null),
+            rating: json!(null),
         };
         let channel = convert_xtream_live_to_channel(
             stream,
@@ -1104,10 +1181,73 @@ mod test_xtream {
             tv_archive: json!(null),
             epg_channel_id: json!("real.epg.id"),
             is_adult: json!(null),
+            rating: json!(null),
         };
         let channel =
             convert_xtream_live_to_channel(stream_with_real_id, &source, media_type::SERIE, None)
                 .unwrap();
         assert_eq!(channel.tvg_id, Some("real.epg.id".to_string()));
+    }
+
+    #[test]
+    fn reads_ratings_as_strings_or_numbers() {
+        assert_eq!(get_rating(&json!("6.5")), Some(6.5));
+        assert_eq!(get_rating(&json!(7.9)), Some(7.9));
+        assert_eq!(get_rating(&json!(8)), Some(8.0));
+        // Unrated films come as 0, "" or nothing.
+        assert_eq!(get_rating(&json!("0")), None);
+        assert_eq!(get_rating(&json!("")), None);
+        assert_eq!(get_rating(&json!(null)), None);
+    }
+
+    #[test]
+    fn reads_a_movie_info_page() {
+        let info = media_info_from_json(&json!({
+            "plot": "A volcanologist faces two disasters at once.",
+            "description": "",
+            "cast": "",
+            "actors": "Vigdís Hrefna Pálsdóttir, Pilou Asbæk",
+            "director": "Ugla Hauksdóttir",
+            "genre": "Thriller",
+            "releasedate": "2025-03-14",
+            "duration_secs": 6300,
+            "rating": "6.5",
+            "backdrop_path": ["https://image.example/backdrop.jpg"],
+        }));
+        assert_eq!(
+            info,
+            MediaInfo {
+                plot: Some("A volcanologist faces two disasters at once.".to_string()),
+                cast: Some("Vigdís Hrefna Pálsdóttir, Pilou Asbæk".to_string()),
+                director: Some("Ugla Hauksdóttir".to_string()),
+                genre: Some("Thriller".to_string()),
+                year: Some("2025".to_string()),
+                duration_secs: Some(6300),
+                rating: Some(6.5),
+                backdrop: Some("https://image.example/backdrop.jpg".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn reads_a_series_info_page() {
+        let info = media_info_from_json(&json!({
+            "plot": "",
+            "releaseDate": "2019",
+            "episode_run_time": "45",
+            "rating": 0,
+            "backdrop_path": [],
+        }));
+        assert_eq!(info.plot, None);
+        assert_eq!(info.year, Some("2019".to_string()));
+        assert_eq!(info.duration_secs, Some(45 * 60));
+        assert_eq!(info.rating, None);
+        assert_eq!(info.backdrop, None);
+    }
+
+    #[test]
+    fn an_empty_info_page_has_no_details() {
+        // Panels send [] instead of {} when a film has no details.
+        assert_eq!(media_info_from_json(&json!([])), MediaInfo::default());
     }
 }

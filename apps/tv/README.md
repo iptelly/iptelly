@@ -2,7 +2,30 @@
 
 IPTelly for Android TV, built with React Native ([react-native-tvos](https://github.com/react-native-tvos/react-native-tvos)). It uses the same Rust core as the desktop app, through [`packages/react-native-iptelly`](../../packages/react-native-iptelly).
 
-So far it only starts the core and lists the sources.
+The home screen is laid out like TiviMate's:
+
+- **Menu:** a menu on the left, which shrinks to icons when you move right.
+- **Groups:** the playlist's groups, with Favourites and All channels at the top.
+- **Guide:** the guide for the chosen group, with the playing channel in a preview above it.
+
+The remote works like this:
+
+- **Moving:** Right moves into the next column and Left or Back goes back.
+- **Guide:** moving right in the guide moves forward in time.
+- **Playing:** OK plays a channel in the preview, and OK again makes it full screen. In full screen, Up and Down change channel.
+- **Favourites:** holding OK on a channel adds it to Favourites, or removes it.
+
+Movies and Series show the categories on the left and a grid of posters on the right, under the highlighted one's details:
+
+- **Details:** the plot, cast, director, rating and backdrop come from the provider's Xtream account, so M3U playlists only have a title and poster.
+- **Movies:** OK plays a movie full screen. OK pauses it, Left and Right move back and forward 10 seconds, and Back returns to the grid.
+- **Series:** OK opens a series' seasons and episodes.
+
+Settings, then Playlists, adds an Xtream account or an M3U link. Debug builds also offer a demo playlist, with made-up channels and a guide that play public test streams, and four open films from the Internet Archive.
+
+The screens draw their own highlight instead of using Android's focus, so the guide can scroll in time. `src/remote.ts` turns the remote's keys into moves.
+
+Search and most settings aren't done yet.
 
 ## What you need
 
