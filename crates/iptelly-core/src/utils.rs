@@ -9,7 +9,6 @@ use crate::{
 };
 use anyhow::{Context, Result, anyhow};
 use chrono::{DateTime, Local, Utc};
-use directories::ProjectDirs;
 use indexmap::IndexMap;
 use regex::Regex;
 use reqwest::{Client, ClientBuilder};
@@ -372,10 +371,7 @@ pub fn create_nuke_request() -> Result<()> {
 }
 
 fn get_nuke_path() -> Result<PathBuf> {
-    let path = ProjectDirs::from("dev", "iptelly", "iptelly").context("project dir not found")?;
-    let path = path.cache_dir();
-    let path = path.join("nuke.txt");
-    Ok(path)
+    Ok(crate::paths::cache_dir()?.join("nuke.txt"))
 }
 
 pub fn check_nuke() -> Result<()> {
@@ -384,9 +380,7 @@ pub fn check_nuke() -> Result<()> {
         return Ok(());
     }
     std::fs::remove_file(path)?;
-    let path = ProjectDirs::from("dev", "iptelly", "iptelly").context("project dir not found")?;
-    let path = path.data_dir();
-    let path = path.join(sql::DB_NAME);
+    let path = crate::paths::data_dir()?.join(sql::DB_NAME);
     if path.exists() {
         std::fs::remove_file(path)?;
     }

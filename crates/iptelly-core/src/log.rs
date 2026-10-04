@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use chrono::Local;
-use directories::ProjectDirs;
 use std::{fs, sync::LazyLock};
 
 static USE_LOGGER: LazyLock<bool> = LazyLock::new(|| init_logger());
@@ -42,10 +41,7 @@ fn init_logger() -> bool {
 }
 
 fn get_and_create_log_path() -> Result<String> {
-    let mut path = ProjectDirs::from("dev", "iptelly", "iptelly")
-        .context("Could not determine the app cache directory")?
-        .cache_dir()
-        .to_owned();
+    let mut path = crate::paths::cache_dir()?;
     path.push("logs");
     if !path.exists() {
         std::fs::create_dir_all(&path).context("Failed to create log directory")?;

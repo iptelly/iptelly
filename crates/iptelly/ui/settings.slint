@@ -560,6 +560,11 @@ export component SettingsView inherits Rectangle {
                         enabled: !SettingsState.busy;
                         clicked => { SettingsState.clear-epg-cache(); }
                     }
+                    Button {
+                        text: "Clear image cache";
+                        enabled: !SettingsState.busy;
+                        clicked => { SettingsState.clear-image-cache(); }
+                    }
                 }
                 HorizontalLayout {
                     spacing: 8px;

@@ -3311,6 +3311,7 @@ dependencies = [
  "i-slint-backend-testing",
  "image",
  "iptelly-core",
+ "libc",
  "notify-rust",
  "rfd",
  "serde",
