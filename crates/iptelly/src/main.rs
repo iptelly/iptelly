@@ -36,8 +36,15 @@ slint::include_modules!();
 
 // Core calls run here, never on the UI thread: most of them do network or
 // database work, and play() doesn't return until the player exits.
-static RUNTIME: LazyLock<Runtime> =
-    LazyLock::new(|| Runtime::new().expect("failed to start the tokio runtime"));
+// A few workers are plenty for that; one per core (the default) is just
+// more threads, each with its own malloc arena.
+static RUNTIME: LazyLock<Runtime> = LazyLock::new(|| {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(4)
+        .enable_all()
+        .build()
+        .expect("failed to start the tokio runtime")
+});
 
 // Running players, restreams, downloads and the adult-content lock.
 pub static STATE: LazyLock<Mutex<AppState>> = LazyLock::new(|| Mutex::new(AppState::default()));
@@ -53,7 +60,23 @@ thread_local! {
     static CLIPBOARD: RefCell<Option<arboard::Clipboard>> = const { RefCell::new(None) };
 }
 
+// glibc raises its mmap threshold each time it frees a large mmapped block,
+// after which full-size image decodes (10-25 MB) come from the decoding
+// thread's malloc arena instead, and glibc never shrinks that arena again.
+// Across the blocking threads that left over 800 MB resident after browsing
+// a few categories. Setting the threshold fixes it at 128 KiB, so large
+// buffers are always mmapped and go back to the OS when freed.
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+fn use_mmap_for_big_allocations() {
+    // SAFETY: mallopt only changes malloc's tuning, before any other threads start.
+    unsafe { libc::mallopt(libc::M_MMAP_THRESHOLD, 128 * 1024) };
+}
+
+#[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+fn use_mmap_for_big_allocations() {}
+
 fn main() -> Result<()> {
+    use_mmap_for_big_allocations();
     _ = utils::check_nuke()
         .with_context(|| "Failed to delete db after nuke request")
         .inspect_err(|e| log::log(format!("{:?}", e)));

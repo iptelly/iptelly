@@ -17,6 +17,10 @@ const MAX_SIZE: u32 = 160;
 // A page of 36 tiles shouldn't open 36 connections to one provider at once.
 static DOWNLOADS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(8);
 
+// A poster decodes to its full size (often 10-25 MB) before it's shrunk, and
+// a page of them decoding at once peaked at over 300 MB.
+static DECODES: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
+
 static CACHE_DIR: LazyLock<Option<PathBuf>> = LazyLock::new(|| {
     let dir = directories::ProjectDirs::from("dev", "iptelly", "iptelly")?
         .cache_dir()
@@ -38,6 +42,7 @@ pub async fn load(url: String) -> Result<SharedPixelBuffer<Rgba8Pixel>> {
         },
         None => download(&url).await?,
     };
+    let _permit = DECODES.acquire().await?;
     tokio::task::spawn_blocking(move || decode(&bytes)).await?
 }
 
