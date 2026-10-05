@@ -5816,7 +5816,7 @@ __metadata:
     react-native-monorepo-config: "npm:^0.4.0"
     react-native-safe-area-context: "npm:^5.5.2"
     react-native-svg: "npm:^15.15.5"
-    react-native-video: "npm:^6.19.3"
+    react-native-video: "patch:react-native-video@npm%3A6.19.3#~/.yarn/patches/react-native-video-npm-6.19.3-791c58a060.patch"
     react-test-renderer: "npm:19.2.0"
     typescript: "npm:^5.8.3"
   languageName: unknown
@@ -8164,13 +8164,23 @@ __metadata:
   languageName: node
   linkType: hard
 
-"react-native-video@npm:^6.19.3":
+"react-native-video@npm:6.19.3":
   version: 6.19.3
   resolution: "react-native-video@npm:6.19.3"
   peerDependencies:
     react: "*"
     react-native: "*"
   checksum: 10c0/8be544f985b9ed173ce0f67895230196095cc511b60ba7ff3a52ddb3633d2146a2cb89ea32666c73082374164cf1c8130212467ad71746486db4247ac739fcf3
+  languageName: node
+  linkType: hard
+
+"react-native-video@patch:react-native-video@npm%3A6.19.3#~/.yarn/patches/react-native-video-npm-6.19.3-791c58a060.patch":
+  version: 6.19.3
+  resolution: "react-native-video@patch:react-native-video@npm%3A6.19.3#~/.yarn/patches/react-native-video-npm-6.19.3-791c58a060.patch::version=6.19.3&hash=e41c7e"
+  peerDependencies:
+    react: "*"
+    react-native: "*"
+  checksum: 10c0/f746b5407be2482adeee221467d19d0682606a1933506903914f4083cb1169d1d2eff765983c9e685052d5b8e61e4461d765716901bb3e4fb4dc162033c71370
   languageName: node
   linkType: hard
 

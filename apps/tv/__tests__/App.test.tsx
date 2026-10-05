@@ -395,17 +395,25 @@ test("a playlist's page manages its groups and update interval", async () => {
   expect(text(renderer)).toContain('Update interval, hours');
 
   // Down past Catch-up, User-Agent and Xtream Codes parameters to Manage
-  // groups, where OK hides the highlighted group.
+  // groups, which has a page for each kind.
   for (const key of ['down', 'down', 'down', 'down', 'select'] as const) {
     await press(key);
   }
   expect(core.getSourceGroups).toHaveBeenCalledWith(1n);
-  expect(text(renderer)).toContain('Movies');
+  expect(text(renderer)).toContain('TV');
+  expect(text(renderer)).toContain('1 of 1 shown');
+  expect(text(renderer)).toContain('0 of 1 shown');
+
+  // TV's page, where OK hides the highlighted group.
+  await press('select');
+  expect(text(renderer)).not.toContain('Films');
   await press('select');
   expect(core.setGroupHidden).toHaveBeenCalledWith(10n, true);
 
-  // Back to the page, then down past the Update options heading to the
-  // interval, and from 24 hours to 48.
+  // Back to Manage groups and the page, then down past the Update options
+  // heading to the interval, and from 24 hours to 48.
+  await press('back');
+  expect(text(renderer)).toContain('0 of 1 shown');
   await press('back');
   await press('down');
   await press('select');

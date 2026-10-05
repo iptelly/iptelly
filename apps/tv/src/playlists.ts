@@ -153,28 +153,33 @@ export function playlistsDue(
   });
 }
 
-// Manage groups: the playlist's groups under a heading for each kind.
-const GROUP_HEADINGS: [number, string][] = [
-  [MediaType.LIVESTREAM, 'Channels'],
+// Manage groups: a page for each kind of group, as in TiviMate. Groups
+// without a kind, such as custom ones, go under Other when there are any.
+export type GroupKind = { label: string; groups: Group[] };
+
+const GROUP_KINDS: [number, string][] = [
+  [MediaType.LIVESTREAM, 'TV'],
   [MediaType.MOVIE, 'Movies'],
-  [MediaType.SERIE, 'Series'],
+  [MediaType.SERIE, 'Shows'],
 ];
 
-export type GroupRow = { heading: string } | { group: Group };
-
-export function groupRows(groups: Group[]): GroupRow[] {
-  const rows: GroupRow[] = [];
-  for (const [mediaType, heading] of GROUP_HEADINGS) {
-    const found = groups.filter(g => g.mediaType === mediaType);
-    if (found.length > 0) {
-      rows.push({ heading }, ...found.map(group => ({ group })));
-    }
-  }
+export function groupKinds(groups: Group[]): GroupKind[] {
+  const kinds = GROUP_KINDS.map(([mediaType, label]) => ({
+    label,
+    groups: groups.filter(g => g.mediaType === mediaType),
+  }));
   const other = groups.filter(
-    g => !GROUP_HEADINGS.some(([mediaType]) => g.mediaType === mediaType),
+    g => !GROUP_KINDS.some(([mediaType]) => g.mediaType === mediaType),
   );
-  if (other.length > 0) {
-    rows.push({ heading: 'Other' }, ...other.map(group => ({ group })));
+  return other.length > 0
+    ? [...kinds, { label: 'Other', groups: other }]
+    : kinds;
+}
+
+// "12 of 40 shown", under each kind.
+export function shownText(groups: Group[]): string {
+  if (groups.length === 0) {
+    return 'No groups';
   }
-  return rows;
+  return `${groups.filter(g => !g.hidden).length} of ${groups.length} shown`;
 }

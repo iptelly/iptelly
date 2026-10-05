@@ -12,6 +12,7 @@
 node_modules/
 .yarn/*
 !.yarn/releases
+!.yarn/patches
 
 # IDEs and editors
 .idea/

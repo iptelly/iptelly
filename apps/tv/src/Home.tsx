@@ -38,12 +38,13 @@ import {
   UPDATE_HOURS,
   catchupText,
   countsText,
-  groupRows,
+  groupKinds,
   hoursText,
   movePlaylist,
   playlistRows,
   playlistsDue,
   serverText,
+  shownText,
   sortPlaylists,
   type PlaylistRow,
   type PlaylistSort,
@@ -71,6 +72,11 @@ import {
 } from './components/Guide';
 import { GroupList } from './components/GroupList';
 import { InfoBar } from './components/InfoBar';
+import {
+  fromAudioTracks,
+  fromVideoTracks,
+  type StreamInfo,
+} from './streamInfo';
 import { MENU_ITEMS, MENU_WIDTH, Menu, RAIL_WIDTH } from './components/Menu';
 import { PlayerBar } from './components/PlayerBar';
 import { useFirstVisible } from './components/scroll';
@@ -174,9 +180,12 @@ type SettingsPage = {
     | 'reorder'
     | 'interval'
     | 'xtream'
-    | 'groups';
+    | 'groups'
+    | 'groupKind';
   index: number;
   source?: Source;
+  // Manage groups: the kind of group whose page is open.
+  kind?: number;
   confirmDelete?: boolean;
   // Reorder playlists: the highlighted playlist is picked up to move.
   moving?: boolean;
@@ -192,6 +201,9 @@ const PLAYLIST_ACTIONS = [
 ];
 const SORTS: PlaylistSort[] = ['name', 'added', 'manual'];
 const XTREAM_FIELDS = ['Server', 'Username', 'Password'] as const;
+
+// The player's red LIVE badge is hidden: the info bar shows what's playing.
+const NO_LIVE_BADGE = { hideLiveBadge: true };
 
 // How often playlists are checked for being due an update.
 const UPDATE_CHECK_MS = 60 * 60 * 1000;
@@ -256,6 +268,8 @@ export function Home() {
   const [paused, setPaused] = useState(false);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
+  // The channel's resolution, frame rate and audio, for the info bar.
+  const [stream, setStream] = useState<StreamInfo>({});
   // Where Left and Right have moved to, until the player gets there.
   const [seekTo, setSeekTo] = useState<number>();
   const [vodSection, setVodSection] = useState<VodSection>();
@@ -615,6 +629,8 @@ export function Home() {
   const focusedBlocks = focusedChannel ? blocksFor(focusedChannel) : [];
   const focusedBlock = focusedBlocks[blockAt(focusedBlocks, focusTime)];
   const playingKey = playing ? channelKey(playing.channel) : undefined;
+  // A new channel starts with nothing known about its stream.
+  useEffect(() => setStream({}), [playingKey]);
   const playingVod =
     playing != null && playing.channel.mediaType !== MediaType.LIVESTREAM;
   const playingBlocks = playing ? blocksFor(playing.channel) : [];
@@ -654,7 +670,8 @@ export function Home() {
   const updatesFor = (source: Source): PlaylistUpdates =>
     general.playlistUpdates[String(source.id)] ?? DEFAULT_UPDATES;
   const pageRows = settingsSource ? playlistRows(settingsSource) : [];
-  const groupList = groupRows(sourceGroups ?? []);
+  const kinds = groupKinds(sourceGroups ?? []);
+  const kindGroups = kinds[settings.kind ?? 0]?.groups ?? [];
 
   // The settings page's rows, and their switches, second lines, checks and
   // headings.
@@ -736,17 +753,17 @@ export function Home() {
         if (!sourceGroups) {
           return { items: ['Loading groups…'], headings: [true] };
         }
-        if (groupList.length === 0) {
-          return { items: ['This playlist has no groups.'], headings: [true] };
+        return {
+          items: kinds.map(kind => kind.label),
+          details: kinds.map(kind => shownText(kind.groups)),
+        };
+      case 'groupKind':
+        if (kindGroups.length === 0) {
+          return { items: ['No groups of this kind.'], headings: [true] };
         }
         return {
-          items: groupList.map(r =>
-            'heading' in r ? r.heading : r.group.name,
-          ),
-          checks: groupList.map(r =>
-            'group' in r ? !r.group.hidden : undefined,
-          ),
-          headings: groupList.map(r => 'heading' in r),
+          items: kindGroups.map(g => g.name),
+          checks: kindGroups.map(g => !g.hidden),
         };
       case 'sorting':
         return {
@@ -785,9 +802,11 @@ export function Home() {
     }
   }, [showingPlaylists, sources]);
 
-  // Manage groups: the playlist's groups, when the page opens.
+  // Manage groups: the playlist's groups, when the page opens. They're kept
+  // while moving between it and a kind's page.
   const groupsSourceId =
-    area === 'settings' && settings.page === 'groups'
+    area === 'settings' &&
+    (settings.page === 'groups' || settings.page === 'groupKind')
       ? settings.source?.id
       : undefined;
   useEffect(() => {
@@ -890,9 +909,17 @@ export function Home() {
     } else if (settings.page === 'xtream') {
       chooseXtreamField(settingsSource!, XTREAM_FIELDS[settings.index]);
     } else if (settings.page === 'groups') {
-      const entry = groupList[settings.index];
-      if (entry && 'group' in entry && entry.group.id != null) {
-        const { group } = entry;
+      if (sourceGroups) {
+        setSettings({
+          page: 'groupKind',
+          index: 0,
+          source: settings.source,
+          kind: settings.index,
+        });
+      }
+    } else if (settings.page === 'groupKind') {
+      const group = kindGroups[settings.index];
+      if (group?.id != null) {
         const hidden = !group.hidden;
         setGroupHidden(group.id!, hidden)
           .then(() => {
@@ -991,7 +1018,7 @@ export function Home() {
     } else if (choice === 'xtream') {
       open('xtream');
     } else if (choice === 'groups') {
-      open('groups', 1);
+      open('groups');
     } else if (choice === 'interval') {
       open(
         'interval',
@@ -1262,7 +1289,13 @@ export function Home() {
           groups: 'groups',
         };
         const parent = backTo[settings.page];
-        if (parent) {
+        if (settings.page === 'groupKind') {
+          setSettings({
+            page: 'groups',
+            index: settings.kind ?? 0,
+            source: settings.source,
+          });
+        } else if (parent) {
           setSettings({
             page: 'playlist',
             index: Math.max(0, pageRows.indexOf(parent)),
@@ -1495,7 +1528,28 @@ export function Home() {
             }
           }}
           volume={(playing.request.volume ?? 100) / 100}
-          onLoad={data => setDuration(data.duration)}
+          controlsStyles={NO_LIVE_BADGE}
+          onLoad={data => {
+            setDuration(data.duration);
+            setStream(
+              fromAudioTracks(
+                fromVideoTracks(
+                  {
+                    width: data.naturalSize.width,
+                    height: data.naturalSize.height,
+                  },
+                  data.videoTracks,
+                ),
+                data.audioTracks,
+              ),
+            );
+          }}
+          onVideoTracks={data =>
+            setStream(s => fromVideoTracks(s, data.videoTracks))
+          }
+          onAudioTracks={data =>
+            setStream(s => fromAudioTracks(s, data.audioTracks))
+          }
           onProgress={data => setPosition(data.currentTime)}
           onError={() => say(`Couldn't play ${playing.channel.name}.`)}
         />
@@ -1517,6 +1571,7 @@ export function Home() {
           current={playingBlocks[playingNow]}
           next={playingBlocks[playingNow + 1]}
           now={now}
+          stream={stream}
         />
       )}
       {menuShown && (
@@ -1557,6 +1612,7 @@ export function Home() {
               interval: PLAYLIST_ROW_LABELS.interval,
               xtream: PLAYLIST_ROW_LABELS.xtream,
               groups: PLAYLIST_ROW_LABELS.groups,
+              groupKind: kinds[settings.kind ?? 0]?.label ?? '',
             }[settings.page]
           }
         >

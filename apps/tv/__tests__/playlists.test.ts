@@ -2,11 +2,12 @@ import type { Group, Source } from 'react-native-iptelly';
 import { stepRow } from '../src/components/SettingsPanel';
 import {
   countsText,
-  groupRows,
+  groupKinds,
   movePlaylist,
   playlistRows,
   playlistsDue,
   serverText,
+  shownText,
   sortPlaylists,
 } from '../src/playlists';
 
@@ -82,13 +83,26 @@ test('playlists are due an update after their interval, or on app start', () => 
   expect(playlistsDue(sources, updates, now, false)).toEqual([]);
 });
 
-test('Manage groups lists groups under a heading for each kind', () => {
-  const group = (name: string, mediaType: number) =>
-    ({ name, mediaType } as Group);
-  const rows = groupRows([group('Films', 1), group('News', 0)]);
-  expect(
-    rows.map(r => ('heading' in r ? `# ${r.heading}` : r.group.name)),
-  ).toEqual(['# Channels', 'News', '# Movies', 'Films']);
+test('Manage groups has a page for each kind of group', () => {
+  const group = (name: string, mediaType?: number, hidden = false) =>
+    ({ name, mediaType, hidden } as Group);
+  const kinds = groupKinds([
+    group('Films', 1),
+    group('News', 0),
+    group('Sport', 0, true),
+  ]);
+  expect(kinds.map(k => [k.label, shownText(k.groups)])).toEqual([
+    ['TV', '1 of 2 shown'],
+    ['Movies', '1 of 1 shown'],
+    ['Shows', 'No groups'],
+  ]);
+  // Other only appears for groups without a kind.
+  expect(groupKinds([group('Mine')]).map(k => k.label)).toEqual([
+    'TV',
+    'Movies',
+    'Shows',
+    'Other',
+  ]);
 });
 
 test('Up and Down skip headings and stop at the ends', () => {

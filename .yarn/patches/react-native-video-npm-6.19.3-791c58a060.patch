@@ -1,0 +1,141 @@
+diff --git a/android/src/main/java/com/brentvatne/common/api/Track.kt b/android/src/main/java/com/brentvatne/common/api/Track.kt
+index bf5f30202559a57997a2f41c41cad4ad2e0b6c60..267a89676ab6d66b9905afecee7ce68d64bb3bfb 100644
+--- a/android/src/main/java/com/brentvatne/common/api/Track.kt
++++ b/android/src/main/java/com/brentvatne/common/api/Track.kt
+@@ -12,4 +12,7 @@ class Track {
+     // in bps available only on audio tracks
+     var bitrate = 0
+     var index = 0
++
++    // Audio channels (2 for stereo, 6 for 5.1); 0 if not known.
++    var channelCount = 0
+ }
+diff --git a/android/src/main/java/com/brentvatne/common/api/VideoTrack.kt b/android/src/main/java/com/brentvatne/common/api/VideoTrack.kt
+index 46dd2e5494452dd2945de4b8057cbba871e60bc4..00aaffd2d781e86d13dcfc74d72eccb74776c7df 100644
+--- a/android/src/main/java/com/brentvatne/common/api/VideoTrack.kt
++++ b/android/src/main/java/com/brentvatne/common/api/VideoTrack.kt
+@@ -13,4 +13,8 @@ class VideoTrack {
+     var trackId = ""
+     var isSelected = false
+     var rotation = 0
++
++    // Frames per second: from the stream, or measured while playing; 0 if
++    // not known yet.
++    var frameRate = 0f
+ }
+diff --git a/android/src/main/java/com/brentvatne/common/react/VideoEventEmitter.kt b/android/src/main/java/com/brentvatne/common/react/VideoEventEmitter.kt
+index 60129329b2e120a2032c7d3f4454d45ff26d1d18..b75249b6261a2c22e6fefd9b0c2756387511e608 100644
+--- a/android/src/main/java/com/brentvatne/common/react/VideoEventEmitter.kt
++++ b/android/src/main/java/com/brentvatne/common/react/VideoEventEmitter.kt
+@@ -335,6 +335,7 @@ class VideoEventEmitter {
+                         format.mimeType?.let { putString("type", it) }
+                         format.language?.let { putString("language", it) }
+                         if (format.bitrate > 0) putInt("bitrate", format.bitrate)
++                        if (format.channelCount > 0) putInt("channelCount", format.channelCount)
+                         putBoolean("selected", format.isSelected)
+                     }
+                 )
+@@ -354,6 +355,7 @@ class VideoEventEmitter {
+                         putInt("index", vTrack.index)
+                         putBoolean("selected", vTrack.isSelected)
+                         putInt("rotation", vTrack.rotation)
++                        if (vTrack.frameRate > 0) putDouble("frameRate", vTrack.frameRate.toDouble())
+                     }
+                 )
+             }
+diff --git a/android/src/main/java/com/brentvatne/exoplayer/ReactExoplayerView.java b/android/src/main/java/com/brentvatne/exoplayer/ReactExoplayerView.java
+index 623d90c8b3ea080edd16a14fa0a494b1547d9dd7..b466d53b25449ad362b9ad76f484a8b0be432410 100644
+--- a/android/src/main/java/com/brentvatne/exoplayer/ReactExoplayerView.java
++++ b/android/src/main/java/com/brentvatne/exoplayer/ReactExoplayerView.java
+@@ -95,6 +95,7 @@ import androidx.media3.exoplayer.source.TrackGroupArray;
+ import androidx.media3.exoplayer.source.ads.AdsMediaSource;
+ import androidx.media3.exoplayer.trackselection.AdaptiveTrackSelection;
+ import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
++import androidx.media3.exoplayer.video.VideoFrameMetadataListener;
+ import androidx.media3.exoplayer.trackselection.ExoTrackSelection;
+ import androidx.media3.exoplayer.trackselection.MappingTrackSelector;
+ import androidx.media3.exoplayer.trackselection.TrackSelection;
+@@ -149,6 +150,7 @@ import java.net.CookieHandler;
+ import java.net.CookieManager;
+ import java.net.CookiePolicy;
+ import java.util.ArrayList;
++import java.util.Arrays;
+ import java.util.List;
+ import java.util.Locale;
+ import java.util.Map;
+@@ -224,6 +226,47 @@ public class ReactExoplayerView extends FrameLayout implements
+     private boolean isUsingContentResolution = false;
+     private boolean selectTrackWhenReady = false;
+     private final Handler mainHandler;
++
++    // The frame rate measured from the timestamps of the frames being shown,
++    // for streams that don't give one (such as MPEG-TS). Once measured, the
++    // video tracks are sent again with it.
++    private static final int FRAMES_TO_MEASURE = 60;
++    private volatile float measuredFrameRate = 0;
++    private final ArrayList<Long> frameTimes = new ArrayList<>();
++    private final VideoFrameMetadataListener frameRateMeter =
++            (presentationTimeUs, releaseTimeNs, format, mediaFormat) -> {
++        if (measuredFrameRate > 0) {
++            return;
++        }
++        float rate;
++        synchronized (frameTimes) {
++            frameTimes.add(presentationTimeUs);
++            if (frameTimes.size() < FRAMES_TO_MEASURE) {
++                return;
++            }
++            // The median gap between frames, which skips over dropped frames
++            // and jumps in the timestamps.
++            long[] gaps = new long[frameTimes.size() - 1];
++            for (int i = 1; i < frameTimes.size(); i++) {
++                gaps[i - 1] = frameTimes.get(i) - frameTimes.get(i - 1);
++            }
++            frameTimes.clear();
++            Arrays.sort(gaps);
++            long gap = gaps[gaps.length / 2];
++            if (gap <= 0) {
++                return;
++            }
++            rate = 1_000_000f / gap;
++        }
++        measuredFrameRate = rate;
++        // Qualified, as these final fields are set in the constructor.
++        ReactExoplayerView.this.mainHandler.post(() -> {
++            if (player != null) {
++                ReactExoplayerView.this.eventEmitter.onVideoTracks.invoke(getVideoTrackInfo());
++            }
++        });
++    };
++
+     private Runnable mainRunnable;
+     private Runnable pipListenerUnsubscribe;
+     private boolean useCache = false;
+@@ -848,6 +891,11 @@ public class ReactExoplayerView extends FrameLayout implements
+         ReactNativeVideoManager.Companion.getInstance().onInstanceCreated(instanceId, player);
+         refreshDebugState();
+         player.addListener(self);
++        measuredFrameRate = 0;
++        synchronized (frameTimes) {
++            frameTimes.clear();
++        }
++        player.setVideoFrameMetadataListener(frameRateMeter);
+         player.setVolume(muted ? 0.f : audioVolume * 1);
+         exoPlayerView.setPlayer(player);
+ 
+@@ -1655,6 +1703,7 @@ public class ReactExoplayerView extends FrameLayout implements
+             
+             Track audioTrack = exoplayerTrackToGenericTrack(format, groupIndex, selection, group);
+             audioTrack.setBitrate(format.bitrate == Format.NO_VALUE ? 0 : format.bitrate);
++            audioTrack.setChannelCount(format.channelCount == Format.NO_VALUE ? 0 : format.channelCount);
+             audioTrack.setSelected(isSelected);
+             audioTracks.add(audioTrack);
+         }
+@@ -1668,6 +1717,7 @@ public class ReactExoplayerView extends FrameLayout implements
+         videoTrack.setHeight(format.height == Format.NO_VALUE ? 0 : format.height);
+         videoTrack.setBitrate(format.bitrate == Format.NO_VALUE ? 0 : format.bitrate);
+         videoTrack.setRotation(format.rotationDegrees);
++        videoTrack.setFrameRate(format.frameRate == Format.NO_VALUE ? measuredFrameRate : format.frameRate);
+         if (format.codecs != null) videoTrack.setCodecs(format.codecs);
+         videoTrack.setTrackId(format.id == null ? String.valueOf(trackIndex) : format.id);
+         videoTrack.setIndex(trackIndex);
