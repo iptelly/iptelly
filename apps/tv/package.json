@@ -17,7 +17,7 @@
     "react-native-iptelly": "workspace:*",
     "react-native-safe-area-context": "^5.5.2",
     "react-native-svg": "^15.15.5",
-    "react-native-video": "^6.19.3"
+    "react-native-video": "patch:react-native-video@npm%3A6.19.3#~/.yarn/patches/react-native-video-npm-6.19.3-791c58a060.patch"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

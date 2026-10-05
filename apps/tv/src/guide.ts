@@ -47,7 +47,9 @@ export function blocks(programmes: Epg[], from: number, to: number): Block[] {
   const result: Block[] = [];
   let cursor = floorHour(from);
   for (const block of sorted) {
-    if (block.end <= cursor) {
+    // Skips programmes that overlap the one before. Only the first can
+    // start before the cursor, if it was already on when the range starts.
+    if (block.end <= cursor || (result.length > 0 && block.start < cursor)) {
       continue;
     }
     fill(result, cursor, block.start);

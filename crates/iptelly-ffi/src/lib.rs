@@ -10,8 +10,13 @@
 use std::sync::LazyLock;
 
 use iptelly_core::playback::PlayRequest;
-use iptelly_core::types::{AppState, Channel, EPG, Filters, MediaInfo, Settings, Source};
-use iptelly_core::{api, m3u, paths, playback, settings, source_type, sql, utils, xmltv, xtream};
+use iptelly_core::types::{
+    AppState, Channel, EPG, Filters, Group, MediaInfo, Settings, Source, SourceCounts,
+    XtreamAccount,
+};
+use iptelly_core::{
+    api, app_data, m3u, paths, playback, settings, source_type, sql, utils, xmltv, xtream,
+};
 use tokio::sync::Mutex;
 
 uniffi::setup_scaffolding!();
@@ -72,9 +77,13 @@ pub async fn source_name_exists(name: String) -> Result<bool> {
 }
 
 /// Adds a source and loads its channels. For an M3U file, `url` is the
-/// file's path.
+/// file's path. An Xtream server's address can be given as typed
+/// ("host:port"); it's turned into its API address.
 #[uniffi::export(async_runtime = "tokio")]
-pub async fn add_source(source: Source) -> Result<()> {
+pub async fn add_source(mut source: Source) -> Result<()> {
+    if source.source_type == source_type::XTREAM {
+        source.url = source.url.as_deref().map(xtream::api_url);
+    }
     match source.source_type {
         source_type::M3U => blocking(move || m3u::read_m3u8(source, false)).await,
         source_type::M3U_LINK => Ok(m3u::get_m3u8_from_link(source, false).await?),
@@ -104,6 +113,27 @@ pub async fn delete_source(source_id: i64) -> Result<()> {
 #[uniffi::export(async_runtime = "tokio")]
 pub async fn set_source_enabled(source_id: i64, enabled: bool) -> Result<()> {
     blocking(move || sql::set_source_enabled(enabled, source_id)).await
+}
+
+/// Saves a source's login, address and User-Agents, as `add_source` takes
+/// them. Its channels stay as they are until it's refreshed.
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn update_source(mut source: Source) -> Result<()> {
+    if source.source_type == source_type::XTREAM {
+        source.url = source.url.as_deref().map(xtream::api_url);
+    }
+    blocking(move || sql::update_source(source)).await
+}
+
+/// A source's groups, hidden ones included.
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn get_source_groups(source_id: i64) -> Result<Vec<Group>> {
+    blocking(move || sql::get_source_groups(source_id)).await
+}
+
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn set_group_hidden(group_id: i64, hidden: bool) -> Result<()> {
+    blocking(move || sql::hide_group(group_id, hidden)).await
 }
 
 // Browsing
@@ -203,6 +233,32 @@ pub async fn get_epg_schedule(channel: Channel) -> Result<Vec<EPG>> {
 
 // Settings
 
+/// How many live channels, movies and series a source has.
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn get_source_counts(source_id: i64) -> Result<SourceCounts> {
+    blocking(move || sql::get_source_counts(source_id)).await
+}
+
+/// An Xtream source's expiry date and maximum connections, from its panel.
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn get_xtream_account(source_id: i64) -> Result<XtreamAccount> {
+    Ok(xtream::get_account(source_id).await?)
+}
+
+/// Writes a backup of the playlists, favourites, history and settings to
+/// `path`. It includes the playlists' logins.
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn export_app_data(path: String) -> Result<()> {
+    blocking(move || app_data::export_app_data(path)).await
+}
+
+/// Restores a backup from `path`. Restored playlists' channels load, and
+/// their favourites and history come back, when they're next updated.
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn import_app_data(path: String) -> Result<()> {
+    blocking(move || app_data::import_app_data(path)).await
+}
+
 #[uniffi::export(async_runtime = "tokio")]
 pub async fn get_settings() -> Result<Settings> {
     blocking(settings::get_settings).await
@@ -255,6 +311,23 @@ pub struct Channel {
 }
 
 #[uniffi::remote(Record)]
+pub struct Group {
+    pub id: Option<i64>,
+    pub name: String,
+    pub image: Option<String>,
+    pub source_id: Option<i64>,
+    pub hidden: Option<bool>,
+    pub media_type: Option<u8>,
+}
+
+#[uniffi::remote(Record)]
+pub struct SourceCounts {
+    pub channels: u64,
+    pub movies: u64,
+    pub series: u64,
+}
+
+#[uniffi::remote(Record)]
 pub struct MediaInfo {
     pub plot: Option<String>,
     pub cast: Option<String>,
@@ -284,6 +357,15 @@ pub struct Source {
     pub epg_url: Option<String>,
     pub timezone: Option<String>,
     pub epg_retention_days: Option<u16>,
+    pub output_format: Option<String>,
+    pub include_live: Option<bool>,
+    pub include_vod: Option<bool>,
+}
+
+#[uniffi::remote(Record)]
+pub struct XtreamAccount {
+    pub expires: Option<i64>,
+    pub max_connections: Option<u32>,
 }
 
 #[uniffi::remote(Record)]

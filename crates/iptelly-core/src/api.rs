@@ -158,6 +158,7 @@ fn epg_key(channel: &Channel) -> Result<(i64, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::{Source, SourceCounts};
     use crate::{media_type, test_db};
 
     fn xmltv_time(timestamp: i64) -> String {
@@ -203,10 +204,69 @@ mod tests {
     }
 
     #[test]
+    fn counts_a_sources_channels_movies_and_series() {
+        let _db = test_db::lock();
+        let source = test_db::add_source("counts");
+        for (name, kind) in [
+            ("Live One", media_type::LIVESTREAM),
+            ("Live Two", media_type::LIVESTREAM),
+            ("A Film", media_type::MOVIE),
+            ("A Series", media_type::SERIE),
+        ] {
+            let url = format!("http://example.com/{name}");
+            test_db::add_channel(&source, test_db::channel(name, &url, kind), None);
+        }
+        // An episode is stored as a movie with its series' id.
+        let mut episode = test_db::channel("Episode 1", "http://example.com/e1", media_type::MOVIE);
+        episode.series_id = Some(7);
+        test_db::add_channel(&source, episode, None);
+
+        let counts = sql::get_source_counts(source.id.unwrap()).unwrap();
+        assert_eq!(
+            counts,
+            SourceCounts {
+                channels: 2,
+                movies: 1,
+                series: 1
+            }
+        );
+    }
+
+    #[test]
+    fn lists_a_sources_groups_hidden_or_not() {
+        let _db = test_db::lock();
+        let source = test_db::add_source("groups");
+        let other = test_db::add_source("other groups");
+        let group = |name: &str, source: &Source| Group {
+            id: None,
+            name: name.to_string(),
+            image: None,
+            source_id: source.id,
+            hidden: None,
+            media_type: None,
+        };
+        let news = sql::do_tx(|tx| {
+            sql::add_custom_group(tx, group("Sport", &source))?;
+            sql::add_custom_group(tx, group("Elsewhere", &other))?;
+            sql::add_custom_group(tx, group("News", &source))
+        })
+        .unwrap();
+        sql::hide_group(news, true).unwrap();
+
+        let groups = sql::get_source_groups(source.id.unwrap()).unwrap();
+        let found: Vec<_> = groups
+            .iter()
+            .map(|g| (g.name.as_str(), g.hidden.unwrap_or(false)))
+            .collect();
+        assert_eq!(found, [("News", true), ("Sport", false)]);
+    }
+
+    #[test]
     fn searches_keep_a_movies_rating_and_find_hidden_ones() {
         let _db = test_db::lock();
         let source = test_db::add_source("ratings");
-        let mut film = test_db::channel("Rated Film", "http://example.com/rated", media_type::MOVIE);
+        let mut film =
+            test_db::channel("Rated Film", "http://example.com/rated", media_type::MOVIE);
         film.rating = Some(6.5);
         let film = test_db::add_channel(&source, film, None);
         let filters = |view_type| Filters {

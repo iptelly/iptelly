@@ -8,7 +8,7 @@ use crate::log::log;
 use crate::sort_type;
 use crate::types::{
     ChannelPreserve, CustomChannel, CustomChannelExtraData, DownloadHistoryItem, EPG, EPGNotify,
-    ExportedGroup, Group, IdName, Season, SeriesEpisode,
+    ExportedGroup, Group, IdName, Season, SeriesEpisode, SourceCounts,
 };
 use crate::{
     media_type, source_type,
@@ -448,6 +448,15 @@ fn apply_migrations() -> Result<()> {
               ALTER TABLE channels ADD COLUMN rating REAL;
             "#,
         ),
+        // An Xtream source's output format, and whether it loads its TV
+        // channels and its movies and series.
+        M::up(
+            r#"
+              ALTER TABLE sources ADD COLUMN output_format TEXT;
+              ALTER TABLE sources ADD COLUMN include_live INTEGER;
+              ALTER TABLE sources ADD COLUMN include_vod INTEGER;
+            "#,
+        ),
     ]);
     // foreign_keys can't be toggled from inside a migration itself (each
     // one already runs inside its own transaction, where SQLite silently
@@ -508,8 +517,8 @@ pub fn import_source_full(tx: &Transaction, source: &Source) -> Result<i64> {
     tx.execute(
         r#"
         INSERT INTO sources
-          (name, source_type, url, username, password, enabled, use_tvg_id, user_agent, max_streams, stream_user_agent, last_updated, epg_url, timezone, epg_retention_days)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (name, source_type, url, username, password, enabled, use_tvg_id, user_agent, max_streams, stream_user_agent, last_updated, epg_url, timezone, epg_retention_days, output_format, include_live, include_vod)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
         params![
             source.name,
@@ -526,6 +535,9 @@ pub fn import_source_full(tx: &Transaction, source: &Source) -> Result<i64> {
             source.epg_url,
             source.timezone,
             source.epg_retention_days,
+            source.output_format,
+            source.include_live,
+            source.include_vod,
         ],
     )?;
     Ok(tx.last_insert_rowid())
@@ -1841,6 +1853,31 @@ pub fn get_channel_count_by_source(id: i64) -> Result<u64> {
     Ok(count)
 }
 
+// How many live channels, movies and series a source has. Series episodes
+// are stored as movies with a series_id, so they're left out.
+pub fn get_source_counts(id: i64) -> Result<SourceCounts> {
+    let sql = get_conn()?;
+    let mut counts = SourceCounts::default();
+    let mut statement = sql.prepare(
+        "SELECT media_type, COUNT(*) FROM channels
+         WHERE source_id = ? AND series_id IS NULL
+         GROUP BY media_type",
+    )?;
+    let rows = statement.query_map(params![id], |row| {
+        Ok((row.get::<_, u8>(0)?, row.get::<_, u64>(1)?))
+    })?;
+    for row in rows {
+        let (kind, count) = row?;
+        match kind {
+            media_type::LIVESTREAM => counts.channels = count,
+            media_type::MOVIE => counts.movies = count,
+            media_type::SERIE => counts.series = count,
+            _ => {}
+        }
+    }
+    Ok(counts)
+}
+
 pub fn source_name_exists(name: &str) -> Result<bool> {
     let sql = get_conn()?;
     Ok(sql
@@ -1910,6 +1947,23 @@ pub fn get_all_groups() -> Result<Vec<Group>> {
     "#,
         )?
         .query_map(params![], row_to_custom_group)?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(result)
+}
+
+// One source's groups, hidden ones included, for the TV app's Manage groups.
+pub fn get_source_groups(source_id: i64) -> Result<Vec<Group>> {
+    let sql = get_conn()?;
+    let result = sql
+        .prepare(
+            r#"
+        SELECT * FROM groups
+        WHERE source_id = ?
+        ORDER BY media_type, name
+    "#,
+        )?
+        .query_map(params![source_id], row_to_custom_group)?
         .filter_map(Result::ok)
         .collect();
     Ok(result)
@@ -2026,6 +2080,9 @@ fn row_to_source(row: &Row) -> std::result::Result<Source, rusqlite::Error> {
         epg_url: row.get("epg_url")?,
         timezone: row.get("timezone")?,
         epg_retention_days: row.get("epg_retention_days")?,
+        output_format: row.get("output_format")?,
+        include_live: row.get("include_live")?,
+        include_vod: row.get("include_vod")?,
     })
 }
 
@@ -2089,6 +2146,9 @@ pub fn get_custom_source(name: String) -> Source {
         epg_url: None,
         timezone: None,
         epg_retention_days: None,
+        output_format: None,
+        include_live: None,
+        include_vod: None,
     }
 }
 
@@ -2420,7 +2480,7 @@ pub fn update_source(source: Source) -> Result<()> {
     sql.execute(
         r#"
         UPDATE sources
-        SET username = ?, password = ?, url = ?, use_tvg_id = ?, user_agent = ?, max_streams = ?, stream_user_agent = ?, epg_url = ?, epg_retention_days = ?
+        SET username = ?, password = ?, url = ?, use_tvg_id = ?, user_agent = ?, max_streams = ?, stream_user_agent = ?, epg_url = ?, epg_retention_days = ?, output_format = ?, include_live = ?, include_vod = ?
         WHERE id = ?"#,
         params![
             source.username,
@@ -2432,6 +2492,9 @@ pub fn update_source(source: Source) -> Result<()> {
             source.stream_user_agent,
             source.epg_url,
             source.epg_retention_days,
+            source.output_format,
+            source.include_live,
+            source.include_vod,
             source.id
         ],
     )?;

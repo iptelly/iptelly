@@ -366,7 +366,10 @@ mod tests {
     #[test]
     fn treats_paths_and_file_urls_as_local_files() {
         assert_eq!(local_path("/data/guide.xml"), Some("/data/guide.xml"));
-        assert_eq!(local_path("file:///data/guide.xml"), Some("/data/guide.xml"));
+        assert_eq!(
+            local_path("file:///data/guide.xml"),
+            Some("/data/guide.xml")
+        );
         assert_eq!(local_path("http://example.com/guide.xml"), None);
         assert_eq!(local_path("https://example.com/guide.xml.gz"), None);
     }

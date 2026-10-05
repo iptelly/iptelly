@@ -47,16 +47,32 @@ export async function enabledSourceIds(): Promise<bigint[]> {
 
 // A list in the groups column: Favourites, History, everything, or one of
 // the playlists' groups. The same lists hold channels, movies or series.
+// The fixed lists can hold one media type of their own, as in the
+// Favourites screen's Channels, Movies and Series.
 export type ChannelList =
-  | { kind: 'favorites'; name: string }
-  | { kind: 'history'; name: string }
-  | { kind: 'all'; name: string }
+  | { kind: 'favorites'; name: string; mediaType?: number }
+  | { kind: 'history'; name: string; mediaType?: number }
+  | { kind: 'all'; name: string; mediaType?: number }
   | { kind: 'group'; name: string; groupId: bigint };
 
 export const FIXED_LISTS: ChannelList[] = [
   { kind: 'favorites', name: 'Favourites' },
   { kind: 'all', name: 'All channels' },
 ];
+
+// Tells lists apart, since the groups column's rows move as playlists are
+// collapsed.
+export function listKey(list: ChannelList): string {
+  if (list.kind === 'group') {
+    return `group:${list.groupId}`;
+  }
+  return list.mediaType == null ? list.kind : `${list.kind}:${list.mediaType}`;
+}
+
+// The media type a list holds: its own, or the screen's.
+export function listMediaType(list: ChannelList, screen: number): number {
+  return list.kind === 'group' ? screen : list.mediaType ?? screen;
+}
 
 function filters(
   sourceIds: bigint[],
@@ -89,6 +105,35 @@ export async function loadGroups(
     .map(g => ({ kind: 'group', name: g.name, groupId: g.id! }));
 }
 
+// The first page of channels, movies or series whose names match `query`.
+export function searchByName(
+  sourceIds: bigint[],
+  query: string,
+  mediaType: number,
+): Promise<Channel[]> {
+  return search({
+    ...filters(sourceIds, 1, ViewType.ALL, mediaType),
+    query,
+  });
+}
+
+// Every group of one playlist, a page at a time.
+export async function loadPlaylistGroups(
+  sourceId: bigint,
+  mediaType: number,
+): Promise<ChannelList[]> {
+  const all: ChannelList[] = [];
+  // The core's page number is a byte.
+  for (let page = 1; page <= 255; page++) {
+    const groups = await loadGroups([sourceId], page, mediaType);
+    all.push(...groups);
+    if (groups.length < PAGE_SIZE) {
+      break;
+    }
+  }
+  return all;
+}
+
 export function loadChannels(
   list: ChannelList,
   sourceIds: bigint[],
@@ -102,7 +147,9 @@ export function loadChannels(
     group: ViewType.CATEGORIES,
   }[list.kind];
   const groupId = list.kind === 'group' ? list.groupId : undefined;
-  return search(filters(sourceIds, page, viewType, mediaType, groupId));
+  return search(
+    filters(sourceIds, page, viewType, listMediaType(list, mediaType), groupId),
+  );
 }
 
 export async function lastWatched(

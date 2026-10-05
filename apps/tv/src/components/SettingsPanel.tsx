@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { colors, fonts, px } from '../theme';
+import { Icon } from './Icon';
 import { useFirstVisible } from './scroll';
 import { Panel } from './Panel';
 
@@ -28,32 +29,105 @@ export function SettingsPanel({
   );
 }
 
+// The row Up or Down moves to from `index`, past headings. It stays put at
+// either end.
+export function stepRow(
+  index: number,
+  step: -1 | 1,
+  count: number,
+  headings?: boolean[],
+): number {
+  for (let at = index + step; at >= 0 && at < count; at += step) {
+    if (!headings?.[at]) {
+      return at;
+    }
+  }
+  return index;
+}
+
+// `toggles` gives items an on/off switch (undefined for none), `details` a
+// second line under them, such as a setting's value, and `checks` a check
+// or an empty circle on their left, as for the playlists in use.
+// `headings` marks items that head a section, which can't be chosen.
+// `moving` marks the item being moved, in Reorder playlists.
 export function SettingsList({
   items,
   index,
   note,
+  toggles,
+  details,
+  checks,
+  headings,
+  moving,
 }: {
   items: string[];
   index: number;
   note?: string;
+  toggles?: (boolean | undefined)[];
+  details?: (string | undefined)[];
+  checks?: (boolean | undefined)[];
+  headings?: boolean[];
+  moving?: boolean;
 }) {
   const top = useFirstVisible(index, items.length, VISIBLE_ROWS);
   return (
     <>
       <View style={styles.list}>
         {items.slice(top, top + VISIBLE_ROWS).map((item, i) => {
-          const focused = top + i === index;
-          return (
-            <View
-              key={top + i}
-              style={[styles.item, focused && styles.focused]}
-            >
-              <Text
-                numberOfLines={1}
-                style={[styles.label, focused && { color: colors.textDark }]}
-              >
+          const at = top + i;
+          const focused = at === index;
+          const toggle = toggles?.[at];
+          const detail = details?.[at];
+          const check = checks?.[at];
+          if (headings?.[at]) {
+            return (
+              <Text key={at} numberOfLines={1} style={styles.heading}>
                 {item}
               </Text>
+            );
+          }
+          return (
+            <View
+              key={at}
+              style={[
+                styles.item,
+                focused && styles.focused,
+                focused && moving && styles.moving,
+              ]}
+            >
+              {check != null && (
+                <Icon
+                  name={check ? 'checked' : 'unchecked'}
+                  size={px(44)}
+                  color={focused ? colors.textDark : colors.text}
+                />
+              )}
+              <View style={styles.text}>
+                <Text
+                  numberOfLines={2}
+                  style={[styles.label, focused && styles.dark]}
+                >
+                  {item}
+                </Text>
+                {detail != null && (
+                  <Text
+                    numberOfLines={2}
+                    style={[styles.detail, focused && styles.dark]}
+                  >
+                    {detail}
+                  </Text>
+                )}
+              </View>
+              {toggle != null && (
+                <View style={[styles.track, toggle && styles.trackOn]}>
+                  <View
+                    style={[
+                      styles.knob,
+                      toggle ? styles.knobOn : styles.knobOff,
+                    ]}
+                  />
+                </View>
+              )}
             </View>
           );
         })}
@@ -87,18 +161,66 @@ const styles = StyleSheet.create({
     paddingTop: px(14),
   },
   item: {
-    height: px(ROW_HEIGHT - 6),
+    minHeight: px(ROW_HEIGHT - 6),
     marginVertical: px(3),
-    justifyContent: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: px(24),
     paddingHorizontal: px(34),
     borderRadius: px(10),
   },
   focused: {
     backgroundColor: colors.pill,
   },
+  moving: {
+    borderWidth: px(4),
+    borderColor: colors.accent,
+  },
+  text: {
+    flex: 1,
+    paddingVertical: px(10),
+  },
   label: {
     color: colors.text,
     fontSize: fonts.normal,
+  },
+  detail: {
+    color: colors.text,
+    fontSize: fonts.small,
+    marginTop: px(4),
+  },
+  dark: {
+    color: colors.textDark,
+  },
+  heading: {
+    paddingHorizontal: px(34),
+    paddingTop: px(24),
+    paddingBottom: px(10),
+    color: colors.settingsHeading,
+    fontSize: fonts.small,
+    fontWeight: 'bold',
+  },
+  track: {
+    width: px(64),
+    height: px(30),
+    borderRadius: px(15),
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.35)',
+  },
+  trackOn: {
+    backgroundColor: 'rgba(62, 166, 242, 0.45)',
+  },
+  knob: {
+    width: px(38),
+    height: px(38),
+    borderRadius: px(19),
+  },
+  knobOff: {
+    backgroundColor: '#eeeeee',
+  },
+  knobOn: {
+    alignSelf: 'flex-end',
+    backgroundColor: colors.accent,
   },
   note: {
     position: 'absolute',

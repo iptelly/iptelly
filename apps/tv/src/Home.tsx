@@ -5,21 +5,72 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Video, { type VideoRef } from 'react-native-video';
+import { DownloadDirectoryPath } from '@dr.pogodin/react-native-fs';
 import {
   addToHistory,
   deleteSource,
+  exportAppData,
   getGuide,
+  getSourceCounts,
+  getSourceGroups,
+  getXtreamAccount,
+  importAppData,
   playRequest,
+  refreshAll,
   refreshEpg,
   refreshSource,
   setFavorite,
+  setGroupHidden,
+  setSourceEnabled,
+  updateSource,
   type Channel,
   type Epg,
+  type Group,
   type PlayRequest,
   getSources,
   type Source,
+  type SourceCounts,
 } from 'react-native-iptelly';
+import { canDrawOverlays, openOverlaySettings } from './appControl';
+import {
+  DEFAULT_UPDATES,
+  OUTPUT_FORMATS,
+  PLAYLIST_ROW_LABELS,
+  SORT_LABELS,
+  UPDATE_HOURS,
+  XTREAM_ROWS,
+  catchupText,
+  connectionsText,
+  countsText,
+  expiryText,
+  formatText,
+  groupKinds,
+  hoursText,
+  movePlaylist,
+  playlistRows,
+  playlistsDue,
+  serverText,
+  shownText,
+  sortPlaylists,
+  xtreamChanged,
+  type Account,
+  type PlaylistRow,
+  type PlaylistSort,
+  type PlaylistUpdates,
+  type XtreamRow,
+} from './playlists';
+import {
+  DEFAULT_SETTINGS,
+  GENERAL_ITEMS,
+  generalList,
+  loadSettings,
+  saveSettings,
+  streamUrl,
+  type GeneralItem,
+  type GeneralSettings,
+} from './appSettings';
 import { AddPlaylist } from './components/AddPlaylist';
+import { TextSetting } from './components/TextSetting';
 import { Details } from './components/Details';
 import {
   GUIDE_TOP,
@@ -30,10 +81,19 @@ import {
 } from './components/Guide';
 import { GroupList } from './components/GroupList';
 import { InfoBar } from './components/InfoBar';
+import {
+  fromAudioTracks,
+  fromVideoTracks,
+  type StreamInfo,
+} from './streamInfo';
 import { MENU_ITEMS, MENU_WIDTH, Menu, RAIL_WIDTH } from './components/Menu';
 import { PlayerBar } from './components/PlayerBar';
 import { useFirstVisible } from './components/scroll';
-import { SettingsList, SettingsPanel } from './components/SettingsPanel';
+import {
+  SettingsList,
+  SettingsPanel,
+  stepRow,
+} from './components/SettingsPanel';
 import {
   FIXED_LISTS,
   MediaType,
@@ -42,12 +102,14 @@ import {
   enabledSourceIds,
   errorMessage,
   lastWatched,
+  listKey,
   loadChannels,
-  loadGroups,
   ready,
+  SourceType,
   type ChannelList,
 } from './core';
 import { addDemoPlaylist } from './demo';
+import { usePlaylistGroups } from './playlistGroups';
 import {
   RANGE,
   blockAt,
@@ -59,9 +121,11 @@ import {
 } from './guide';
 import { useRemote, type Key } from './remote';
 import { colors, fonts, px } from './theme';
-import { Vod } from './Vod';
+import { Search } from './Search';
+import { Vod, type VodSection } from './Vod';
 
-// 'vod' is the Movies or Series screen, which handles the remote itself.
+// 'vod' is the Movies, Series or Favourites screen and 'search' the search
+// screen, which handle the remote themselves.
 type Area =
   | 'menu'
   | 'groups'
@@ -69,7 +133,8 @@ type Area =
   | 'settings'
   | 'form'
   | 'fullscreen'
-  | 'vod';
+  | 'vod'
+  | 'search';
 
 // How far Left and Right move through a movie.
 const SEEK_SECONDS = 10;
@@ -85,8 +150,12 @@ const PREVIEW = { top: 40, left: 40, width: 640, height: 360 };
 
 const CHANNELS = MENU_ITEMS.findIndex(i => i.key === 'channels');
 const MOVIES = MENU_ITEMS.findIndex(i => i.key === 'movies');
-const SERIES = MENU_ITEMS.findIndex(i => i.key === 'series');
-const FAVOURITES_LIST = FIXED_LISTS.findIndex(l => l.kind === 'favorites');
+const SEARCH = MENU_ITEMS.findIndex(i => i.key === 'search');
+const VOD_MENU: Record<VodSection, number> = {
+  movies: MOVIES,
+  series: MENU_ITEMS.findIndex(i => i.key === 'series'),
+  favourites: MENU_ITEMS.findIndex(i => i.key === 'favourites'),
+};
 const SETTINGS = MENU_ITEMS.findIndex(i => i.key === 'settings');
 
 const SETTINGS_ITEMS = [
@@ -101,12 +170,64 @@ const SETTINGS_ITEMS = [
   'About',
 ];
 
-// The settings panel's page, and for a playlist's page, the playlist.
+// Where Settings > General > Back up data saves, and Restore data reads.
+const BACKUP_PATH = `${DownloadDirectoryPath}/iptelly-backup.gz`;
+
+// How long a first Back press waits for a second to exit, with "Confirm
+// exit by second press Back" on.
+const EXIT_CONFIRM_MS = 2000;
+
+// The settings panel's page, and for a playlist's page and the pages under
+// it, the playlist.
 type SettingsPage = {
-  page: 'root' | 'playlists' | 'playlist';
+  page:
+    | 'root'
+    | 'general'
+    | 'playlists'
+    | 'playlist'
+    | 'sorting'
+    | 'reorder'
+    | 'interval'
+    | 'xtream'
+    | 'outputFormat'
+    | 'groups'
+    | 'groupKind';
   index: number;
   source?: Source;
+  // Xtream Codes parameters: the changes waiting for Apply changes.
+  draft?: Source;
+  // Manage groups: the kind of group whose page is open.
+  kind?: number;
   confirmDelete?: boolean;
+  // Reorder playlists: the highlighted playlist is picked up to move.
+  moving?: boolean;
+};
+
+// Settings > Playlists, under the playlists themselves.
+const PLAYLIST_ACTIONS = [
+  'Add playlist',
+  'Update all playlists',
+  'Playlists sorting',
+  'Reorder playlists',
+  ...(__DEV__ ? ['Add the demo playlist'] : []),
+];
+const SORTS: PlaylistSort[] = ['name', 'added', 'manual'];
+
+// The player's red LIVE badge is hidden: the info bar shows what's playing.
+const NO_LIVE_BADGE = { hideLiveBadge: true };
+
+// How often playlists are checked for being due an update.
+const UPDATE_CHECK_MS = 60 * 60 * 1000;
+
+// A setting being typed in the form: its title, what's in the box, and
+// what saves it.
+type TextForm = {
+  label: string;
+  placeholder: string;
+  hint?: string;
+  secure?: boolean;
+  value: string;
+  save: (value: string) => void;
 };
 
 type Playing = { channel: Channel; request: PlayRequest; number?: number };
@@ -135,10 +256,12 @@ export function Home() {
   const [menuIndex, setMenuIndex] = useState(CHANNELS);
   const [sources, setSources] = useState<Source[]>([]);
   const [sourceIds, setSourceIds] = useState<bigint[]>();
-  const [groups, setGroups] = useState<ChannelList[]>(FIXED_LISTS);
-  const groupPaging = useRef(firstPage());
+  // Bumped when playlists change, to load their groups again.
+  const [groupsVersion, setGroupsVersion] = useState(0);
   const [groupIndex, setGroupIndex] = useState(1);
-  const [openGroup, setOpenGroup] = useState(1);
+  // The list in the guide. It's kept by value, since collapsing a playlist
+  // moves the rows below it.
+  const [list, setList] = useState<ChannelList>(FIXED_LISTS[1]);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [channelsLoading, setChannelsLoading] = useState(true);
   const channelPaging = useRef(firstPage());
@@ -156,13 +279,34 @@ export function Home() {
   const [paused, setPaused] = useState(false);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
+  // The channel's resolution, frame rate and audio, for the info bar.
+  const [stream, setStream] = useState<StreamInfo>({});
   // Where Left and Right have moved to, until the player gets there.
   const [seekTo, setSeekTo] = useState<number>();
-  const [vodKind, setVodKind] = useState<number>();
+  const [vodSection, setVodSection] = useState<VodSection>();
+  // A series chosen in search, for the Series screen to open.
+  const [seriesToOpen, setSeriesToOpen] = useState<Channel>();
+  // The search screen, kept once opened so its results stay.
+  const [searchOpened, setSearchOpened] = useState(false);
+  // The screen Back from full screen returns to, when what's playing was
+  // started from Movies, Series, Favourites or search.
+  const [returnTo, setReturnTo] = useState<'vod' | 'search'>();
   const [settings, setSettings] = useState<SettingsPage>({
     page: 'root',
     index: 0,
   });
+  // Settings > General.
+  const [general, setGeneral] = useState<GeneralSettings>(DEFAULT_SETTINGS);
+  // The setting being typed in the form, or none for Add playlist.
+  const [textSetting, setTextSetting] = useState<TextForm>();
+  // Manage groups: the playlist's groups, until they've loaded.
+  const [sourceGroups, setSourceGroups] = useState<Group[]>();
+  // Xtream Codes parameters: the account's expiry and connections.
+  const [account, setAccount] = useState<Account>();
+  // When Back was first pressed to exit, with exits confirmed.
+  const exitPressed = useRef(0);
+  // Settings > Playlists: each playlist's channel, movie and series counts.
+  const [counts, setCounts] = useState(() => new Map<string, SourceCounts>());
   const [toast, setToast] = useState<{ text: string; busy?: boolean }>();
   const busy = toast?.busy === true;
 
@@ -195,13 +339,61 @@ export function Home() {
     const ids = await enabledSourceIds();
     setSources(all);
     setSourceIds(ids);
-    groupPaging.current = firstPage();
-    const first = ids.length > 0 ? await loadGroups(ids, 1) : [];
-    groupPaging.current.done = first.length < PAGE_SIZE;
-    setGroups([...FIXED_LISTS, ...first]);
+    setGroupsVersion(v => v + 1);
     setGuide(new Map());
     return ids;
   }, []);
+
+  // Updates the playlists that are due, one at a time, in the background:
+  // when the app starts, and every hour after.
+  const updating = useRef(false);
+  const updateDue = useCallback(
+    async (updates: Record<string, PlaylistUpdates>, starting: boolean) => {
+      if (updating.current) {
+        return;
+      }
+      updating.current = true;
+      try {
+        const due = playlistsDue(
+          await getSources(),
+          updates,
+          seconds(),
+          starting,
+        );
+        for (const source of due) {
+          say(`Updating ${source.name}…`);
+          await refreshSource(source.id!);
+        }
+        if (due.length > 0) {
+          await reload();
+          say(`Updated ${due.map(s => s.name).join(', ')}.`);
+        }
+      } catch (e) {
+        say(errorMessage(e));
+      } finally {
+        updating.current = false;
+      }
+    },
+    [reload, say],
+  );
+
+  // The playlists in Settings > Playlists' order, which the groups and
+  // categories columns follow too.
+  const ordered = useMemo(
+    () => sortPlaylists(sources, general.playlistSort, general.playlistOrder),
+    [sources, general.playlistSort, general.playlistOrder],
+  );
+
+  const groups = usePlaylistGroups(
+    ordered,
+    FIXED_LISTS,
+    MediaType.LIVESTREAM,
+    groupsVersion,
+    say,
+  );
+  const openRow = groups.rows.findIndex(
+    r => r.kind === 'list' && listKey(r.list) === listKey(list),
+  );
 
   const play = useCallback(
     async (channel: Channel, number?: number) => {
@@ -240,19 +432,53 @@ export function Home() {
   const playVod = useCallback(
     async (item: Channel) => {
       await play(item);
+      setReturnTo('vod');
       setArea('fullscreen');
     },
     [play],
   );
 
   const closeVod = useCallback(() => {
-    setMenuIndex(vodKind === MediaType.SERIE ? SERIES : MOVIES);
+    setMenuIndex(vodSection ? VOD_MENU[vodSection] : MOVIES);
     setArea('menu');
-  }, [vodKind]);
+  }, [vodSection]);
+
+  const closeSearch = useCallback(() => {
+    setMenuIndex(SEARCH);
+    setArea('menu');
+  }, []);
+
+  // A search result: a series opens in Series, and movies and channels
+  // play full screen. Back from a channel goes to the guide, unless the
+  // "Stay on search screen" setting is on.
+  const openFromSearch = useCallback(
+    async (item: Channel, stayOnSearch: boolean) => {
+      if (item.mediaType === MediaType.SERIE) {
+        setVodSection('series');
+        setSeriesToOpen(item);
+        setArea('vod');
+        return;
+      }
+      await play(item);
+      const live = item.mediaType === MediaType.LIVESTREAM;
+      setReturnTo(live && !stayOnSearch ? undefined : 'search');
+      setArea('fullscreen');
+    },
+    [play],
+  );
+
+  // Back from full screen to the screen it was started from.
+  const backFromPlayer = () => {
+    setPlaying(undefined);
+    setArea(returnTo ?? 'guide');
+    setReturnTo(undefined);
+  };
 
   useEffect(() => {
     (async () => {
       try {
+        const saved = await loadSettings();
+        setGeneral(saved);
         const ids = await reload();
         if (ids.length === 0) {
           setArea('menu');
@@ -260,52 +486,44 @@ export function Home() {
           say('Add a playlist in Settings, then Playlists.');
           return;
         }
-        const last = await lastWatched(ids);
+        const last = saved.lastChannelOnStart
+          ? await lastWatched(ids)
+          : undefined;
         if (last) {
           await play(last);
           setArea('fullscreen');
         }
+        updateDue(saved.playlistUpdates, true);
       } catch (e) {
         say(errorMessage(e));
       }
     })();
-  }, [reload, play, say]);
+  }, [reload, play, say, updateDue]);
 
   useEffect(() => {
-    const paging = groupPaging.current;
+    const timer = setInterval(
+      () => updateDue(general.playlistUpdates, false),
+      UPDATE_CHECK_MS,
+    );
+    return () => clearInterval(timer);
+  }, [updateDue, general.playlistUpdates]);
+
+  // Moving through the groups shows each one in the guide after a moment.
+  const highlighted = groups.rows[groupIndex];
+  useEffect(() => {
     if (
-      !sourceIds ||
-      paging.done ||
-      paging.loading ||
-      groupIndex < groups.length - 6
+      area !== 'groups' ||
+      highlighted?.kind !== 'list' ||
+      listKey(highlighted.list) === listKey(list)
     ) {
       return;
     }
-    paging.loading = true;
-    loadGroups(sourceIds, paging.page + 1)
-      .then(more => {
-        paging.page += 1;
-        paging.done = more.length < PAGE_SIZE;
-        setGroups(g => [...g, ...more]);
-      })
-      .catch(e => say(errorMessage(e)))
-      .finally(() => {
-        paging.loading = false;
-      });
-  }, [groupIndex, groups.length, sourceIds, say]);
-
-  // Moving through the groups shows each one in the guide after a moment.
-  useEffect(() => {
-    if (area !== 'groups' || groupIndex === openGroup) {
-      return;
-    }
-    const timer = setTimeout(() => setOpenGroup(groupIndex), 300);
+    const timer = setTimeout(() => setList(highlighted.list), 300);
     return () => clearTimeout(timer);
-  }, [area, groupIndex, openGroup]);
+  }, [area, highlighted, list]);
 
   // Channels
 
-  const list = groups[openGroup];
   useEffect(() => {
     if (!sourceIds || !list) {
       return;
@@ -362,7 +580,7 @@ export function Home() {
     LAYOUTS[
       area === 'settings' || area === 'form'
         ? 'menu'
-        : area === 'fullscreen' || area === 'vod'
+        : area === 'fullscreen' || area === 'vod' || area === 'search'
         ? 'guide'
         : area
     ];
@@ -424,6 +642,8 @@ export function Home() {
   const focusedBlocks = focusedChannel ? blocksFor(focusedChannel) : [];
   const focusedBlock = focusedBlocks[blockAt(focusedBlocks, focusTime)];
   const playingKey = playing ? channelKey(playing.channel) : undefined;
+  // A new channel starts with nothing known about its stream.
+  useEffect(() => setStream({}), [playingKey]);
   const playingVod =
     playing != null && playing.channel.mediaType !== MediaType.LIVESTREAM;
   const playingBlocks = playing ? blocksFor(playing.channel) : [];
@@ -440,13 +660,13 @@ export function Home() {
     setArea('guide');
   };
 
-  // Opens the guide on the list at `index` in the groups column.
-  const openList = (index: number) => {
-    if (index === openGroup) {
+  // Opens the guide on a list.
+  const openList = (next: ChannelList) => {
+    if (listKey(next) === listKey(list)) {
       openGuide();
       return;
     }
-    setOpenGroup(index);
+    setList(next);
     setRow(0);
     setFocusTime(now);
     setWindowStart(floorHalfHour(now));
@@ -455,26 +675,206 @@ export function Home() {
 
   // Settings
 
-  const settingsItems = (): string[] => {
+  // The playlist a playlist's page is for, as it is now.
+  const settingsSource = settings.source
+    ? sources.find(s => s.id === settings.source!.id) ?? settings.source
+    : undefined;
+
+  const updatesFor = (source: Source): PlaylistUpdates =>
+    general.playlistUpdates[String(source.id)] ?? DEFAULT_UPDATES;
+  const pageRows = settingsSource ? playlistRows(settingsSource) : [];
+  const kinds = groupKinds(sourceGroups ?? []);
+  const kindGroups = kinds[settings.kind ?? 0]?.groups ?? [];
+
+  // The settings page's rows, and their switches, second lines, checks and
+  // headings.
+  const settingsList = (): {
+    items: string[];
+    toggles?: (boolean | undefined)[];
+    details?: (string | undefined)[];
+    checks?: (boolean | undefined)[];
+    headings?: boolean[];
+  } => {
     switch (settings.page) {
       case 'root':
-        return SETTINGS_ITEMS;
+        return { items: SETTINGS_ITEMS };
+      case 'general':
+        return {
+          items: GENERAL_ITEMS.map(item => item.label),
+          ...generalList(general),
+        };
       case 'playlists':
-        return [
-          ...sources.map(s => s.name),
-          'Add playlist',
-          ...(__DEV__ ? ['Add the demo playlist'] : []),
-        ];
-      case 'playlist':
-        return [
-          'Update playlist',
-          'Update guide',
-          settings.confirmDelete
-            ? 'Press OK again to delete'
-            : 'Delete playlist',
-        ];
+        return {
+          items: [...ordered.map(s => s.name), ...PLAYLIST_ACTIONS],
+          checks: ordered.map(s => s.enabled),
+          details: [
+            ...ordered.map(s => countsText(counts.get(String(s.id)))),
+            ...PLAYLIST_ACTIONS.map(action =>
+              action === 'Playlists sorting'
+                ? SORT_LABELS[general.playlistSort]
+                : undefined,
+            ),
+          ],
+        };
+      case 'playlist': {
+        const source = settingsSource!;
+        const updates = updatesFor(source);
+        return {
+          items: pageRows.map(item =>
+            item === 'delete' && settings.confirmDelete
+              ? 'Press OK again to delete'
+              : PLAYLIST_ROW_LABELS[item],
+          ),
+          toggles: pageRows.map(item =>
+            item === 'use'
+              ? source.enabled
+              : item === 'onStart'
+              ? updates.onStart
+              : undefined,
+          ),
+          details: pageRows.map(item =>
+            item === 'catchup'
+              ? catchupText(source)
+              : item === 'userAgent'
+              ? source.streamUserAgent || 'Not set'
+              : item === 'interval'
+              ? hoursText(updates.hours)
+              : undefined,
+          ),
+          headings: pageRows.map(item => item === 'updateOptions'),
+        };
+      }
+      case 'interval':
+        return {
+          items: UPDATE_HOURS.map(hoursText),
+          checks: UPDATE_HOURS.map(
+            hours => hours === updatesFor(settingsSource!).hours,
+          ),
+        };
+      case 'xtream': {
+        const draft = settings.draft ?? settingsSource!;
+        const details: Partial<Record<XtreamRow, string>> = {
+          Server: serverText(draft.url) || 'Not set',
+          Username: draft.username || 'Not set',
+          Password: draft.password ? '••••••••' : 'Not set',
+          'Output format': formatText(draft.outputFormat),
+          'Expiration date': expiryText(account),
+          'Max connections': connectionsText(account),
+        };
+        return {
+          items: [...XTREAM_ROWS],
+          details: XTREAM_ROWS.map(item => details[item]),
+          toggles: XTREAM_ROWS.map(item =>
+            item === 'Include TV channels'
+              ? draft.includeLive ?? true
+              : item === 'Include VOD'
+              ? draft.includeVod ?? true
+              : undefined,
+          ),
+        };
+      }
+      case 'outputFormat': {
+        const format = settings.draft?.outputFormat ?? 'ts';
+        return {
+          items: OUTPUT_FORMATS.map(formatText),
+          checks: OUTPUT_FORMATS.map(f => f === format),
+        };
+      }
+      case 'groups':
+        if (!sourceGroups) {
+          return { items: ['Loading groups…'], headings: [true] };
+        }
+        return {
+          items: kinds.map(kind => kind.label),
+          details: kinds.map(kind => shownText(kind.groups)),
+        };
+      case 'groupKind':
+        if (kindGroups.length === 0) {
+          return { items: ['No groups of this kind.'], headings: [true] };
+        }
+        return {
+          items: kindGroups.map(g => g.name),
+          checks: kindGroups.map(g => !g.hidden),
+        };
+      case 'sorting':
+        return {
+          items: SORTS.map(sort => SORT_LABELS[sort]),
+          checks: SORTS.map(sort => sort === general.playlistSort),
+        };
+      case 'reorder':
+        return {
+          items: ordered.map(s => s.name),
+          details: ordered.map((_, i) =>
+            settings.moving && i === settings.index
+              ? 'Up and Down move it, OK puts it down'
+              : undefined,
+          ),
+        };
     }
   };
+
+  // Each playlist's counts, whenever the Playlists page is shown.
+  const showingPlaylists = area === 'settings' && settings.page === 'playlists';
+  useEffect(() => {
+    if (!showingPlaylists) {
+      return;
+    }
+    for (const source of sources) {
+      if (source.id == null) {
+        continue;
+      }
+      getSourceCounts(source.id)
+        .then(found =>
+          setCounts(previous =>
+            new Map(previous).set(String(source.id), found),
+          ),
+        )
+        .catch(() => {});
+    }
+  }, [showingPlaylists, sources]);
+
+  // Manage groups: the playlist's groups, when the page opens. They're kept
+  // while moving between it and a kind's page.
+  const groupsSourceId =
+    area === 'settings' &&
+    (settings.page === 'groups' || settings.page === 'groupKind')
+      ? settings.source?.id
+      : undefined;
+  useEffect(() => {
+    if (groupsSourceId == null) {
+      return;
+    }
+    setSourceGroups(undefined);
+    getSourceGroups(groupsSourceId)
+      .then(setSourceGroups)
+      .catch(e => {
+        setSourceGroups([]);
+        say(errorMessage(e));
+      });
+  }, [groupsSourceId, say]);
+
+  // Xtream Codes parameters: the account details from the provider, when
+  // the page opens and after its login is changed. They're kept while
+  // typing in a field.
+  const accountSourceId =
+    (area === 'settings' || area === 'form') &&
+    (settings.page === 'xtream' || settings.page === 'outputFormat')
+      ? settings.source?.id
+      : undefined;
+  useEffect(() => {
+    if (accountSourceId == null) {
+      return;
+    }
+    setAccount(undefined);
+    getXtreamAccount(accountSourceId)
+      .then(setAccount)
+      .catch(() => setAccount(null));
+  }, [
+    accountSourceId,
+    settingsSource?.url,
+    settingsSource?.username,
+    settingsSource?.password,
+  ]);
 
   const run = async (
     busyText: string,
@@ -494,22 +894,43 @@ export function Home() {
     if (busy) {
       return;
     }
-    const items = settingsItems();
+    const { items } = settingsList();
     const item = items[settings.index];
     if (settings.page === 'root') {
-      if (item === 'Playlists') {
+      if (item === 'General') {
+        setSettings({ page: 'general', index: 0 });
+      } else if (item === 'Playlists') {
         setSettings({ page: 'playlists', index: 0 });
       } else if (item === 'About') {
         say('IPTelly for TVs, using the IPTelly core.');
       } else {
         say(`${item} isn't in the TV app yet.`);
       }
+    } else if (settings.page === 'general') {
+      chooseGeneral(GENERAL_ITEMS[settings.index]);
     } else if (settings.page === 'playlists') {
-      const source = sources[settings.index];
+      const source = ordered[settings.index];
       if (source) {
         setSettings({ page: 'playlist', index: 0, source });
       } else if (item === 'Add playlist') {
         setArea('form');
+      } else if (item === 'Update all playlists') {
+        run(
+          'Updating all playlists…',
+          async () => {
+            await refreshAll();
+            await reload();
+            setCounts(new Map());
+          },
+          'Updated all playlists.',
+        );
+      } else if (item === 'Playlists sorting') {
+        setSettings({
+          page: 'sorting',
+          index: SORTS.indexOf(general.playlistSort),
+        });
+      } else if (item === 'Reorder playlists') {
+        setSettings({ page: 'reorder', index: 0 });
       } else {
         run(
           'Adding the demo playlist…',
@@ -520,41 +941,299 @@ export function Home() {
           'Added the demo playlist.',
         );
       }
-    } else {
-      const source = settings.source!;
-      const id = source.id!;
-      if (settings.index === 0) {
-        run(
-          `Updating ${source.name}…`,
-          async () => {
-            await refreshSource(id);
-            await reload();
-          },
-          `Updated ${source.name}.`,
-        );
-      } else if (settings.index === 1) {
-        run(
-          `Loading the guide for ${source.name}…`,
-          async () => {
-            await refreshEpg(id);
-            setGuide(new Map());
-          },
-          `Loaded the guide for ${source.name}.`,
-        );
-      } else if (!settings.confirmDelete) {
-        setSettings({ ...settings, confirmDelete: true });
-      } else {
-        run(
-          `Deleting ${source.name}…`,
-          async () => {
-            await deleteSource(id);
-            await reload();
-            setSettings({ page: 'playlists', index: 0 });
-          },
-          `Deleted ${source.name}.`,
-        );
+    } else if (settings.page === 'sorting') {
+      const sort = SORTS[settings.index];
+      updateGeneral({
+        ...general,
+        playlistSort: sort,
+        // Manual starts from the order they're in now.
+        playlistOrder:
+          sort === 'manual' && general.playlistOrder.length === 0
+            ? ordered.map(s => String(s.id))
+            : general.playlistOrder,
+      });
+    } else if (settings.page === 'reorder') {
+      setSettings({ ...settings, moving: !settings.moving });
+    } else if (settings.page === 'interval') {
+      const source = settingsSource!;
+      setUpdates(source, {
+        ...updatesFor(source),
+        hours: UPDATE_HOURS[settings.index],
+      });
+    } else if (settings.page === 'xtream') {
+      chooseXtreamRow(settingsSource!, XTREAM_ROWS[settings.index]);
+    } else if (settings.page === 'outputFormat') {
+      setSettings({
+        ...settings,
+        page: 'xtream',
+        index: XTREAM_ROWS.indexOf('Output format'),
+        draft: {
+          ...(settings.draft ?? settingsSource!),
+          outputFormat: OUTPUT_FORMATS[settings.index],
+        },
+      });
+    } else if (settings.page === 'groups') {
+      if (sourceGroups) {
+        setSettings({
+          page: 'groupKind',
+          index: 0,
+          source: settings.source,
+          kind: settings.index,
+        });
       }
+    } else if (settings.page === 'groupKind') {
+      const group = kindGroups[settings.index];
+      if (group?.id != null) {
+        const hidden = !group.hidden;
+        setGroupHidden(group.id!, hidden)
+          .then(() => {
+            setSourceGroups(all =>
+              all?.map(g => (g === group ? { ...g, hidden } : g)),
+            );
+            setGroupsVersion(v => v + 1);
+          })
+          .catch(e => say(errorMessage(e)));
+      }
+    } else {
+      choosePlaylistRow(settingsSource!, pageRows[settings.index]);
     }
+  };
+
+  const setUpdates = (source: Source, updates: PlaylistUpdates) =>
+    updateGeneral({
+      ...general,
+      playlistUpdates: {
+        ...general.playlistUpdates,
+        [String(source.id)]: updates,
+      },
+    });
+
+  // Saves a change to a playlist's settings.
+  const saveSource = (source: Source, doneText: string) =>
+    run(
+      `Saving ${source.name}…`,
+      async () => {
+        await updateSource(source);
+        await reload();
+      },
+      doneText,
+    );
+
+  // The Xtream Codes parameters page. Its changes are kept in the draft
+  // until Apply changes saves them and updates the playlist.
+  const chooseXtreamRow = (source: Source, choice: XtreamRow) => {
+    const draft = settings.draft ?? source;
+    const edit = (change: Partial<Source>) =>
+      setSettings(s => ({
+        ...s,
+        draft: { ...(s.draft ?? source), ...change },
+      }));
+    const type = (
+      form: Omit<TextForm, 'save'>,
+      change: (value: string | undefined) => Partial<Source>,
+    ) => {
+      setTextSetting({
+        ...form,
+        save: value => edit(change(value || undefined)),
+      });
+      setArea('form');
+    };
+    if (choice === 'Server') {
+      type(
+        {
+          label: 'Server',
+          placeholder: 'e.g. http://example.com:8080',
+          value: serverText(draft.url),
+        },
+        url => ({ url }),
+      );
+    } else if (choice === 'Username') {
+      type(
+        {
+          label: 'Username',
+          placeholder: 'Username',
+          value: draft.username ?? '',
+        },
+        username => ({ username }),
+      );
+    } else if (choice === 'Password') {
+      type(
+        {
+          label: 'Password',
+          placeholder: 'Password',
+          secure: true,
+          value: draft.password ?? '',
+        },
+        password => ({ password }),
+      );
+    } else if (choice === 'Output format') {
+      setSettings({
+        ...settings,
+        page: 'outputFormat',
+        index: Math.max(0, OUTPUT_FORMATS.indexOf(draft.outputFormat ?? 'ts')),
+        draft,
+      });
+    } else if (choice === 'Include TV channels') {
+      edit({ includeLive: !(draft.includeLive ?? true) });
+    } else if (choice === 'Include VOD') {
+      edit({ includeVod: !(draft.includeVod ?? true) });
+    } else if (choice === 'Apply changes') {
+      if (!xtreamChanged(source, draft)) {
+        say('Nothing to apply.');
+        return;
+      }
+      run(
+        `Updating ${source.name}…`,
+        async () => {
+          await updateSource(draft);
+          setSettings(s => ({ ...s, draft: undefined }));
+          await refreshSource(source.id!);
+          await reload();
+          setCounts(new Map());
+        },
+        `Applied the changes and updated ${source.name}.`,
+      );
+    }
+  };
+
+  const choosePlaylistRow = (source: Source, choice: PlaylistRow) => {
+    const id = source.id!;
+    const open = (page: SettingsPage['page'], index = 0) =>
+      setSettings({ page, index, source });
+    if (choice === 'catchup') {
+      say(
+        source.sourceType === SourceType.XTREAM
+          ? "Catch-up comes from the playlist's Xtream Codes archive."
+          : 'Catch-up only works with Xtream Codes playlists for now.',
+      );
+    } else if (choice === 'userAgent') {
+      setTextSetting({
+        label: 'User-Agent',
+        placeholder: 'User-Agent',
+        hint: 'Used to download this playlist and play its streams.',
+        value: source.streamUserAgent ?? source.userAgent ?? '',
+        save: value =>
+          saveSource(
+            {
+              ...source,
+              userAgent: value || undefined,
+              streamUserAgent: value || undefined,
+            },
+            value ? 'Saved the User-Agent.' : 'Cleared the User-Agent.',
+          ),
+      });
+      setArea('form');
+    } else if (choice === 'xtream') {
+      open('xtream');
+    } else if (choice === 'groups') {
+      open('groups');
+    } else if (choice === 'interval') {
+      open(
+        'interval',
+        Math.max(0, UPDATE_HOURS.indexOf(updatesFor(source).hours)),
+      );
+    } else if (choice === 'onStart') {
+      const updates = updatesFor(source);
+      setUpdates(source, { ...updates, onStart: !updates.onStart });
+    } else if (choice === 'use') {
+      run(
+        source.enabled ? `Hiding ${source.name}…` : `Showing ${source.name}…`,
+        async () => {
+          await setSourceEnabled(id, !source.enabled);
+          await reload();
+        },
+        source.enabled
+          ? `${source.name} isn't in use.`
+          : `${source.name} is in use.`,
+      );
+    } else if (choice === 'update') {
+      run(
+        `Updating ${source.name}…`,
+        async () => {
+          await refreshSource(id);
+          await reload();
+          setCounts(new Map());
+        },
+        `Updated ${source.name}.`,
+      );
+    } else if (choice === 'guide') {
+      run(
+        `Loading the guide for ${source.name}…`,
+        async () => {
+          await refreshEpg(id);
+          setGuide(new Map());
+        },
+        `Loaded the guide for ${source.name}.`,
+      );
+    } else if (choice === 'delete' && !settings.confirmDelete) {
+      setSettings({ ...settings, confirmDelete: true });
+    } else if (choice === 'delete') {
+      run(
+        `Deleting ${source.name}…`,
+        async () => {
+          await deleteSource(id);
+          await reload();
+          setSettings({ page: 'playlists', index: 0 });
+        },
+        `Deleted ${source.name}.`,
+      );
+    }
+  };
+
+  const updateGeneral = (next: GeneralSettings) => {
+    setGeneral(next);
+    saveSettings(next).catch(e => say(errorMessage(e)));
+  };
+
+  const chooseGeneral = async (item: GeneralItem) => {
+    if (item.kind === 'text') {
+      setTextSetting({
+        ...item,
+        value: general[item.key],
+        save: value => updateGeneral({ ...general, [item.key]: value }),
+      });
+      setArea('form');
+    } else if (item.kind === 'toggle') {
+      const on = !general[item.key];
+      updateGeneral({ ...general, [item.key]: on });
+      // Starting by itself needs "display over other apps".
+      const autoStart =
+        item.key === 'autoStartOnBoot' || item.key === 'autoStartOnWake';
+      if (on && autoStart && !(await canDrawOverlays())) {
+        say(
+          'Allow IPTelly to display over other apps, so it can start itself.',
+        );
+        if (!(await openOverlaySettings())) {
+          say("This TV doesn't let apps start by themselves.");
+        }
+      }
+    } else if (item.kind === 'backup') {
+      run(
+        'Backing up…',
+        () => exportAppData(BACKUP_PATH),
+        `Backed up to ${BACKUP_PATH}. It includes your playlists' logins.`,
+      );
+    } else {
+      run(
+        'Restoring…',
+        async () => {
+          await importAppData(BACKUP_PATH);
+          // Loads the restored playlists, which brings back their
+          // favourites and history.
+          await refreshAll();
+          await reload();
+        },
+        'Restored your playlists, favourites and settings.',
+      );
+    }
+  };
+
+  const textSettingDone = (value?: string) => {
+    if (textSetting && value !== undefined) {
+      textSetting.save(value);
+    }
+    setTextSetting(undefined);
+    setArea('settings');
   };
 
   const playlistAdded = (source?: Source) => {
@@ -580,7 +1259,7 @@ export function Home() {
     Math.max(0, Math.min(value, count - 1));
 
   const keys: Record<
-    Exclude<Area, 'form' | 'vod'>,
+    Exclude<Area, 'form' | 'vod' | 'search'>,
     (key: Key) => boolean | void
   > = {
     menu: key => {
@@ -592,11 +1271,16 @@ export function Home() {
         const item = MENU_ITEMS[menuIndex];
         if (item.key === 'channels') {
           setArea('groups');
-        } else if (item.key === 'favourites') {
-          setGroupIndex(FAVOURITES_LIST);
-          openList(FAVOURITES_LIST);
-        } else if (item.key === 'movies' || item.key === 'series') {
-          setVodKind(item.key === 'movies' ? MediaType.MOVIE : MediaType.SERIE);
+        } else if (item.key === 'search') {
+          setSearchOpened(true);
+          setArea('search');
+        } else if (
+          item.key === 'movies' ||
+          item.key === 'series' ||
+          item.key === 'favourites'
+        ) {
+          setSeriesToOpen(undefined);
+          setVodSection(item.key);
           setArea('vod');
         } else if (item.key === 'settings') {
           setSettings({ page: 'root', index: 0 });
@@ -605,17 +1289,35 @@ export function Home() {
           say(`${item.label} isn't in the TV app yet.`);
         }
       } else if (key === 'back') {
-        if (!playing) {
+        if (playing) {
+          setArea('fullscreen');
+          return;
+        }
+        // Back here leaves the app, after a second press if that's set.
+        if (!general.confirmExit) {
           return false;
         }
-        setArea('fullscreen');
+        const pressed = Date.now();
+        if (pressed - exitPressed.current < EXIT_CONFIRM_MS) {
+          return false;
+        }
+        exitPressed.current = pressed;
+        say('Press Back again to exit.');
       }
     },
     groups: key => {
+      const current = groups.rows[groupIndex];
       if (key === 'up' || key === 'down') {
-        setGroupIndex(i => clamp(i + (key === 'up' ? -1 : 1), groups.length));
-      } else if (key === 'right' || key === 'select') {
-        openList(groupIndex);
+        setGroupIndex(i =>
+          clamp(i + (key === 'up' ? -1 : 1), groups.rows.length),
+        );
+      } else if (current?.kind === 'playlist' && key === 'select') {
+        groups.toggle(current.sourceId);
+      } else if (
+        current?.kind === 'list' &&
+        (key === 'right' || key === 'select')
+      ) {
+        openList(current.list);
       } else if (key === 'left' || key === 'back') {
         setMenuIndex(CHANNELS);
         setArea('menu');
@@ -635,7 +1337,7 @@ export function Home() {
           focusedBlock &&
           focusedBlocks[focusedBlocks.indexOf(focusedBlock) - 1];
         if (!focusedBlock || focusedBlock.start <= now || !previous) {
-          setGroupIndex(openGroup);
+          setGroupIndex(i => (openRow >= 0 ? openRow : i));
           setArea('groups');
         } else {
           setFocusTime(Math.max(previous.start, now));
@@ -659,27 +1361,84 @@ export function Home() {
           })
           .catch(e => say(errorMessage(e)));
       } else if (key === 'back') {
-        setGroupIndex(openGroup);
+        setGroupIndex(i => (openRow >= 0 ? openRow : i));
         setArea('groups');
       }
     },
     settings: key => {
-      const count = settingsItems().length;
-      if (key === 'up' || key === 'down') {
+      const count = settingsList().items.length;
+      const step = key === 'up' ? -1 : 1;
+      if ((key === 'up' || key === 'down') && settings.moving) {
+        // Reorder playlists: moves the picked-up playlist.
+        const next = movePlaylist(ordered, settings.index, step);
+        updateGeneral({
+          ...general,
+          playlistSort: 'manual',
+          playlistOrder: next.map(s => String(s.id)),
+        });
+        setSettings(s => ({ ...s, index: clamp(s.index + step, count) }));
+      } else if (key === 'up' || key === 'down') {
+        const { headings } = settingsList();
         setSettings(s => ({
           ...s,
-          index: clamp(s.index + (key === 'up' ? -1 : 1), count),
+          index: stepRow(s.index, step, count, headings),
           confirmDelete: false,
         }));
       } else if (key === 'select' || key === 'right') {
         chooseSetting();
+      } else if (key === 'back' && settings.moving) {
+        setSettings({ ...settings, moving: false });
       } else if (key === 'back' || key === 'left') {
-        if (settings.page === 'playlist') {
-          setSettings({ page: 'playlists', index: 0 });
+        const playlistsAt = (action: string) =>
+          ordered.length + PLAYLIST_ACTIONS.indexOf(action);
+        const backTo: Partial<Record<SettingsPage['page'], PlaylistRow>> = {
+          interval: 'interval',
+          xtream: 'xtream',
+          groups: 'groups',
+        };
+        const parent = backTo[settings.page];
+        if (settings.page === 'groupKind') {
+          setSettings({
+            page: 'groups',
+            index: settings.kind ?? 0,
+            source: settings.source,
+          });
+        } else if (settings.page === 'outputFormat') {
+          setSettings({
+            ...settings,
+            page: 'xtream',
+            index: XTREAM_ROWS.indexOf('Output format'),
+          });
+        } else if (parent) {
+          setSettings({
+            page: 'playlist',
+            index: Math.max(0, pageRows.indexOf(parent)),
+            source: settings.source,
+          });
+        } else if (settings.page === 'playlist') {
+          setSettings({
+            page: 'playlists',
+            index: Math.max(0, ordered.indexOf(settingsSource!)),
+          });
+        } else if (settings.page === 'sorting') {
+          setSettings({
+            page: 'playlists',
+            index: playlistsAt('Playlists sorting'),
+          });
+        } else if (settings.page === 'reorder') {
+          setSettings({
+            page: 'playlists',
+            index: playlistsAt('Reorder playlists'),
+          });
         } else if (settings.page === 'playlists') {
           setSettings({
             page: 'root',
             index: SETTINGS_ITEMS.indexOf('Playlists'),
+          });
+        } else if (settings.page === 'general') {
+          setSettings({
+            page: 'root',
+            index: SETTINGS_ITEMS.indexOf('General'),
           });
         } else {
           setArea('menu');
@@ -689,6 +1448,15 @@ export function Home() {
     fullscreen: key => {
       if (playingVod) {
         return vodPlayerKey(key);
+      }
+      // A channel from Favourites or search isn't in the guide's list.
+      if (returnTo) {
+        if (key === 'back' || key === 'left') {
+          backFromPlayer();
+        } else {
+          setInfo(i => key !== 'info' || !i);
+        }
+        return;
       }
       const at = playingRow;
       if (
@@ -732,23 +1500,27 @@ export function Home() {
       setSeekTo(Math.max(0, Math.min(from + step, end)));
       setInfo(true);
     } else if (key === 'back') {
-      setPlaying(undefined);
-      setArea('vod');
+      backFromPlayer();
     } else {
       setInfo(true);
     }
   };
 
   useRemote(
-    key => (area === 'form' || area === 'vod' ? true : keys[area](key)),
-    area !== 'form' && area !== 'vod',
+    key =>
+      area === 'form' || area === 'vod' || area === 'search'
+        ? true
+        : keys[area](key),
+    area !== 'form' && area !== 'vod' && area !== 'search',
   );
 
   // Drawing
 
   const fullscreen = area === 'fullscreen';
   const inVod = area === 'vod';
-  const menuShown = area !== 'guide' && !fullscreen;
+  const inSearch = area === 'search';
+  // Search fills the screen, like TiviMate's.
+  const menuShown = area !== 'guide' && !fullscreen && !inSearch;
   const previewStyle = [
     styles.video,
     fullscreen
@@ -764,7 +1536,8 @@ export function Home() {
   const headers = playing
     ? Object.fromEntries(
         [
-          ['User-Agent', playing.request.userAgent],
+          // Settings > General's User-Agent, if the playlist has none.
+          ['User-Agent', playing.request.userAgent || general.userAgent],
           ['Referer', playing.request.referrer],
           ['Origin', playing.request.origin],
         ].filter(([, value]) => value),
@@ -778,7 +1551,7 @@ export function Home() {
       {area !== 'form' && (
         <Pressable focusable hasTVPreferredFocus style={styles.focusAnchor} />
       )}
-      {!fullscreen && !inVod && (
+      {!fullscreen && !inVod && !inSearch && (
         <>
           <View
             style={[
@@ -826,27 +1599,71 @@ export function Home() {
           )}
         </>
       )}
-      {sourceIds && vodKind != null && (
+      {sourceIds && vodSection && (
         <Vod
-          key={vodKind}
-          kind={vodKind}
+          key={vodSection}
+          section={vodSection}
+          sources={ordered}
           sourceIds={sourceIds}
+          version={groupsVersion}
           active={inVod}
           onExit={closeVod}
           onPlay={playVod}
+          seriesToOpen={seriesToOpen}
           say={say}
         />
       )}
-      {playing && !inVod && (
+      {sourceIds && searchOpened && (
+        <Search
+          sourceIds={sourceIds}
+          active={inSearch}
+          onExit={closeSearch}
+          onOpen={openFromSearch}
+          say={say}
+        />
+      )}
+      {playing && !inVod && !inSearch && (
         <Video
           ref={video}
           key={channelKey(playing.channel)}
-          source={{ uri: playing.request.urls[0], headers }}
+          source={{
+            uri: streamUrl(playing.request.urls[0], general.udpProxy),
+            headers,
+          }}
           style={previewStyle}
           resizeMode="contain"
           paused={paused}
+          // The Home button shrinks it into a corner, if that's set; the
+          // whole screen goes there, so it's shown full screen.
+          enterPictureInPictureOnLeave={general.pipOnHome}
+          onPictureInPictureStatusChanged={({ isActive }) => {
+            if (isActive) {
+              setArea('fullscreen');
+            }
+          }}
           volume={(playing.request.volume ?? 100) / 100}
-          onLoad={data => setDuration(data.duration)}
+          controlsStyles={NO_LIVE_BADGE}
+          onLoad={data => {
+            setDuration(data.duration);
+            setStream(
+              fromAudioTracks(
+                fromVideoTracks(
+                  {
+                    width: data.naturalSize.width,
+                    height: data.naturalSize.height,
+                  },
+                  data.videoTracks,
+                ),
+                data.audioTracks,
+              ),
+            );
+          }}
+          onVideoTracks={data =>
+            setStream(s => fromVideoTracks(s, data.videoTracks))
+          }
+          onAudioTracks={data =>
+            setStream(s => fromAudioTracks(s, data.audioTracks))
+          }
           onProgress={data => setPosition(data.currentTime)}
           onError={() => say(`Couldn't play ${playing.channel.name}.`)}
         />
@@ -868,6 +1685,7 @@ export function Home() {
           current={playingBlocks[playingNow]}
           next={playingBlocks[playingNow + 1]}
           now={now}
+          stream={stream}
         />
       )}
       {menuShown && (
@@ -879,18 +1697,16 @@ export function Home() {
             section={
               area === 'settings' || area === 'form'
                 ? SETTINGS
-                : inVod
-                ? vodKind === MediaType.SERIE
-                  ? SERIES
-                  : MOVIES
+                : inVod && vodSection
+                ? VOD_MENU[vodSection]
                 : CHANNELS
             }
           />
           {!inVod && (
             <GroupList
-              groups={groups}
+              rows={groups.rows}
               index={groupIndex}
-              open={openGroup}
+              open={openRow}
               focused={area === 'groups'}
               width={layout.groupsWidth}
             />
@@ -900,17 +1716,40 @@ export function Home() {
       {area === 'settings' && (
         <SettingsPanel
           title={
-            settings.page === 'root'
-              ? 'Settings'
-              : settings.page === 'playlists'
-              ? 'Playlists'
-              : settings.source?.name ?? ''
+            {
+              root: 'Settings',
+              general: 'General',
+              playlists: 'Playlists',
+              playlist: settingsSource?.name ?? '',
+              sorting: 'Playlists sorting',
+              reorder: 'Reorder playlists',
+              interval: PLAYLIST_ROW_LABELS.interval,
+              xtream: PLAYLIST_ROW_LABELS.xtream,
+              outputFormat: 'Output format',
+              groups: PLAYLIST_ROW_LABELS.groups,
+              groupKind: kinds[settings.kind ?? 0]?.label ?? '',
+            }[settings.page]
           }
         >
-          <SettingsList items={settingsItems()} index={settings.index} />
+          <SettingsList
+            {...settingsList()}
+            index={settings.index}
+            moving={settings.moving}
+          />
         </SettingsPanel>
       )}
-      {area === 'form' && (
+      {area === 'form' && textSetting && (
+        <SettingsPanel title={textSetting.label}>
+          <TextSetting
+            value={textSetting.value}
+            placeholder={textSetting.placeholder}
+            hint={textSetting.hint}
+            secure={textSetting.secure}
+            onDone={textSettingDone}
+          />
+        </SettingsPanel>
+      )}
+      {area === 'form' && !textSetting && (
         <SettingsPanel title="Add playlist">
           <AddPlaylist onDone={playlistAdded} />
         </SettingsPanel>

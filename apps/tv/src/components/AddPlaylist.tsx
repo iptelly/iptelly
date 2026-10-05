@@ -119,7 +119,7 @@ export function AddPlaylist({ onDone }: { onDone: (added?: Source) => void }) {
   );
 }
 
-function Choice({
+export function Choice({
   label,
   chosen,
   onPress,

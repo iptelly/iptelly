@@ -2,7 +2,7 @@
 // on the left, and a grid of posters on the right under the highlighted
 // one's details. A series opens into its seasons and episodes.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import {
   getMediaInfo,
@@ -10,22 +10,25 @@ import {
   setFavorite,
   type Channel,
   type MediaInfo,
+  type Source,
 } from 'react-native-iptelly';
 import { GroupList } from './components/GroupList';
 import { Backdrop, MediaDetails } from './components/MediaDetails';
-import { PosterGrid, SHAPES } from './components/PosterGrid';
+import { PosterGrid, SHAPES, type Shape } from './components/PosterGrid';
 import {
   MediaType,
   PAGE_SIZE,
   channelKey,
   errorMessage,
+  listKey,
+  listMediaType,
   loadChannels,
-  loadGroups,
   loadSeasonEpisodes,
   loadSeasons,
   type ChannelList,
 } from './core';
 import { gridMove } from './media';
+import { usePlaylistGroups, type GroupRow } from './playlistGroups';
 import { useRemote, type Key } from './remote';
 import { colors, fonts, px } from './theme';
 import { RAIL_WIDTH } from './components/Menu';
@@ -97,16 +100,46 @@ function usePaged(
   return { items, setItems, loading };
 }
 
+export type VodSection = 'movies' | 'series' | 'favourites';
+
+const NO_SOURCES: Source[] = [];
+
+// The lists in each section's left column, before the playlists.
+function sectionLists(section: VodSection): ChannelList[] {
+  if (section === 'favourites') {
+    return [
+      { kind: 'favorites', name: 'Channels', mediaType: MediaType.LIVESTREAM },
+      { kind: 'favorites', name: 'Movies', mediaType: MediaType.MOVIE },
+      { kind: 'favorites', name: 'Series', mediaType: MediaType.SERIE },
+    ];
+  }
+  return [
+    { kind: 'favorites', name: 'Favourites' },
+    { kind: 'history', name: 'History' },
+    { kind: 'all', name: `All ${section}` },
+  ];
+}
+
 export function Vod({
-  kind,
+  section,
+  sources,
   sourceIds,
+  version,
   active,
   onExit,
   onPlay,
+  seriesToOpen,
   say,
 }: {
-  kind: typeof MediaType.MOVIE | typeof MediaType.SERIE;
+  // Movies, Series, or the Favourites screen, which has favourite
+  // channels, movies and series instead of playlists.
+  section: VodSection;
+  // A series chosen in search, opened straight into its seasons.
+  seriesToOpen?: Channel;
+  sources: Source[];
   sourceIds: bigint[];
+  // Bumped when playlists change, to load their categories again.
+  version: number;
   // Whether the screen has the remote. It stays mounted while a movie
   // plays, so it's where it was when the movie ends.
   active: boolean;
@@ -114,16 +147,37 @@ export function Vod({
   onPlay: (item: Channel) => void;
   say: (text: string, busy?: boolean) => void;
 }) {
-  const noun = kind === MediaType.MOVIE ? 'movies' : 'series';
+  const favourites = section === 'favourites';
+  // The screen's media type; the Favourites screen's lists have their own.
+  const kind = section === 'series' ? MediaType.SERIE : MediaType.MOVIE;
   const [area, setArea] = useState<Area>('lists');
-  const [lists, setLists] = useState<ChannelList[]>(() => [
-    { kind: 'favorites', name: 'Favourites' },
-    { kind: 'history', name: 'History' },
-    { kind: 'all', name: `All ${noun}` },
-  ]);
-  const fixedLists = 3;
-  const [listIndex, setListIndex] = useState(fixedLists - 1);
-  const [openList, setOpenList] = useState(fixedLists - 1);
+  const fixedLists = useMemo(() => sectionLists(section), [section]);
+  const groups = usePlaylistGroups(
+    favourites ? NO_SOURCES : sources,
+    fixedLists,
+    kind,
+    version,
+    say,
+  );
+  const first = favourites ? 0 : fixedLists.length - 1;
+  const [listIndex, setListIndex] = useState(first);
+  // Kept by value, since collapsing a playlist moves the rows below it.
+  const [list, setList] = useState(fixedLists[first]);
+  const listType = listMediaType(list, kind);
+  const gridShape: Shape =
+    listType === MediaType.LIVESTREAM ? 'logo' : 'poster';
+  const noun =
+    listType === MediaType.LIVESTREAM
+      ? 'channels'
+      : listType === MediaType.SERIE
+      ? 'series'
+      : 'movies';
+  // Favourites and History change as things are watched and favourited,
+  // so they load again each time they're opened.
+  const [reloads, setReloads] = useState(0);
+  const openRow = groups.rows.findIndex(
+    r => r.kind === 'list' && listKey(r.list) === listKey(list),
+  );
   const [itemIndex, setItemIndex] = useState(0);
   const [series, setSeries] = useState<Channel>();
   const [seasons, setSeasons] = useState<Channel[]>([]);
@@ -133,42 +187,45 @@ export function Vod({
   const [info, setInfo] = useState(() => new Map<string, MediaInfo>());
   const infoPending = useRef(new Set<string>());
 
-  // The categories, a page at a time.
-  const groupPaging = useRef({ page: 0, done: false, loading: false });
-  useEffect(() => {
-    const paging = groupPaging.current;
-    if (paging.done || paging.loading || listIndex < lists.length - 6) {
-      return;
+  const openList = (next: ChannelList) => {
+    if (listKey(next) !== listKey(list)) {
+      setList(next);
+      setItemIndex(0);
+    } else if (next.kind === 'favorites' || next.kind === 'history') {
+      setReloads(r => r + 1);
     }
-    paging.loading = true;
-    loadGroups(sourceIds, paging.page + 1, kind)
-      .then(more => {
-        paging.page += 1;
-        paging.done = more.length < PAGE_SIZE;
-        setLists(l => [...l, ...more]);
-      })
-      .catch(e => say(errorMessage(e)))
-      .finally(() => {
-        paging.loading = false;
-      });
-  }, [listIndex, lists.length, sourceIds, kind, say]);
+  };
+
+  // Coming back to the screen shows anything favourited or watched since.
+  useEffect(() => {
+    if (active) {
+      setReloads(r => r + 1);
+    }
+  }, [active]);
 
   // Moving through the categories shows each one after a moment.
+  const highlighted = groups.rows[listIndex];
   useEffect(() => {
-    if (area !== 'lists' || listIndex === openList) {
+    if (
+      area !== 'lists' ||
+      highlighted?.kind !== 'list' ||
+      listKey(highlighted.list) === listKey(list)
+    ) {
       return;
     }
     const timer = setTimeout(() => {
-      setOpenList(listIndex);
+      setList(highlighted.list);
       setItemIndex(0);
     }, 300);
     return () => clearTimeout(timer);
-  }, [area, listIndex, openList]);
+  }, [area, highlighted, list]);
 
-  const list = lists[openList];
+  const changing = list.kind === 'favorites' || list.kind === 'history';
   const loadItems = useCallback(
     (page: number) => loadChannels(list, sourceIds, page, kind),
-    [list, sourceIds, kind],
+    // `reloads` only matters for the lists that change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [list, sourceIds, kind, changing ? reloads : 0],
   );
   const grid = usePaged(loadItems, itemIndex, say);
   const items = grid.items;
@@ -201,7 +258,11 @@ export function Vod({
   const shown = series ?? items[area === 'grid' ? itemIndex : 0];
   const shownKey = shown ? channelKey(shown) : undefined;
   useEffect(() => {
-    if (!shown || !shownKey || info.has(shownKey)) {
+    // Only movies and series have info pages.
+    const hasInfo =
+      shown?.mediaType === MediaType.MOVIE ||
+      shown?.mediaType === MediaType.SERIE;
+    if (!shown || !shownKey || !hasInfo || info.has(shownKey)) {
       return;
     }
     if (infoPending.current.has(shownKey)) {
@@ -240,6 +301,14 @@ export function Vod({
     }
   };
 
+  useEffect(() => {
+    if (seriesToOpen) {
+      openSeries(seriesToOpen);
+    }
+    // Only when a new series is chosen.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seriesToOpen]);
+
   const closeSeries = () => {
     setSeries(undefined);
     setSeasons([]);
@@ -266,13 +335,18 @@ export function Vod({
 
   const keys: Record<Area, (key: Key) => boolean | void> = {
     lists: key => {
+      const current = groups.rows[listIndex];
       if (key === 'up' || key === 'down') {
-        setListIndex(i => clamp(i + (key === 'up' ? -1 : 1), lists.length));
-      } else if (key === 'right' || key === 'select') {
-        if (listIndex !== openList) {
-          setOpenList(listIndex);
-          setItemIndex(0);
-        }
+        setListIndex(i =>
+          clamp(i + (key === 'up' ? -1 : 1), groups.rows.length),
+        );
+      } else if (current?.kind === 'playlist' && key === 'select') {
+        groups.toggle(current.sourceId);
+      } else if (
+        current?.kind === 'list' &&
+        (key === 'right' || key === 'select')
+      ) {
+        openList(current.list);
         setArea('grid');
       } else if (key === 'left' || key === 'back') {
         onExit();
@@ -285,16 +359,16 @@ export function Vod({
           itemIndex,
           key,
           items.length,
-          SHAPES.poster.columns,
+          SHAPES[gridShape].columns,
         );
         if (next !== undefined) {
           setItemIndex(next);
         } else if (key === 'left') {
-          setListIndex(openList);
+          setListIndex(i => (openRow >= 0 ? openRow : i));
           setArea('lists');
         }
       } else if (key === 'select' && item) {
-        if (kind === MediaType.SERIE) {
+        if (item.mediaType === MediaType.SERIE) {
           openSeries(item);
         } else {
           onPlay(item);
@@ -302,7 +376,7 @@ export function Vod({
       } else if (key === 'longSelect' && item) {
         toggleFavourite(item);
       } else if (key === 'back') {
-        setListIndex(openList);
+        setListIndex(i => (openRow >= 0 ? openRow : i));
         setArea('lists');
       }
     },
@@ -347,9 +421,13 @@ export function Vod({
 
   const shownInfo = shownKey ? info.get(shownKey) : undefined;
   const inSeries = series != null;
-  const columnItems: ChannelList[] = inSeries
-    ? seasons.map(s => ({ kind: 'all', name: s.name }))
-    : lists;
+  const columnRows: GroupRow[] = inSeries
+    ? seasons.map(s => ({
+        kind: 'list',
+        list: { kind: 'all', name: s.name },
+        indented: false,
+      }))
+    : groups.rows;
   const gridItems = inSeries ? episodes.items : items;
   const gridLoading = inSeries ? episodes.loading : grid.loading;
   const heading = inSeries ? season?.name : list?.name;
@@ -362,9 +440,9 @@ export function Vod({
         height={BACKDROP_HEIGHT}
       />
       <GroupList
-        groups={columnItems}
+        rows={columnRows}
         index={inSeries ? seasonIndex : listIndex}
-        open={inSeries ? openSeason : openList}
+        open={inSeries ? openSeason : openRow}
         focused={area === 'lists' || area === 'seasons'}
         width={LISTS_WIDTH}
       />
@@ -380,7 +458,7 @@ export function Vod({
             items={gridItems}
             index={inSeries ? episodeIndex : itemIndex}
             focused={area === 'grid' || area === 'episodes'}
-            shape={inSeries ? 'wide' : 'poster'}
+            shape={inSeries ? 'wide' : gridShape}
             height={GRID_HEIGHT}
           />
         ) : (
@@ -388,7 +466,7 @@ export function Vod({
             {gridLoading
               ? 'Loading…'
               : list?.kind === 'favorites'
-              ? `No favourites yet. Hold OK on one to add it.`
+              ? `No favourite ${noun} yet. Hold OK on one to add it.`
               : list?.kind === 'history'
               ? `Nothing watched yet.`
               : `No ${noun} here.`}

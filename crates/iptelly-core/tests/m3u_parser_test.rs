@@ -62,6 +62,9 @@ fn fixture_source() -> Source {
         epg_url: None,
         timezone: None,
         epg_retention_days: None,
+        output_format: None,
+        include_live: None,
+        include_vod: None,
     }
 }
 

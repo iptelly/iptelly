@@ -40,6 +40,9 @@ protected:
   jsi::Value cpp_uniffi_iptelly_ffi_fn_func_delete_source(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
+  jsi::Value cpp_uniffi_iptelly_ffi_fn_func_export_app_data(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
   jsi::Value cpp_uniffi_iptelly_ffi_fn_func_get_epg(jsi::Runtime &rt,
                                                     const jsi::Value &thisVal,
                                                     const jsi::Value *args,
@@ -57,10 +60,22 @@ protected:
   jsi::Value cpp_uniffi_iptelly_ffi_fn_func_get_settings(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
+  jsi::Value cpp_uniffi_iptelly_ffi_fn_func_get_source_counts(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_iptelly_ffi_fn_func_get_source_groups(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
   jsi::Value cpp_uniffi_iptelly_ffi_fn_func_get_sources(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
+  jsi::Value cpp_uniffi_iptelly_ffi_fn_func_get_xtream_account(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
   jsi::Value cpp_uniffi_iptelly_ffi_fn_func_has_adult_pin(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_iptelly_ffi_fn_func_import_app_data(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value cpp_uniffi_iptelly_ffi_fn_func_init(jsi::Runtime &rt,
@@ -95,6 +110,9 @@ protected:
   jsi::Value cpp_uniffi_iptelly_ffi_fn_func_set_favorite(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
+  jsi::Value cpp_uniffi_iptelly_ffi_fn_func_set_group_hidden(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
   jsi::Value cpp_uniffi_iptelly_ffi_fn_func_set_source_enabled(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
@@ -102,6 +120,9 @@ protected:
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value cpp_uniffi_iptelly_ffi_fn_func_update_settings(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_iptelly_ffi_fn_func_update_source(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value cpp_uniffi_iptelly_ffi_fn_func_verify_adult_pin(
@@ -280,6 +301,9 @@ protected:
   jsi::Value cpp_uniffi_iptelly_ffi_checksum_func_delete_source(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
+  jsi::Value cpp_uniffi_iptelly_ffi_checksum_func_export_app_data(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
   jsi::Value cpp_uniffi_iptelly_ffi_checksum_func_get_epg(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
@@ -295,10 +319,22 @@ protected:
   jsi::Value cpp_uniffi_iptelly_ffi_checksum_func_get_settings(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
+  jsi::Value cpp_uniffi_iptelly_ffi_checksum_func_get_source_counts(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_iptelly_ffi_checksum_func_get_source_groups(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
   jsi::Value cpp_uniffi_iptelly_ffi_checksum_func_get_sources(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
+  jsi::Value cpp_uniffi_iptelly_ffi_checksum_func_get_xtream_account(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
   jsi::Value cpp_uniffi_iptelly_ffi_checksum_func_has_adult_pin(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_iptelly_ffi_checksum_func_import_app_data(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value cpp_uniffi_iptelly_ffi_checksum_func_init(
@@ -331,6 +367,9 @@ protected:
   jsi::Value cpp_uniffi_iptelly_ffi_checksum_func_set_favorite(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
+  jsi::Value cpp_uniffi_iptelly_ffi_checksum_func_set_group_hidden(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
   jsi::Value cpp_uniffi_iptelly_ffi_checksum_func_set_source_enabled(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
@@ -338,6 +377,9 @@ protected:
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value cpp_uniffi_iptelly_ffi_checksum_func_update_settings(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_iptelly_ffi_checksum_func_update_source(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value cpp_uniffi_iptelly_ffi_checksum_func_verify_adult_pin(

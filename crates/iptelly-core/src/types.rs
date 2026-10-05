@@ -41,6 +41,14 @@ pub struct Channel {
     pub rating: Option<f64>,
 }
 
+// How many live channels, movies and series a source has.
+#[derive(Clone, PartialEq, Debug, Deserialize, Serialize, Default)]
+pub struct SourceCounts {
+    pub channels: u64,
+    pub movies: u64,
+    pub series: u64,
+}
+
 // A movie or series' details, from its Xtream info page.
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize, Default)]
 pub struct MediaInfo {
@@ -104,6 +112,24 @@ pub struct Source {
     pub timezone: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub epg_retention_days: Option<u16>,
+    // Xtream: what live channels play as, "ts" (MPEG-TS) or "m3u8" (HLS).
+    // Unset is MPEG-TS.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_format: Option<String>,
+    // Xtream: whether an update loads the TV channels, and the movies and
+    // series. Unset is yes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_live: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_vod: Option<bool>,
+}
+
+// An Xtream account's expiry (a Unix time; None for one that doesn't
+// expire) and how many streams it can play at once.
+#[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
+pub struct XtreamAccount {
+    pub expires: Option<i64>,
+    pub max_connections: Option<u32>,
 }
 
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
@@ -116,6 +142,8 @@ pub struct XtreamStatus {
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
 pub struct XtreamStatusUserInfo {
     pub exp_date: serde_json::Value,
+    #[serde(default)]
+    pub max_connections: serde_json::Value,
 }
 
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
