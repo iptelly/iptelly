@@ -1,4 +1,5 @@
-// The app's own settings (Settings > General, and the playlists' order),
+// The app's own settings (Settings > General, and the playlists' order and
+// updates),
 // kept as settings.json in the app's files folder. The Android side reads the
 // auto-start settings from there too (android/.../AutoStart.kt), so their
 // names mustn't change.
@@ -8,7 +9,7 @@ import {
   readFile,
   writeFile,
 } from '@dr.pogodin/react-native-fs';
-import type { PlaylistSort } from './playlists';
+import type { PlaylistSort, PlaylistUpdates } from './playlists';
 
 export type GeneralSettings = {
   autoStartOnBoot: boolean;
@@ -24,6 +25,8 @@ export type GeneralSettings = {
   // (playlist ids).
   playlistSort: PlaylistSort;
   playlistOrder: string[];
+  // Each playlist's update interval and update on app start, by its id.
+  playlistUpdates: Record<string, PlaylistUpdates>;
 };
 
 export const DEFAULT_SETTINGS: GeneralSettings = {
@@ -36,6 +39,7 @@ export const DEFAULT_SETTINGS: GeneralSettings = {
   udpProxy: '',
   playlistSort: 'name',
   playlistOrder: [],
+  playlistUpdates: {},
 };
 
 // The rows of Settings > General, in order.

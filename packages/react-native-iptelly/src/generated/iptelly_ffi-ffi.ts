@@ -182,6 +182,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_iptelly_ffi_fn_func_get_media_info(channel: Uint8Array): bigint;
   ubrn_uniffi_iptelly_ffi_fn_func_get_settings(): bigint;
   ubrn_uniffi_iptelly_ffi_fn_func_get_source_counts(sourceId: bigint): bigint;
+  ubrn_uniffi_iptelly_ffi_fn_func_get_source_groups(sourceId: bigint): bigint;
   ubrn_uniffi_iptelly_ffi_fn_func_get_sources(): bigint;
   ubrn_uniffi_iptelly_ffi_fn_func_has_adult_pin(): bigint;
   ubrn_uniffi_iptelly_ffi_fn_func_import_app_data(path: Uint8Array): bigint;
@@ -203,12 +204,17 @@ interface NativeModuleInterface {
     channelId: bigint,
     favorite: number
   ): bigint;
+  ubrn_uniffi_iptelly_ffi_fn_func_set_group_hidden(
+    groupId: bigint,
+    hidden: number
+  ): bigint;
   ubrn_uniffi_iptelly_ffi_fn_func_set_source_enabled(
     sourceId: bigint,
     enabled: number
   ): bigint;
   ubrn_uniffi_iptelly_ffi_fn_func_source_name_exists(name: Uint8Array): bigint;
   ubrn_uniffi_iptelly_ffi_fn_func_update_settings(settings: Uint8Array): bigint;
+  ubrn_uniffi_iptelly_ffi_fn_func_update_source(source: Uint8Array): bigint;
   ubrn_uniffi_iptelly_ffi_fn_func_verify_adult_pin(pin: Uint8Array): bigint;
   ubrn_ffi_iptelly_ffi_uniffi_contract_version(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_add_source(): number;
@@ -221,6 +227,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_iptelly_ffi_checksum_func_get_media_info(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_get_settings(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_get_source_counts(): number;
+  ubrn_uniffi_iptelly_ffi_checksum_func_get_source_groups(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_get_sources(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_has_adult_pin(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_import_app_data(): number;
@@ -234,9 +241,11 @@ interface NativeModuleInterface {
   ubrn_uniffi_iptelly_ffi_checksum_func_remove_from_history(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_search(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_set_favorite(): number;
+  ubrn_uniffi_iptelly_ffi_checksum_func_set_group_hidden(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_set_source_enabled(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_source_name_exists(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_update_settings(): number;
+  ubrn_uniffi_iptelly_ffi_checksum_func_update_source(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_verify_adult_pin(): number;
   // Codegen call sites use these via `nativeModule().rustbuffer_alloc(...)`
   // and `nativeModule().rustbuffer_free(...)`. The JSI host object exposes

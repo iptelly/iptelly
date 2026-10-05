@@ -16,6 +16,8 @@ export const colors = {
   groups: '#304056',
   settings: '#7d9ccc',
   settingsDark: '#5d7cae',
+  // A heading in the settings panel, which the accent is too close to.
+  settingsHeading: '#00e1ff',
   text: '#ffffff',
   textDim: 'rgba(255, 255, 255, 0.65)',
   textDark: '#33445a',

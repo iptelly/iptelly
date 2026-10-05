@@ -11,7 +11,7 @@ use std::sync::LazyLock;
 
 use iptelly_core::playback::PlayRequest;
 use iptelly_core::types::{
-    AppState, Channel, EPG, Filters, MediaInfo, Settings, Source, SourceCounts,
+    AppState, Channel, EPG, Filters, Group, MediaInfo, Settings, Source, SourceCounts,
 };
 use iptelly_core::{
     api, app_data, m3u, paths, playback, settings, source_type, sql, utils, xmltv, xtream,
@@ -112,6 +112,27 @@ pub async fn delete_source(source_id: i64) -> Result<()> {
 #[uniffi::export(async_runtime = "tokio")]
 pub async fn set_source_enabled(source_id: i64, enabled: bool) -> Result<()> {
     blocking(move || sql::set_source_enabled(enabled, source_id)).await
+}
+
+/// Saves a source's login, address and User-Agents, as `add_source` takes
+/// them. Its channels stay as they are until it's refreshed.
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn update_source(mut source: Source) -> Result<()> {
+    if source.source_type == source_type::XTREAM {
+        source.url = source.url.as_deref().map(xtream::api_url);
+    }
+    blocking(move || sql::update_source(source)).await
+}
+
+/// A source's groups, hidden ones included.
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn get_source_groups(source_id: i64) -> Result<Vec<Group>> {
+    blocking(move || sql::get_source_groups(source_id)).await
+}
+
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn set_group_hidden(group_id: i64, hidden: bool) -> Result<()> {
+    blocking(move || sql::hide_group(group_id, hidden)).await
 }
 
 // Browsing
@@ -280,6 +301,16 @@ pub struct Channel {
     pub tvg_id: Option<String>,
     pub is_adult: bool,
     pub rating: Option<f64>,
+}
+
+#[uniffi::remote(Record)]
+pub struct Group {
+    pub id: Option<i64>,
+    pub name: String,
+    pub image: Option<String>,
+    pub source_id: Option<i64>,
+    pub hidden: Option<bool>,
+    pub media_type: Option<u8>,
 }
 
 #[uniffi::remote(Record)]

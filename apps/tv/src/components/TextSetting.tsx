@@ -6,16 +6,19 @@ import { Choice } from './AddPlaylist';
 
 // Typing one setting, such as the User-Agent, with Android's own focus for
 // the on-screen keyboard. `onDone` gets the new value (empty to clear it),
-// or nothing if Back closed the form.
+// or nothing if Back closed the form. `secure` hides what's typed, for a
+// password.
 export function TextSetting({
   value,
   placeholder,
   hint,
+  secure,
   onDone,
 }: {
   value: string;
   placeholder: string;
   hint?: string;
+  secure?: boolean;
   onDone: (value?: string) => void;
 }) {
   const [text, setText] = useState(value);
@@ -36,6 +39,7 @@ export function TextSetting({
         placeholderTextColor={colors.textDim}
         autoCapitalize="none"
         autoCorrect={false}
+        secureTextEntry={secure}
         hasTVPreferredFocus
         onSubmitEditing={() => onDone(text.trim())}
         style={styles.input}

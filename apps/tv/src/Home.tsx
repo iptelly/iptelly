@@ -12,15 +12,19 @@ import {
   exportAppData,
   getGuide,
   getSourceCounts,
+  getSourceGroups,
   importAppData,
   playRequest,
   refreshAll,
   refreshEpg,
   refreshSource,
   setFavorite,
+  setGroupHidden,
   setSourceEnabled,
+  updateSource,
   type Channel,
   type Epg,
+  type Group,
   type PlayRequest,
   getSources,
   type Source,
@@ -28,11 +32,22 @@ import {
 } from 'react-native-iptelly';
 import { canDrawOverlays, openOverlaySettings } from './appControl';
 import {
+  DEFAULT_UPDATES,
+  PLAYLIST_ROW_LABELS,
   SORT_LABELS,
+  UPDATE_HOURS,
+  catchupText,
   countsText,
+  groupRows,
+  hoursText,
   movePlaylist,
+  playlistRows,
+  playlistsDue,
+  serverText,
   sortPlaylists,
+  type PlaylistRow,
   type PlaylistSort,
+  type PlaylistUpdates,
 } from './playlists';
 import {
   DEFAULT_SETTINGS,
@@ -59,7 +74,11 @@ import { InfoBar } from './components/InfoBar';
 import { MENU_ITEMS, MENU_WIDTH, Menu, RAIL_WIDTH } from './components/Menu';
 import { PlayerBar } from './components/PlayerBar';
 import { useFirstVisible } from './components/scroll';
-import { SettingsList, SettingsPanel } from './components/SettingsPanel';
+import {
+  SettingsList,
+  SettingsPanel,
+  stepRow,
+} from './components/SettingsPanel';
 import {
   FIXED_LISTS,
   MediaType,
@@ -71,6 +90,7 @@ import {
   listKey,
   loadChannels,
   ready,
+  SourceType,
   type ChannelList,
 } from './core';
 import { addDemoPlaylist } from './demo';
@@ -142,9 +162,19 @@ const BACKUP_PATH = `${DownloadDirectoryPath}/iptelly-backup.gz`;
 // exit by second press Back" on.
 const EXIT_CONFIRM_MS = 2000;
 
-// The settings panel's page, and for a playlist's page, the playlist.
+// The settings panel's page, and for a playlist's page and the pages under
+// it, the playlist.
 type SettingsPage = {
-  page: 'root' | 'general' | 'playlists' | 'playlist' | 'sorting' | 'reorder';
+  page:
+    | 'root'
+    | 'general'
+    | 'playlists'
+    | 'playlist'
+    | 'sorting'
+    | 'reorder'
+    | 'interval'
+    | 'xtream'
+    | 'groups';
   index: number;
   source?: Source;
   confirmDelete?: boolean;
@@ -161,6 +191,21 @@ const PLAYLIST_ACTIONS = [
   ...(__DEV__ ? ['Add the demo playlist'] : []),
 ];
 const SORTS: PlaylistSort[] = ['name', 'added', 'manual'];
+const XTREAM_FIELDS = ['Server', 'Username', 'Password'] as const;
+
+// How often playlists are checked for being due an update.
+const UPDATE_CHECK_MS = 60 * 60 * 1000;
+
+// A setting being typed in the form: its title, what's in the box, and
+// what saves it.
+type TextForm = {
+  label: string;
+  placeholder: string;
+  hint?: string;
+  secure?: boolean;
+  value: string;
+  save: (value: string) => void;
+};
 
 type Playing = { channel: Channel; request: PlayRequest; number?: number };
 
@@ -227,9 +272,10 @@ export function Home() {
   });
   // Settings > General.
   const [general, setGeneral] = useState<GeneralSettings>(DEFAULT_SETTINGS);
-  // The General setting being typed in the form, or none for Add playlist.
-  const [textSetting, setTextSetting] =
-    useState<Extract<GeneralItem, { kind: 'text' }>>();
+  // The setting being typed in the form, or none for Add playlist.
+  const [textSetting, setTextSetting] = useState<TextForm>();
+  // Manage groups: the playlist's groups, until they've loaded.
+  const [sourceGroups, setSourceGroups] = useState<Group[]>();
   // When Back was first pressed to exit, with exits confirmed.
   const exitPressed = useRef(0);
   // Settings > Playlists: each playlist's channel, movie and series counts.
@@ -270,6 +316,39 @@ export function Home() {
     setGuide(new Map());
     return ids;
   }, []);
+
+  // Updates the playlists that are due, one at a time, in the background:
+  // when the app starts, and every hour after.
+  const updating = useRef(false);
+  const updateDue = useCallback(
+    async (updates: Record<string, PlaylistUpdates>, starting: boolean) => {
+      if (updating.current) {
+        return;
+      }
+      updating.current = true;
+      try {
+        const due = playlistsDue(
+          await getSources(),
+          updates,
+          seconds(),
+          starting,
+        );
+        for (const source of due) {
+          say(`Updating ${source.name}…`);
+          await refreshSource(source.id!);
+        }
+        if (due.length > 0) {
+          await reload();
+          say(`Updated ${due.map(s => s.name).join(', ')}.`);
+        }
+      } catch (e) {
+        say(errorMessage(e));
+      } finally {
+        updating.current = false;
+      }
+    },
+    [reload, say],
+  );
 
   // The playlists in Settings > Playlists' order, which the groups and
   // categories columns follow too.
@@ -387,11 +466,20 @@ export function Home() {
           await play(last);
           setArea('fullscreen');
         }
+        updateDue(saved.playlistUpdates, true);
       } catch (e) {
         say(errorMessage(e));
       }
     })();
-  }, [reload, play, say]);
+  }, [reload, play, say, updateDue]);
+
+  useEffect(() => {
+    const timer = setInterval(
+      () => updateDue(general.playlistUpdates, false),
+      UPDATE_CHECK_MS,
+    );
+    return () => clearInterval(timer);
+  }, [updateDue, general.playlistUpdates]);
 
   // Moving through the groups shows each one in the guide after a moment.
   const highlighted = groups.rows[groupIndex];
@@ -563,12 +651,19 @@ export function Home() {
     ? sources.find(s => s.id === settings.source!.id) ?? settings.source
     : undefined;
 
-  // The settings page's rows, and their switches, second lines and checks.
+  const updatesFor = (source: Source): PlaylistUpdates =>
+    general.playlistUpdates[String(source.id)] ?? DEFAULT_UPDATES;
+  const pageRows = settingsSource ? playlistRows(settingsSource) : [];
+  const groupList = groupRows(sourceGroups ?? []);
+
+  // The settings page's rows, and their switches, second lines, checks and
+  // headings.
   const settingsList = (): {
     items: string[];
     toggles?: (boolean | undefined)[];
     details?: (string | undefined)[];
     checks?: (boolean | undefined)[];
+    headings?: boolean[];
   } => {
     switch (settings.page) {
       case 'root':
@@ -591,17 +686,67 @@ export function Home() {
             ),
           ],
         };
-      case 'playlist':
+      case 'playlist': {
+        const source = settingsSource!;
+        const updates = updatesFor(source);
         return {
-          items: [
-            'Use this playlist',
-            'Update playlist',
-            'Update guide',
-            settings.confirmDelete
+          items: pageRows.map(item =>
+            item === 'delete' && settings.confirmDelete
               ? 'Press OK again to delete'
-              : 'Delete playlist',
+              : PLAYLIST_ROW_LABELS[item],
+          ),
+          toggles: pageRows.map(item =>
+            item === 'use'
+              ? source.enabled
+              : item === 'onStart'
+              ? updates.onStart
+              : undefined,
+          ),
+          details: pageRows.map(item =>
+            item === 'catchup'
+              ? catchupText(source)
+              : item === 'userAgent'
+              ? source.streamUserAgent || 'Not set'
+              : item === 'interval'
+              ? hoursText(updates.hours)
+              : undefined,
+          ),
+          headings: pageRows.map(item => item === 'updateOptions'),
+        };
+      }
+      case 'interval':
+        return {
+          items: UPDATE_HOURS.map(hoursText),
+          checks: UPDATE_HOURS.map(
+            hours => hours === updatesFor(settingsSource!).hours,
+          ),
+        };
+      case 'xtream': {
+        const source = settingsSource!;
+        return {
+          items: [...XTREAM_FIELDS],
+          details: [
+            serverText(source.url) || 'Not set',
+            source.username || 'Not set',
+            source.password ? '••••••••' : 'Not set',
           ],
-          toggles: [settingsSource?.enabled ?? false],
+        };
+      }
+      case 'groups':
+        if (!sourceGroups) {
+          return { items: ['Loading groups…'], headings: [true] };
+        }
+        if (groupList.length === 0) {
+          return { items: ['This playlist has no groups.'], headings: [true] };
+        }
+        return {
+          items: groupList.map(r =>
+            'heading' in r ? r.heading : r.group.name,
+          ),
+          checks: groupList.map(r =>
+            'group' in r ? !r.group.hidden : undefined,
+          ),
+          headings: groupList.map(r => 'heading' in r),
         };
       case 'sorting':
         return {
@@ -639,6 +784,24 @@ export function Home() {
         .catch(() => {});
     }
   }, [showingPlaylists, sources]);
+
+  // Manage groups: the playlist's groups, when the page opens.
+  const groupsSourceId =
+    area === 'settings' && settings.page === 'groups'
+      ? settings.source?.id
+      : undefined;
+  useEffect(() => {
+    if (groupsSourceId == null) {
+      return;
+    }
+    setSourceGroups(undefined);
+    getSourceGroups(groupsSourceId)
+      .then(setSourceGroups)
+      .catch(e => {
+        setSourceGroups([]);
+        say(errorMessage(e));
+      });
+  }, [groupsSourceId, say]);
 
   const run = async (
     busyText: string,
@@ -718,51 +881,167 @@ export function Home() {
       });
     } else if (settings.page === 'reorder') {
       setSettings({ ...settings, moving: !settings.moving });
-    } else {
+    } else if (settings.page === 'interval') {
       const source = settingsSource!;
-      const id = source.id!;
-      if (settings.index === 0) {
-        run(
-          source.enabled ? `Hiding ${source.name}…` : `Showing ${source.name}…`,
-          async () => {
-            await setSourceEnabled(id, !source.enabled);
-            await reload();
-          },
-          source.enabled
-            ? `${source.name} isn't in use.`
-            : `${source.name} is in use.`,
-        );
-      } else if (settings.index === 1) {
-        run(
-          `Updating ${source.name}…`,
-          async () => {
-            await refreshSource(id);
-            await reload();
-          },
-          `Updated ${source.name}.`,
-        );
-      } else if (settings.index === 2) {
-        run(
-          `Loading the guide for ${source.name}…`,
-          async () => {
-            await refreshEpg(id);
-            setGuide(new Map());
-          },
-          `Loaded the guide for ${source.name}.`,
-        );
-      } else if (!settings.confirmDelete) {
-        setSettings({ ...settings, confirmDelete: true });
-      } else {
-        run(
-          `Deleting ${source.name}…`,
-          async () => {
-            await deleteSource(id);
-            await reload();
-            setSettings({ page: 'playlists', index: 0 });
-          },
-          `Deleted ${source.name}.`,
-        );
+      setUpdates(source, {
+        ...updatesFor(source),
+        hours: UPDATE_HOURS[settings.index],
+      });
+    } else if (settings.page === 'xtream') {
+      chooseXtreamField(settingsSource!, XTREAM_FIELDS[settings.index]);
+    } else if (settings.page === 'groups') {
+      const entry = groupList[settings.index];
+      if (entry && 'group' in entry && entry.group.id != null) {
+        const { group } = entry;
+        const hidden = !group.hidden;
+        setGroupHidden(group.id!, hidden)
+          .then(() => {
+            setSourceGroups(all =>
+              all?.map(g => (g === group ? { ...g, hidden } : g)),
+            );
+            setGroupsVersion(v => v + 1);
+          })
+          .catch(e => say(errorMessage(e)));
       }
+    } else {
+      choosePlaylistRow(settingsSource!, pageRows[settings.index]);
+    }
+  };
+
+  const setUpdates = (source: Source, updates: PlaylistUpdates) =>
+    updateGeneral({
+      ...general,
+      playlistUpdates: {
+        ...general.playlistUpdates,
+        [String(source.id)]: updates,
+      },
+    });
+
+  // Saves a change to a playlist's settings.
+  const saveSource = (source: Source, doneText: string) =>
+    run(
+      `Saving ${source.name}…`,
+      async () => {
+        await updateSource(source);
+        await reload();
+      },
+      doneText,
+    );
+
+  const chooseXtreamField = (
+    source: Source,
+    field: (typeof XTREAM_FIELDS)[number],
+  ) => {
+    const saved = `Saved. Choose Update playlist to load ${source.name} with it.`;
+    if (field === 'Server') {
+      setTextSetting({
+        label: 'Server',
+        placeholder: 'e.g. http://example.com:8080',
+        value: serverText(source.url),
+        save: url => saveSource({ ...source, url: url || undefined }, saved),
+      });
+    } else if (field === 'Username') {
+      setTextSetting({
+        label: 'Username',
+        placeholder: 'Username',
+        value: source.username ?? '',
+        save: username =>
+          saveSource({ ...source, username: username || undefined }, saved),
+      });
+    } else {
+      setTextSetting({
+        label: 'Password',
+        placeholder: 'Password',
+        secure: true,
+        value: source.password ?? '',
+        save: password =>
+          saveSource({ ...source, password: password || undefined }, saved),
+      });
+    }
+    setArea('form');
+  };
+
+  const choosePlaylistRow = (source: Source, choice: PlaylistRow) => {
+    const id = source.id!;
+    const open = (page: SettingsPage['page'], index = 0) =>
+      setSettings({ page, index, source });
+    if (choice === 'catchup') {
+      say(
+        source.sourceType === SourceType.XTREAM
+          ? "Catch-up comes from the playlist's Xtream Codes archive."
+          : 'Catch-up only works with Xtream Codes playlists for now.',
+      );
+    } else if (choice === 'userAgent') {
+      setTextSetting({
+        label: 'User-Agent',
+        placeholder: 'User-Agent',
+        hint: 'Used to download this playlist and play its streams.',
+        value: source.streamUserAgent ?? source.userAgent ?? '',
+        save: value =>
+          saveSource(
+            {
+              ...source,
+              userAgent: value || undefined,
+              streamUserAgent: value || undefined,
+            },
+            value ? 'Saved the User-Agent.' : 'Cleared the User-Agent.',
+          ),
+      });
+      setArea('form');
+    } else if (choice === 'xtream') {
+      open('xtream');
+    } else if (choice === 'groups') {
+      open('groups', 1);
+    } else if (choice === 'interval') {
+      open(
+        'interval',
+        Math.max(0, UPDATE_HOURS.indexOf(updatesFor(source).hours)),
+      );
+    } else if (choice === 'onStart') {
+      const updates = updatesFor(source);
+      setUpdates(source, { ...updates, onStart: !updates.onStart });
+    } else if (choice === 'use') {
+      run(
+        source.enabled ? `Hiding ${source.name}…` : `Showing ${source.name}…`,
+        async () => {
+          await setSourceEnabled(id, !source.enabled);
+          await reload();
+        },
+        source.enabled
+          ? `${source.name} isn't in use.`
+          : `${source.name} is in use.`,
+      );
+    } else if (choice === 'update') {
+      run(
+        `Updating ${source.name}…`,
+        async () => {
+          await refreshSource(id);
+          await reload();
+          setCounts(new Map());
+        },
+        `Updated ${source.name}.`,
+      );
+    } else if (choice === 'guide') {
+      run(
+        `Loading the guide for ${source.name}…`,
+        async () => {
+          await refreshEpg(id);
+          setGuide(new Map());
+        },
+        `Loaded the guide for ${source.name}.`,
+      );
+    } else if (choice === 'delete' && !settings.confirmDelete) {
+      setSettings({ ...settings, confirmDelete: true });
+    } else if (choice === 'delete') {
+      run(
+        `Deleting ${source.name}…`,
+        async () => {
+          await deleteSource(id);
+          await reload();
+          setSettings({ page: 'playlists', index: 0 });
+        },
+        `Deleted ${source.name}.`,
+      );
     }
   };
 
@@ -773,7 +1052,11 @@ export function Home() {
 
   const chooseGeneral = async (item: GeneralItem) => {
     if (item.kind === 'text') {
-      setTextSetting(item);
+      setTextSetting({
+        ...item,
+        value: general[item.key],
+        save: value => updateGeneral({ ...general, [item.key]: value }),
+      });
       setArea('form');
     } else if (item.kind === 'toggle') {
       const on = !general[item.key];
@@ -812,7 +1095,7 @@ export function Home() {
 
   const textSettingDone = (value?: string) => {
     if (textSetting && value !== undefined) {
-      updateGeneral({ ...general, [textSetting.key]: value });
+      textSetting.save(value);
     }
     setTextSetting(undefined);
     setArea('settings');
@@ -960,9 +1243,10 @@ export function Home() {
         });
         setSettings(s => ({ ...s, index: clamp(s.index + step, count) }));
       } else if (key === 'up' || key === 'down') {
+        const { headings } = settingsList();
         setSettings(s => ({
           ...s,
-          index: clamp(s.index + step, count),
+          index: stepRow(s.index, step, count, headings),
           confirmDelete: false,
         }));
       } else if (key === 'select' || key === 'right') {
@@ -972,7 +1256,19 @@ export function Home() {
       } else if (key === 'back' || key === 'left') {
         const playlistsAt = (action: string) =>
           ordered.length + PLAYLIST_ACTIONS.indexOf(action);
-        if (settings.page === 'playlist') {
+        const backTo: Partial<Record<SettingsPage['page'], PlaylistRow>> = {
+          interval: 'interval',
+          xtream: 'xtream',
+          groups: 'groups',
+        };
+        const parent = backTo[settings.page];
+        if (parent) {
+          setSettings({
+            page: 'playlist',
+            index: Math.max(0, pageRows.indexOf(parent)),
+            source: settings.source,
+          });
+        } else if (settings.page === 'playlist') {
           setSettings({
             page: 'playlists',
             index: Math.max(0, ordered.indexOf(settingsSource!)),
@@ -1258,6 +1554,9 @@ export function Home() {
               playlist: settingsSource?.name ?? '',
               sorting: 'Playlists sorting',
               reorder: 'Reorder playlists',
+              interval: PLAYLIST_ROW_LABELS.interval,
+              xtream: PLAYLIST_ROW_LABELS.xtream,
+              groups: PLAYLIST_ROW_LABELS.groups,
             }[settings.page]
           }
         >
@@ -1271,9 +1570,10 @@ export function Home() {
       {area === 'form' && textSetting && (
         <SettingsPanel title={textSetting.label}>
           <TextSetting
-            value={general[textSetting.key]}
+            value={textSetting.value}
             placeholder={textSetting.placeholder}
             hint={textSetting.hint}
+            secure={textSetting.secure}
             onDone={textSettingDone}
           />
         </SettingsPanel>

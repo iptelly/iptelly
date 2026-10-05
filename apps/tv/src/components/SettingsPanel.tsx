@@ -29,9 +29,26 @@ export function SettingsPanel({
   );
 }
 
+// The row Up or Down moves to from `index`, past headings. It stays put at
+// either end.
+export function stepRow(
+  index: number,
+  step: -1 | 1,
+  count: number,
+  headings?: boolean[],
+): number {
+  for (let at = index + step; at >= 0 && at < count; at += step) {
+    if (!headings?.[at]) {
+      return at;
+    }
+  }
+  return index;
+}
+
 // `toggles` gives items an on/off switch (undefined for none), `details` a
 // second line under them, such as a setting's value, and `checks` a check
 // or an empty circle on their left, as for the playlists in use.
+// `headings` marks items that head a section, which can't be chosen.
 // `moving` marks the item being moved, in Reorder playlists.
 export function SettingsList({
   items,
@@ -40,6 +57,7 @@ export function SettingsList({
   toggles,
   details,
   checks,
+  headings,
   moving,
 }: {
   items: string[];
@@ -48,6 +66,7 @@ export function SettingsList({
   toggles?: (boolean | undefined)[];
   details?: (string | undefined)[];
   checks?: (boolean | undefined)[];
+  headings?: boolean[];
   moving?: boolean;
 }) {
   const top = useFirstVisible(index, items.length, VISIBLE_ROWS);
@@ -60,6 +79,13 @@ export function SettingsList({
           const toggle = toggles?.[at];
           const detail = details?.[at];
           const check = checks?.[at];
+          if (headings?.[at]) {
+            return (
+              <Text key={at} numberOfLines={1} style={styles.heading}>
+                {item}
+              </Text>
+            );
+          }
           return (
             <View
               key={at}
@@ -165,6 +191,14 @@ const styles = StyleSheet.create({
   },
   dark: {
     color: colors.textDark,
+  },
+  heading: {
+    paddingHorizontal: px(34),
+    paddingTop: px(24),
+    paddingBottom: px(10),
+    color: colors.settingsHeading,
+    fontSize: fonts.small,
+    fontWeight: 'bold',
   },
   track: {
     width: px(64),

@@ -527,6 +527,59 @@ export async function getSourceCounts(
   }
 }
 
+/**
+ * A source's groups, hidden ones included.
+ */
+export async function getSourceGroups(
+  sourceId: bigint,
+  asyncOpts_?: { signal: AbortSignal }
+): Promise<Array<Group>> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_iptelly_ffi_fn_func_get_source_groups(
+          FfiConverterInt64.lower(sourceId, nativeModule().rustbuffer_alloc)
+        );
+      },
+      /*pollFunc:*/ nativeModule()
+        .ubrn_ffi_iptelly_ffi_rust_future_poll_rust_buffer,
+      /*cancelFunc:*/ nativeModule()
+        .ubrn_ffi_iptelly_ffi_rust_future_cancel_rust_buffer,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_iptelly_ffi_rust_future_complete_rust_buffer,
+      /*freeFunc:*/ nativeModule()
+        .ubrn_ffi_iptelly_ffi_rust_future_free_rust_buffer,
+      // Async returns always go through the JS-side converter: the
+      // FFI symbol returns the future handle (u64), and the user-level
+      // RustBuffer comes back via the shared `rust_future_complete_*`
+      // export. The bytes the runtime hands back must be deserialized
+      // here using the per-callable return-type converter.
+      // Borrowed view over foreign memory: the call site owns the free,
+      // as on the sync paths. Unconditional — a no-op where buffers are
+      // already JS-owned.
+      /*liftFunc:*/ (__rb) => {
+        try {
+          return FfiConverterSequenceTypeGroup.lift(__rb);
+        } finally {
+          nativeModule().rustbuffer_free(__rb);
+        }
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeIptellyError.lift.bind(
+        FfiConverterTypeIptellyError
+      )
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
 export async function getSources(asyncOpts_?: {
   signal: AbortSignal;
 }): Promise<Array<Source>> /*throws*/ {
@@ -1042,6 +1095,42 @@ export async function setFavorite(
   }
 }
 
+export async function setGroupHidden(
+  groupId: bigint,
+  hidden: boolean,
+  asyncOpts_?: { signal: AbortSignal }
+): Promise<void> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_iptelly_ffi_fn_func_set_group_hidden(
+          FfiConverterInt64.lower(groupId, nativeModule().rustbuffer_alloc),
+          FfiConverterBool.lower(hidden, nativeModule().rustbuffer_alloc)
+        );
+      },
+      /*pollFunc:*/ nativeModule().ubrn_ffi_iptelly_ffi_rust_future_poll_void,
+      /*cancelFunc:*/ nativeModule()
+        .ubrn_ffi_iptelly_ffi_rust_future_cancel_void,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_iptelly_ffi_rust_future_complete_void,
+      /*freeFunc:*/ nativeModule().ubrn_ffi_iptelly_ffi_rust_future_free_void,
+      /*liftFunc:*/ (_v) => {},
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeIptellyError.lift.bind(
+        FfiConverterTypeIptellyError
+      )
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
 export async function setSourceEnabled(
   sourceId: bigint,
   enabled: boolean,
@@ -1130,6 +1219,44 @@ export async function updateSettings(
             settings,
             nativeModule().rustbuffer_alloc
           )
+        );
+      },
+      /*pollFunc:*/ nativeModule().ubrn_ffi_iptelly_ffi_rust_future_poll_void,
+      /*cancelFunc:*/ nativeModule()
+        .ubrn_ffi_iptelly_ffi_rust_future_cancel_void,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_iptelly_ffi_rust_future_complete_void,
+      /*freeFunc:*/ nativeModule().ubrn_ffi_iptelly_ffi_rust_future_free_void,
+      /*liftFunc:*/ (_v) => {},
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeIptellyError.lift.bind(
+        FfiConverterTypeIptellyError
+      )
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+/**
+ * Saves a source's login, address and User-Agents, as `add_source` takes
+ * them. Its channels stay as they are until it's refreshed.
+ */
+export async function updateSource(
+  source: Source,
+  asyncOpts_?: { signal: AbortSignal }
+): Promise<void> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_iptelly_ffi_fn_func_update_source(
+          FfiConverterTypeSource.lower(source, nativeModule().rustbuffer_alloc)
         );
       },
       /*pollFunc:*/ nativeModule().ubrn_ffi_iptelly_ffi_rust_future_poll_void,
@@ -1507,6 +1634,65 @@ const FfiConverterTypeFilters = (() => {
         FfiConverterBool.allocationSize(value.useKeywords) +
         FfiConverterUInt8.allocationSize(value.sort) +
         FfiConverterOptionalInt64.allocationSize(value.season)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type Group = {
+  id?: bigint;
+  name: string;
+  image?: string;
+  sourceId?: bigint;
+  hidden?: boolean;
+  mediaType?: number;
+};
+
+/**
+ * Generated factory for {@link Group} record objects.
+ */
+export const Group = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<Group, ReturnType<typeof defaults>>(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<Group>,
+  });
+})();
+
+const FfiConverterTypeGroup = (() => {
+  type TypeName = Group;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    readFromCursor(c: Cursor): TypeName {
+      return {
+        id: FfiConverterOptionalInt64.readFromCursor(c),
+        name: FfiConverterString.readFromCursor(c),
+        image: FfiConverterOptionalString.readFromCursor(c),
+        sourceId: FfiConverterOptionalInt64.readFromCursor(c),
+        hidden: FfiConverterOptionalBoolean.readFromCursor(c),
+        mediaType: FfiConverterOptionalUInt8.readFromCursor(c),
+      };
+    }
+    writeIntoCursor(value: TypeName, c: Cursor): void {
+      FfiConverterOptionalInt64.writeIntoCursor(value.id, c);
+      FfiConverterString.writeIntoCursor(value.name, c);
+      FfiConverterOptionalString.writeIntoCursor(value.image, c);
+      FfiConverterOptionalInt64.writeIntoCursor(value.sourceId, c);
+      FfiConverterOptionalBoolean.writeIntoCursor(value.hidden, c);
+      FfiConverterOptionalUInt8.writeIntoCursor(value.mediaType, c);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterOptionalInt64.allocationSize(value.id) +
+        FfiConverterString.allocationSize(value.name) +
+        FfiConverterOptionalString.allocationSize(value.image) +
+        FfiConverterOptionalInt64.allocationSize(value.sourceId) +
+        FfiConverterOptionalBoolean.allocationSize(value.hidden) +
+        FfiConverterOptionalUInt8.allocationSize(value.mediaType)
       );
     }
   }
@@ -2037,11 +2223,11 @@ const FfiConverterOptionalBytes = new FfiConverterOptional(
   FfiConverterArrayBuffer
 );
 
-// FfiConverter for Array<string>
-const FfiConverterSequenceString = new FfiConverterArray(FfiConverterString);
-
 // FfiConverter for number | undefined
 const FfiConverterOptionalUInt8 = new FfiConverterOptional(FfiConverterUInt8);
+
+// FfiConverter for Array<string>
+const FfiConverterSequenceString = new FfiConverterArray(FfiConverterString);
 
 // FfiConverter for number | undefined
 const FfiConverterOptionalUInt16 = new FfiConverterOptional(FfiConverterUInt16);
@@ -2057,6 +2243,11 @@ const FfiConverterSequenceTypeChannel = new FfiConverterArray(
 // FfiConverter for Array<Array<Epg>>
 const FfiConverterSequenceSequenceTypeEPG = new FfiConverterArray(
   FfiConverterSequenceTypeEPG
+);
+
+// FfiConverter for Array<Group>
+const FfiConverterSequenceTypeGroup = new FfiConverterArray(
+  FfiConverterTypeGroup
 );
 
 // FfiConverter for Array<Source>
@@ -2164,6 +2355,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_iptelly_ffi_checksum_func_get_source_groups() !==
+    3773
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_iptelly_ffi_checksum_func_get_source_groups'
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_iptelly_ffi_checksum_func_get_sources() !== 1021
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
@@ -2259,6 +2458,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_iptelly_ffi_checksum_func_set_group_hidden() !==
+    46683
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_iptelly_ffi_checksum_func_set_group_hidden'
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_iptelly_ffi_checksum_func_set_source_enabled() !==
     35182
   ) {
@@ -2283,6 +2490,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_iptelly_ffi_checksum_func_update_source() !==
+    35825
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_iptelly_ffi_checksum_func_update_source'
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_iptelly_ffi_checksum_func_verify_adult_pin() !==
     28497
   ) {
@@ -2298,6 +2513,7 @@ export default Object.freeze({
     FfiConverterTypeChannel,
     FfiConverterTypeEPG,
     FfiConverterTypeFilters,
+    FfiConverterTypeGroup,
     FfiConverterTypeIptellyError,
     FfiConverterTypeMediaInfo,
     FfiConverterTypePlayRequest,

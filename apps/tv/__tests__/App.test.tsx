@@ -39,7 +39,14 @@ jest.mock('react-native-iptelly', () => {
     init: jest.fn(() => Promise.resolve()),
     getSources: jest.fn(() =>
       Promise.resolve([
-        { id: 1n, name: 'My playlist', enabled: true, sourceType: 2 },
+        {
+          id: 1n,
+          name: 'My playlist',
+          enabled: true,
+          sourceType: 2,
+          // Just updated, so it isn't due an update.
+          lastUpdated: BigInt(Math.floor(Date.now() / 1000)),
+        },
       ]),
     ),
     search: jest.fn(
@@ -63,6 +70,14 @@ jest.mock('react-native-iptelly', () => {
       Promise.resolve({ channels: 2n, movies: 1n, series: 0n }),
     ),
     setSourceEnabled: jest.fn(() => Promise.resolve()),
+    refreshSource: jest.fn(() => Promise.resolve()),
+    getSourceGroups: jest.fn(() =>
+      Promise.resolve([
+        { id: 10n, name: 'News', mediaType: 0, hidden: false },
+        { id: 11n, name: 'Films', mediaType: 1, hidden: true },
+      ]),
+    ),
+    setGroupHidden: jest.fn(() => Promise.resolve()),
     getMediaInfo: jest.fn(() =>
       Promise.resolve({ year: '2025', genre: 'Thriller', plot: 'A plot.' }),
     ),
@@ -352,6 +367,55 @@ test('Settings > Playlists shows each playlist with its counts', async () => {
   expect(text(renderer)).toContain('Use this playlist');
   await press('select');
   expect(core.setSourceEnabled).toHaveBeenCalledWith(1n, false);
+
+  await ReactTestRenderer.act(async () => renderer.unmount());
+});
+
+test("a playlist's page manages its groups and update interval", async () => {
+  const core = jest.requireMock('react-native-iptelly');
+  const fs = jest.requireMock('@dr.pogodin/react-native-fs');
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    renderer = ReactTestRenderer.create(<App />);
+  });
+  await settle();
+  // Not due an update when the app started.
+  expect(core.refreshSource).not.toHaveBeenCalled();
+
+  // Settings, Playlists, then the playlist.
+  await press('back');
+  for (const key of ['down', 'down', 'down', 'down', 'select'] as const) {
+    await press(key);
+  }
+  await press('down');
+  await press('select');
+  await press('select');
+  expect(text(renderer)).toContain('Xtream Codes parameters');
+  expect(text(renderer)).toContain('Update options');
+  expect(text(renderer)).toContain('Update interval, hours');
+
+  // Down past Catch-up, User-Agent and Xtream Codes parameters to Manage
+  // groups, where OK hides the highlighted group.
+  for (const key of ['down', 'down', 'down', 'down', 'select'] as const) {
+    await press(key);
+  }
+  expect(core.getSourceGroups).toHaveBeenCalledWith(1n);
+  expect(text(renderer)).toContain('Movies');
+  await press('select');
+  expect(core.setGroupHidden).toHaveBeenCalledWith(10n, true);
+
+  // Back to the page, then down past the Update options heading to the
+  // interval, and from 24 hours to 48.
+  await press('back');
+  await press('down');
+  await press('select');
+  await press('down');
+  await press('select');
+  expect(fs.writeFile).toHaveBeenCalledWith(
+    '/data/settings.json',
+    expect.stringContaining('"playlistUpdates":{"1":{"hours":48'),
+    'utf8',
+  );
 
   await ReactTestRenderer.act(async () => renderer.unmount());
 });

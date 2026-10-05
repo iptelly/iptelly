@@ -158,7 +158,7 @@ fn epg_key(channel: &Channel) -> Result<(i64, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::SourceCounts;
+    use crate::types::{Source, SourceCounts};
     use crate::{media_type, test_db};
 
     fn xmltv_time(timestamp: i64) -> String {
@@ -230,6 +230,35 @@ mod tests {
                 series: 1
             }
         );
+    }
+
+    #[test]
+    fn lists_a_sources_groups_hidden_or_not() {
+        let _db = test_db::lock();
+        let source = test_db::add_source("groups");
+        let other = test_db::add_source("other groups");
+        let group = |name: &str, source: &Source| Group {
+            id: None,
+            name: name.to_string(),
+            image: None,
+            source_id: source.id,
+            hidden: None,
+            media_type: None,
+        };
+        let news = sql::do_tx(|tx| {
+            sql::add_custom_group(tx, group("Sport", &source))?;
+            sql::add_custom_group(tx, group("Elsewhere", &other))?;
+            sql::add_custom_group(tx, group("News", &source))
+        })
+        .unwrap();
+        sql::hide_group(news, true).unwrap();
+
+        let groups = sql::get_source_groups(source.id.unwrap()).unwrap();
+        let found: Vec<_> = groups
+            .iter()
+            .map(|g| (g.name.as_str(), g.hidden.unwrap_or(false)))
+            .collect();
+        assert_eq!(found, [("News", true), ("Sport", false)]);
     }
 
     #[test]

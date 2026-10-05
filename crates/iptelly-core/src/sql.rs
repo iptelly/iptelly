@@ -1940,6 +1940,23 @@ pub fn get_all_groups() -> Result<Vec<Group>> {
     Ok(result)
 }
 
+// One source's groups, hidden ones included, for the TV app's Manage groups.
+pub fn get_source_groups(source_id: i64) -> Result<Vec<Group>> {
+    let sql = get_conn()?;
+    let result = sql
+        .prepare(
+            r#"
+        SELECT * FROM groups
+        WHERE source_id = ?
+        ORDER BY media_type, name
+    "#,
+        )?
+        .query_map(params![source_id], row_to_custom_group)?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(result)
+}
+
 pub fn set_groups_hidden(ids: &[i64], hidden: bool) -> Result<()> {
     if ids.is_empty() {
         return Ok(());
