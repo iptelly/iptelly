@@ -277,6 +277,51 @@ test('searches movies and channels and plays a result', async () => {
   await ReactTestRenderer.act(async () => renderer.unmount());
 });
 
+test('Settings > General saves its switches, and can confirm exits', async () => {
+  const fs = jest.requireMock('@dr.pogodin/react-native-fs');
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    renderer = ReactTestRenderer.create(<App />);
+  });
+  await settle();
+
+  // From the groups to the menu, down to Settings, then General.
+  await press('back');
+  for (const key of ['down', 'down', 'down', 'down', 'select'] as const) {
+    await press(key);
+  }
+  await press('select');
+  expect(text(renderer)).toContain('Auto start app on boot');
+  expect(text(renderer)).toContain('Not set');
+
+  // Down to "Confirm exit by second press Back" and turn it on.
+  for (const key of ['down', 'down', 'down', 'down', 'select'] as const) {
+    await press(key);
+  }
+  expect(fs.writeFile).toHaveBeenCalledWith(
+    '/data/settings.json',
+    expect.stringContaining('"confirmExit":true'),
+    'utf8',
+  );
+
+  // Back to the menu. With nothing playing, the first Back there asks for
+  // a second, which leaves the app (returns false to Android).
+  await press('back');
+  await press('back');
+  let handled: boolean | void = false;
+  await ReactTestRenderer.act(async () => {
+    handled = mockRemote.press!('back');
+  });
+  expect(handled).not.toBe(false);
+  expect(text(renderer)).toContain('Press Back again to exit.');
+  await ReactTestRenderer.act(async () => {
+    handled = mockRemote.press!('back');
+  });
+  expect(handled).toBe(false);
+
+  await ReactTestRenderer.act(async () => renderer.unmount());
+});
+
 test('browses the movies and plays one', async () => {
   const core = jest.requireMock('react-native-iptelly');
   let renderer!: ReactTestRenderer.ReactTestRenderer;

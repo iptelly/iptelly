@@ -11,7 +11,9 @@ use std::sync::LazyLock;
 
 use iptelly_core::playback::PlayRequest;
 use iptelly_core::types::{AppState, Channel, EPG, Filters, MediaInfo, Settings, Source};
-use iptelly_core::{api, m3u, paths, playback, settings, source_type, sql, utils, xmltv, xtream};
+use iptelly_core::{
+    api, app_data, m3u, paths, playback, settings, source_type, sql, utils, xmltv, xtream,
+};
 use tokio::sync::Mutex;
 
 uniffi::setup_scaffolding!();
@@ -206,6 +208,20 @@ pub async fn get_epg_schedule(channel: Channel) -> Result<Vec<EPG>> {
 }
 
 // Settings
+
+/// Writes a backup of the playlists, favourites, history and settings to
+/// `path`. It includes the playlists' logins.
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn export_app_data(path: String) -> Result<()> {
+    blocking(move || app_data::export_app_data(path)).await
+}
+
+/// Restores a backup from `path`. Restored playlists' channels load, and
+/// their favourites and history come back, when they're next updated.
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn import_app_data(path: String) -> Result<()> {
+    blocking(move || app_data::import_app_data(path)).await
+}
 
 #[uniffi::export(async_runtime = "tokio")]
 pub async fn get_settings() -> Result<Settings> {

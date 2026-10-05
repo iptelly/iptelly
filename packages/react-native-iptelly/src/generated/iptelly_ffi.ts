@@ -154,6 +154,44 @@ export async function deleteSource(
 }
 
 /**
+ * Writes a backup of the playlists, favourites, history and settings to
+ * `path`. It includes the playlists' logins.
+ */
+export async function exportAppData(
+  path: string,
+  asyncOpts_?: { signal: AbortSignal }
+): Promise<void> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_iptelly_ffi_fn_func_export_app_data(
+          FfiConverterString.lower(path, nativeModule().rustbuffer_alloc)
+        );
+      },
+      /*pollFunc:*/ nativeModule().ubrn_ffi_iptelly_ffi_rust_future_poll_void,
+      /*cancelFunc:*/ nativeModule()
+        .ubrn_ffi_iptelly_ffi_rust_future_cancel_void,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_iptelly_ffi_rust_future_complete_void,
+      /*freeFunc:*/ nativeModule().ubrn_ffi_iptelly_ffi_rust_future_free_void,
+      /*liftFunc:*/ (_v) => {},
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeIptellyError.lift.bind(
+        FfiConverterTypeIptellyError
+      )
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+/**
  * The channel's programmes between two Unix timestamps.
  */
 export async function getEpg(
@@ -504,6 +542,44 @@ export async function hasAdultPin(asyncOpts_?: {
       // export. The bytes the runtime hands back must be deserialized
       // here using the per-callable return-type converter.
       /*liftFunc:*/ FfiConverterBool.lift.bind(FfiConverterBool),
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeIptellyError.lift.bind(
+        FfiConverterTypeIptellyError
+      )
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+/**
+ * Restores a backup from `path`. Restored playlists' channels load, and
+ * their favourites and history come back, when they're next updated.
+ */
+export async function importAppData(
+  path: string,
+  asyncOpts_?: { signal: AbortSignal }
+): Promise<void> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_iptelly_ffi_fn_func_import_app_data(
+          FfiConverterString.lower(path, nativeModule().rustbuffer_alloc)
+        );
+      },
+      /*pollFunc:*/ nativeModule().ubrn_ffi_iptelly_ffi_rust_future_poll_void,
+      /*cancelFunc:*/ nativeModule()
+        .ubrn_ffi_iptelly_ffi_rust_future_cancel_void,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_iptelly_ffi_rust_future_complete_void,
+      /*freeFunc:*/ nativeModule().ubrn_ffi_iptelly_ffi_rust_future_free_void,
+      /*liftFunc:*/ (_v) => {},
       /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
       /*asyncOpts:*/ asyncOpts_,
       /*errorHandler:*/ FfiConverterTypeIptellyError.lift.bind(
@@ -1932,6 +2008,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_iptelly_ffi_checksum_func_export_app_data() !==
+    26851
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_iptelly_ffi_checksum_func_export_app_data'
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_iptelly_ffi_checksum_func_get_epg() !== 30606
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
@@ -1982,6 +2066,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_iptelly_ffi_checksum_func_has_adult_pin'
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_iptelly_ffi_checksum_func_import_app_data() !==
+    52055
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_iptelly_ffi_checksum_func_import_app_data'
     );
   }
   if (nativeModule().ubrn_uniffi_iptelly_ffi_checksum_func_init() !== 14030) {

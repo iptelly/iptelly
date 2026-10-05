@@ -167,6 +167,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_iptelly_ffi_fn_func_add_source(source: Uint8Array): bigint;
   ubrn_uniffi_iptelly_ffi_fn_func_add_to_history(channelId: bigint): bigint;
   ubrn_uniffi_iptelly_ffi_fn_func_delete_source(sourceId: bigint): bigint;
+  ubrn_uniffi_iptelly_ffi_fn_func_export_app_data(path: Uint8Array): bigint;
   ubrn_uniffi_iptelly_ffi_fn_func_get_epg(
     channel: Uint8Array,
     start: bigint,
@@ -182,6 +183,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_iptelly_ffi_fn_func_get_settings(): bigint;
   ubrn_uniffi_iptelly_ffi_fn_func_get_sources(): bigint;
   ubrn_uniffi_iptelly_ffi_fn_func_has_adult_pin(): bigint;
+  ubrn_uniffi_iptelly_ffi_fn_func_import_app_data(path: Uint8Array): bigint;
   ubrn_uniffi_iptelly_ffi_fn_func_init(
     dataDir: Uint8Array,
     cacheDir: Uint8Array
@@ -211,6 +213,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_iptelly_ffi_checksum_func_add_source(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_add_to_history(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_delete_source(): number;
+  ubrn_uniffi_iptelly_ffi_checksum_func_export_app_data(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_get_epg(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_get_epg_schedule(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_get_guide(): number;
@@ -218,6 +221,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_iptelly_ffi_checksum_func_get_settings(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_get_sources(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_has_adult_pin(): number;
+  ubrn_uniffi_iptelly_ffi_checksum_func_import_app_data(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_init(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_load_episodes(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_lock_adult_content(): number;

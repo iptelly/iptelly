@@ -5,11 +5,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Video, { type VideoRef } from 'react-native-video';
+import { DownloadDirectoryPath } from '@dr.pogodin/react-native-fs';
 import {
   addToHistory,
   deleteSource,
+  exportAppData,
   getGuide,
+  importAppData,
   playRequest,
+  refreshAll,
   refreshEpg,
   refreshSource,
   setFavorite,
@@ -19,7 +23,19 @@ import {
   getSources,
   type Source,
 } from 'react-native-iptelly';
+import { canDrawOverlays, openOverlaySettings } from './appControl';
+import {
+  DEFAULT_SETTINGS,
+  GENERAL_ITEMS,
+  generalList,
+  loadSettings,
+  saveSettings,
+  streamUrl,
+  type GeneralItem,
+  type GeneralSettings,
+} from './appSettings';
 import { AddPlaylist } from './components/AddPlaylist';
+import { TextSetting } from './components/TextSetting';
 import { Details } from './components/Details';
 import {
   GUIDE_TOP,
@@ -109,9 +125,16 @@ const SETTINGS_ITEMS = [
   'About',
 ];
 
+// Where Settings > General > Back up data saves, and Restore data reads.
+const BACKUP_PATH = `${DownloadDirectoryPath}/iptelly-backup.gz`;
+
+// How long a first Back press waits for a second to exit, with "Confirm
+// exit by second press Back" on.
+const EXIT_CONFIRM_MS = 2000;
+
 // The settings panel's page, and for a playlist's page, the playlist.
 type SettingsPage = {
-  page: 'root' | 'playlists' | 'playlist';
+  page: 'root' | 'general' | 'playlists' | 'playlist';
   index: number;
   source?: Source;
   confirmDelete?: boolean;
@@ -180,6 +203,13 @@ export function Home() {
     page: 'root',
     index: 0,
   });
+  // Settings > General.
+  const [general, setGeneral] = useState<GeneralSettings>(DEFAULT_SETTINGS);
+  // The General setting being typed in the form, or none for Add playlist.
+  const [textSetting, setTextSetting] =
+    useState<Extract<GeneralItem, { kind: 'text' }>>();
+  // When Back was first pressed to exit, with exits confirmed.
+  const exitPressed = useRef(0);
   const [toast, setToast] = useState<{ text: string; busy?: boolean }>();
   const busy = toast?.busy === true;
 
@@ -310,6 +340,8 @@ export function Home() {
   useEffect(() => {
     (async () => {
       try {
+        const saved = await loadSettings();
+        setGeneral(saved);
         const ids = await reload();
         if (ids.length === 0) {
           setArea('menu');
@@ -317,7 +349,9 @@ export function Home() {
           say('Add a playlist in Settings, then Playlists.');
           return;
         }
-        const last = await lastWatched(ids);
+        const last = saved.lastChannelOnStart
+          ? await lastWatched(ids)
+          : undefined;
         if (last) {
           await play(last);
           setArea('fullscreen');
@@ -497,6 +531,8 @@ export function Home() {
     switch (settings.page) {
       case 'root':
         return SETTINGS_ITEMS;
+      case 'general':
+        return GENERAL_ITEMS.map(item => item.label);
       case 'playlists':
         return [
           ...sources.map(s => s.name),
@@ -535,13 +571,17 @@ export function Home() {
     const items = settingsItems();
     const item = items[settings.index];
     if (settings.page === 'root') {
-      if (item === 'Playlists') {
+      if (item === 'General') {
+        setSettings({ page: 'general', index: 0 });
+      } else if (item === 'Playlists') {
         setSettings({ page: 'playlists', index: 0 });
       } else if (item === 'About') {
         say('IPTelly for TVs, using the IPTelly core.');
       } else {
         say(`${item} isn't in the TV app yet.`);
       }
+    } else if (settings.page === 'general') {
+      chooseGeneral(GENERAL_ITEMS[settings.index]);
     } else if (settings.page === 'playlists') {
       const source = sources[settings.index];
       if (source) {
@@ -593,6 +633,58 @@ export function Home() {
         );
       }
     }
+  };
+
+  const updateGeneral = (next: GeneralSettings) => {
+    setGeneral(next);
+    saveSettings(next).catch(e => say(errorMessage(e)));
+  };
+
+  const chooseGeneral = async (item: GeneralItem) => {
+    if (item.kind === 'text') {
+      setTextSetting(item);
+      setArea('form');
+    } else if (item.kind === 'toggle') {
+      const on = !general[item.key];
+      updateGeneral({ ...general, [item.key]: on });
+      // Starting by itself needs "display over other apps".
+      const autoStart =
+        item.key === 'autoStartOnBoot' || item.key === 'autoStartOnWake';
+      if (on && autoStart && !(await canDrawOverlays())) {
+        say(
+          'Allow IPTelly to display over other apps, so it can start itself.',
+        );
+        if (!(await openOverlaySettings())) {
+          say("This TV doesn't let apps start by themselves.");
+        }
+      }
+    } else if (item.kind === 'backup') {
+      run(
+        'Backing up…',
+        () => exportAppData(BACKUP_PATH),
+        `Backed up to ${BACKUP_PATH}. It includes your playlists' logins.`,
+      );
+    } else {
+      run(
+        'Restoring…',
+        async () => {
+          await importAppData(BACKUP_PATH);
+          // Loads the restored playlists, which brings back their
+          // favourites and history.
+          await refreshAll();
+          await reload();
+        },
+        'Restored your playlists, favourites and settings.',
+      );
+    }
+  };
+
+  const textSettingDone = (value?: string) => {
+    if (textSetting && value !== undefined) {
+      updateGeneral({ ...general, [textSetting.key]: value });
+    }
+    setTextSetting(undefined);
+    setArea('settings');
   };
 
   const playlistAdded = (source?: Source) => {
@@ -648,10 +740,20 @@ export function Home() {
           say(`${item.label} isn't in the TV app yet.`);
         }
       } else if (key === 'back') {
-        if (!playing) {
+        if (playing) {
+          setArea('fullscreen');
+          return;
+        }
+        // Back here leaves the app, after a second press if that's set.
+        if (!general.confirmExit) {
           return false;
         }
-        setArea('fullscreen');
+        const pressed = Date.now();
+        if (pressed - exitPressed.current < EXIT_CONFIRM_MS) {
+          return false;
+        }
+        exitPressed.current = pressed;
+        say('Press Back again to exit.');
       }
     },
     groups: key => {
@@ -731,6 +833,11 @@ export function Home() {
           setSettings({
             page: 'root',
             index: SETTINGS_ITEMS.indexOf('Playlists'),
+          });
+        } else if (settings.page === 'general') {
+          setSettings({
+            page: 'root',
+            index: SETTINGS_ITEMS.indexOf('General'),
           });
         } else {
           setArea('menu');
@@ -828,7 +935,8 @@ export function Home() {
   const headers = playing
     ? Object.fromEntries(
         [
-          ['User-Agent', playing.request.userAgent],
+          // Settings > General's User-Agent, if the playlist has none.
+          ['User-Agent', playing.request.userAgent || general.userAgent],
           ['Referer', playing.request.referrer],
           ['Origin', playing.request.origin],
         ].filter(([, value]) => value),
@@ -917,10 +1025,21 @@ export function Home() {
         <Video
           ref={video}
           key={channelKey(playing.channel)}
-          source={{ uri: playing.request.urls[0], headers }}
+          source={{
+            uri: streamUrl(playing.request.urls[0], general.udpProxy),
+            headers,
+          }}
           style={previewStyle}
           resizeMode="contain"
           paused={paused}
+          // The Home button shrinks it into a corner, if that's set; the
+          // whole screen goes there, so it's shown full screen.
+          enterPictureInPictureOnLeave={general.pipOnHome}
+          onPictureInPictureStatusChanged={({ isActive }) => {
+            if (isActive) {
+              setArea('fullscreen');
+            }
+          }}
           volume={(playing.request.volume ?? 100) / 100}
           onLoad={data => setDuration(data.duration)}
           onProgress={data => setPosition(data.currentTime)}
@@ -976,15 +1095,31 @@ export function Home() {
           title={
             settings.page === 'root'
               ? 'Settings'
+              : settings.page === 'general'
+              ? 'General'
               : settings.page === 'playlists'
               ? 'Playlists'
               : settings.source?.name ?? ''
           }
         >
-          <SettingsList items={settingsItems()} index={settings.index} />
+          <SettingsList
+            items={settingsItems()}
+            index={settings.index}
+            {...(settings.page === 'general' && generalList(general))}
+          />
         </SettingsPanel>
       )}
-      {area === 'form' && (
+      {area === 'form' && textSetting && (
+        <SettingsPanel title={textSetting.label}>
+          <TextSetting
+            value={general[textSetting.key]}
+            placeholder={textSetting.placeholder}
+            hint={textSetting.hint}
+            onDone={textSettingDone}
+          />
+        </SettingsPanel>
+      )}
+      {area === 'form' && !textSetting && (
         <SettingsPanel title="Add playlist">
           <AddPlaylist onDone={playlistAdded} />
         </SettingsPanel>

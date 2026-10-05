@@ -99,6 +99,7 @@ typedef void (*UniffiForeignFutureCompleteVoid)(
 /*handle*/ uint64_t
 uniffi_iptelly_ffi_fn_func_add_to_history(int64_t channel_id);
 /*handle*/ uint64_t uniffi_iptelly_ffi_fn_func_delete_source(int64_t source_id);
+/*handle*/ uint64_t uniffi_iptelly_ffi_fn_func_export_app_data(RustBuffer path);
 /*handle*/ uint64_t uniffi_iptelly_ffi_fn_func_get_epg(RustBuffer channel,
                                                        int64_t start,
                                                        int64_t end);
@@ -112,6 +113,7 @@ uniffi_iptelly_ffi_fn_func_get_media_info(RustBuffer channel);
 /*handle*/ uint64_t uniffi_iptelly_ffi_fn_func_get_settings();
 /*handle*/ uint64_t uniffi_iptelly_ffi_fn_func_get_sources();
 /*handle*/ uint64_t uniffi_iptelly_ffi_fn_func_has_adult_pin();
+/*handle*/ uint64_t uniffi_iptelly_ffi_fn_func_import_app_data(RustBuffer path);
 /*handle*/ uint64_t uniffi_iptelly_ffi_fn_func_init(RustBuffer data_dir,
                                                     RustBuffer cache_dir);
 /*handle*/ uint64_t uniffi_iptelly_ffi_fn_func_load_episodes(RustBuffer series);
@@ -255,6 +257,7 @@ void ffi_iptelly_ffi_rust_future_complete_void(
 uint16_t uniffi_iptelly_ffi_checksum_func_add_source();
 uint16_t uniffi_iptelly_ffi_checksum_func_add_to_history();
 uint16_t uniffi_iptelly_ffi_checksum_func_delete_source();
+uint16_t uniffi_iptelly_ffi_checksum_func_export_app_data();
 uint16_t uniffi_iptelly_ffi_checksum_func_get_epg();
 uint16_t uniffi_iptelly_ffi_checksum_func_get_epg_schedule();
 uint16_t uniffi_iptelly_ffi_checksum_func_get_guide();
@@ -262,6 +265,7 @@ uint16_t uniffi_iptelly_ffi_checksum_func_get_media_info();
 uint16_t uniffi_iptelly_ffi_checksum_func_get_settings();
 uint16_t uniffi_iptelly_ffi_checksum_func_get_sources();
 uint16_t uniffi_iptelly_ffi_checksum_func_has_adult_pin();
+uint16_t uniffi_iptelly_ffi_checksum_func_import_app_data();
 uint16_t uniffi_iptelly_ffi_checksum_func_init();
 uint16_t uniffi_iptelly_ffi_checksum_func_load_episodes();
 uint16_t uniffi_iptelly_ffi_checksum_func_lock_adult_content();
@@ -1708,6 +1712,17 @@ NativeIptellyFfi::NativeIptellyFfi(
             return this->cpp_uniffi_iptelly_ffi_fn_func_delete_source(
                 rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_iptelly_ffi_fn_func_export_app_data"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_iptelly_ffi_fn_func_export_app_data"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_iptelly_ffi_fn_func_export_app_data(
+                rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_iptelly_ffi_fn_func_get_epg"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -1783,6 +1798,17 @@ NativeIptellyFfi::NativeIptellyFfi(
           [this](jsi::Runtime &rt, const jsi::Value &thisVal,
                  const jsi::Value *args, size_t count) -> jsi::Value {
             return this->cpp_uniffi_iptelly_ffi_fn_func_has_adult_pin(
+                rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_iptelly_ffi_fn_func_import_app_data"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_iptelly_ffi_fn_func_import_app_data"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_iptelly_ffi_fn_func_import_app_data(
                 rt, thisVal, args, count);
           });
   props["ubrn_uniffi_iptelly_ffi_fn_func_init"] =
@@ -2499,6 +2525,17 @@ NativeIptellyFfi::NativeIptellyFfi(
             return this->cpp_uniffi_iptelly_ffi_checksum_func_delete_source(
                 rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_iptelly_ffi_checksum_func_export_app_data"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_iptelly_ffi_checksum_func_export_app_data"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_iptelly_ffi_checksum_func_export_app_data(
+                rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_iptelly_ffi_checksum_func_get_epg"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -2574,6 +2611,17 @@ NativeIptellyFfi::NativeIptellyFfi(
           [this](jsi::Runtime &rt, const jsi::Value &thisVal,
                  const jsi::Value *args, size_t count) -> jsi::Value {
             return this->cpp_uniffi_iptelly_ffi_checksum_func_has_adult_pin(
+                rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_iptelly_ffi_checksum_func_import_app_data"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_iptelly_ffi_checksum_func_import_app_data"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_iptelly_ffi_checksum_func_import_app_data(
                 rt, thisVal, args, count);
           });
   props["ubrn_uniffi_iptelly_ffi_checksum_func_init"] =
@@ -2945,6 +2993,16 @@ jsi::Value NativeIptellyFfi::cpp_uniffi_iptelly_ffi_fn_func_delete_source(
   return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
                                                          value);
 }
+jsi::Value NativeIptellyFfi::cpp_uniffi_iptelly_ffi_fn_func_export_app_data(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_iptelly_ffi_fn_func_export_app_data(
+      uniffi::iptelly_ffi::Bridging<RustBuffer>::fromJs(rt, callInvoker,
+                                                        args[0]));
+
+  return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
+                                                         value);
+}
 jsi::Value NativeIptellyFfi::cpp_uniffi_iptelly_ffi_fn_func_get_epg(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
@@ -3009,6 +3067,16 @@ jsi::Value NativeIptellyFfi::cpp_uniffi_iptelly_ffi_fn_func_has_adult_pin(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
   auto value = uniffi_iptelly_ffi_fn_func_has_adult_pin();
+
+  return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
+                                                         value);
+}
+jsi::Value NativeIptellyFfi::cpp_uniffi_iptelly_ffi_fn_func_import_app_data(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_iptelly_ffi_fn_func_import_app_data(
+      uniffi::iptelly_ffi::Bridging<RustBuffer>::fromJs(rt, callInvoker,
+                                                        args[0]));
 
   return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
                                                          value);
@@ -3724,6 +3792,14 @@ jsi::Value NativeIptellyFfi::cpp_uniffi_iptelly_ffi_checksum_func_delete_source(
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }
+jsi::Value
+NativeIptellyFfi::cpp_uniffi_iptelly_ffi_checksum_func_export_app_data(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_iptelly_ffi_checksum_func_export_app_data();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
 jsi::Value NativeIptellyFfi::cpp_uniffi_iptelly_ffi_checksum_func_get_epg(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
@@ -3772,6 +3848,14 @@ jsi::Value NativeIptellyFfi::cpp_uniffi_iptelly_ffi_checksum_func_has_adult_pin(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
   auto value = uniffi_iptelly_ffi_checksum_func_has_adult_pin();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value
+NativeIptellyFfi::cpp_uniffi_iptelly_ffi_checksum_func_import_app_data(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_iptelly_ffi_checksum_func_import_app_data();
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }

@@ -30,6 +30,16 @@ Search works like TiviMate's:
 - **Settings:** the cog opens the search settings: showing the history, putting favourite channels first, and whether Back from a channel returns to search.
 - **Saved:** the history and settings are kept in `search.json` in the app's storage.
 
+Settings, then General, has TiviMate's general options:
+
+- **Starting:** starting the app after boot or on waking from sleep, and turning on the last channel when it starts. Starting by itself needs the "display over other apps" permission, which the switch asks for.
+- **Picture-in-picture:** on pressing Home, on TVs that support it.
+- **Exiting:** confirming exit with a second Back.
+- **Streams:** a User-Agent for playback, and a UDP proxy (udpxy) for multicast streams.
+- **Backups:** backing up and restoring the playlists, favourites and settings to `Download/iptelly-backup.gz`. It includes the playlists' logins.
+
+These settings are kept in `settings.json` in the app's storage, which the Android side (`AutoStart.kt`) reads too.
+
 Settings, then Playlists, adds an Xtream account or an M3U link. Debug builds also offer a demo playlist, with made-up channels and a guide that play public test streams, and four open films from the Internet Archive.
 
 The screens draw their own highlight instead of using Android's focus, so the guide can scroll in time. `src/remote.ts` turns the remote's keys into moves.

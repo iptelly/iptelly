@@ -28,43 +28,54 @@ export function SettingsPanel({
   );
 }
 
-// `toggles` gives each item an on/off switch, as in the Search settings.
+// `toggles` gives items an on/off switch (undefined for none), and
+// `details` a second line under them, such as a setting's value.
 export function SettingsList({
   items,
   index,
   note,
   toggles,
+  details,
 }: {
   items: string[];
   index: number;
   note?: string;
-  toggles?: boolean[];
+  toggles?: (boolean | undefined)[];
+  details?: (string | undefined)[];
 }) {
   const top = useFirstVisible(index, items.length, VISIBLE_ROWS);
   return (
     <>
       <View style={styles.list}>
         {items.slice(top, top + VISIBLE_ROWS).map((item, i) => {
-          const focused = top + i === index;
+          const at = top + i;
+          const focused = at === index;
+          const toggle = toggles?.[at];
+          const detail = details?.[at];
           return (
-            <View
-              key={top + i}
-              style={[styles.item, focused && styles.focused]}
-            >
-              <Text
-                numberOfLines={2}
-                style={[styles.label, focused && { color: colors.textDark }]}
-              >
-                {item}
-              </Text>
-              {toggles && (
-                <View
-                  style={[styles.track, toggles[top + i] && styles.trackOn]}
+            <View key={at} style={[styles.item, focused && styles.focused]}>
+              <View style={styles.text}>
+                <Text
+                  numberOfLines={2}
+                  style={[styles.label, focused && styles.dark]}
                 >
+                  {item}
+                </Text>
+                {detail != null && (
+                  <Text
+                    numberOfLines={1}
+                    style={[styles.detail, focused && styles.dark]}
+                  >
+                    {detail}
+                  </Text>
+                )}
+              </View>
+              {toggle != null && (
+                <View style={[styles.track, toggle && styles.trackOn]}>
                   <View
                     style={[
                       styles.knob,
-                      toggles[top + i] ? styles.knobOn : styles.knobOff,
+                      toggle ? styles.knobOn : styles.knobOff,
                     ]}
                   />
                 </View>
@@ -113,10 +124,21 @@ const styles = StyleSheet.create({
   focused: {
     backgroundColor: colors.pill,
   },
-  label: {
+  text: {
     flex: 1,
+    paddingVertical: px(10),
+  },
+  label: {
     color: colors.text,
     fontSize: fonts.normal,
+  },
+  detail: {
+    color: colors.text,
+    fontSize: fonts.small,
+    marginTop: px(4),
+  },
+  dark: {
+    color: colors.textDark,
   },
   track: {
     width: px(64),
