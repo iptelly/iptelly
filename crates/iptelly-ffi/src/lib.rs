@@ -72,9 +72,13 @@ pub async fn source_name_exists(name: String) -> Result<bool> {
 }
 
 /// Adds a source and loads its channels. For an M3U file, `url` is the
-/// file's path.
+/// file's path. An Xtream server's address can be given as typed
+/// ("host:port"); it's turned into its API address.
 #[uniffi::export(async_runtime = "tokio")]
-pub async fn add_source(source: Source) -> Result<()> {
+pub async fn add_source(mut source: Source) -> Result<()> {
+    if source.source_type == source_type::XTREAM {
+        source.url = source.url.as_deref().map(xtream::api_url);
+    }
     match source.source_type {
         source_type::M3U => blocking(move || m3u::read_m3u8(source, false)).await,
         source_type::M3U_LINK => Ok(m3u::get_m3u8_from_link(source, false).await?),

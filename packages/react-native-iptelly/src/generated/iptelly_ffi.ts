@@ -45,7 +45,8 @@ const uniffiIsDebug =
 
 /**
  * Adds a source and loads its channels. For an M3U file, `url` is the
- * file's path.
+ * file's path. An Xtream server's address can be given as typed
+ * ("host:port"); it's turned into its API address.
  */
 export async function addSource(
   source: Source,
@@ -1908,7 +1909,7 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
-    nativeModule().ubrn_uniffi_iptelly_ffi_checksum_func_add_source() !== 52223
+    nativeModule().ubrn_uniffi_iptelly_ffi_checksum_func_add_source() !== 31838
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_iptelly_ffi_checksum_func_add_source'

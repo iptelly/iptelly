@@ -136,6 +136,25 @@ struct XtreamCategory {
     category_name: String,
 }
 
+/// The Xtream API address for a server address as people usually type it:
+/// "host:port" becomes "http://host:port/player_api.php". Panels answer
+/// 401 at the bare server address. An address with a path is left alone.
+pub fn api_url(server: &str) -> String {
+    let server = server.trim();
+    let url = if server.contains("://") {
+        server.to_string()
+    } else {
+        format!("http://{server}")
+    };
+    match Url::parse(&url) {
+        Ok(mut parsed) if parsed.path().is_empty() || parsed.path() == "/" => {
+            parsed.set_path("/player_api.php");
+            parsed.to_string()
+        }
+        _ => url,
+    }
+}
+
 fn build_xtream_url(source: &mut Source) -> Result<Url> {
     let mut url = Url::parse(&source.url.clone().context("Missing URL")?)?;
     source.url_origin = Some(
@@ -1187,6 +1206,26 @@ mod test_xtream {
             convert_xtream_live_to_channel(stream_with_real_id, &source, media_type::SERIE, None)
                 .unwrap();
         assert_eq!(channel.tvg_id, Some("real.epg.id".to_string()));
+    }
+
+    #[test]
+    fn a_bare_server_address_gets_the_api_path() {
+        assert_eq!(
+            api_url("http://panel.example:8080"),
+            "http://panel.example:8080/player_api.php"
+        );
+        assert_eq!(
+            api_url("panel.example:8080/ "),
+            "http://panel.example:8080/player_api.php"
+        );
+        assert_eq!(
+            api_url("https://panel.example/player_api.php"),
+            "https://panel.example/player_api.php"
+        );
+        assert_eq!(
+            api_url("http://panel.example/custom/path"),
+            "http://panel.example/custom/path"
+        );
     }
 
     #[test]
