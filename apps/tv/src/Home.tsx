@@ -11,19 +11,29 @@ import {
   deleteSource,
   exportAppData,
   getGuide,
+  getSourceCounts,
   importAppData,
   playRequest,
   refreshAll,
   refreshEpg,
   refreshSource,
   setFavorite,
+  setSourceEnabled,
   type Channel,
   type Epg,
   type PlayRequest,
   getSources,
   type Source,
+  type SourceCounts,
 } from 'react-native-iptelly';
 import { canDrawOverlays, openOverlaySettings } from './appControl';
+import {
+  SORT_LABELS,
+  countsText,
+  movePlaylist,
+  sortPlaylists,
+  type PlaylistSort,
+} from './playlists';
 import {
   DEFAULT_SETTINGS,
   GENERAL_ITEMS,
@@ -134,11 +144,23 @@ const EXIT_CONFIRM_MS = 2000;
 
 // The settings panel's page, and for a playlist's page, the playlist.
 type SettingsPage = {
-  page: 'root' | 'general' | 'playlists' | 'playlist';
+  page: 'root' | 'general' | 'playlists' | 'playlist' | 'sorting' | 'reorder';
   index: number;
   source?: Source;
   confirmDelete?: boolean;
+  // Reorder playlists: the highlighted playlist is picked up to move.
+  moving?: boolean;
 };
+
+// Settings > Playlists, under the playlists themselves.
+const PLAYLIST_ACTIONS = [
+  'Add playlist',
+  'Update all playlists',
+  'Playlists sorting',
+  'Reorder playlists',
+  ...(__DEV__ ? ['Add the demo playlist'] : []),
+];
+const SORTS: PlaylistSort[] = ['name', 'added', 'manual'];
 
 type Playing = { channel: Channel; request: PlayRequest; number?: number };
 
@@ -210,6 +232,8 @@ export function Home() {
     useState<Extract<GeneralItem, { kind: 'text' }>>();
   // When Back was first pressed to exit, with exits confirmed.
   const exitPressed = useRef(0);
+  // Settings > Playlists: each playlist's channel, movie and series counts.
+  const [counts, setCounts] = useState(() => new Map<string, SourceCounts>());
   const [toast, setToast] = useState<{ text: string; busy?: boolean }>();
   const busy = toast?.busy === true;
 
@@ -247,8 +271,15 @@ export function Home() {
     return ids;
   }, []);
 
+  // The playlists in Settings > Playlists' order, which the groups and
+  // categories columns follow too.
+  const ordered = useMemo(
+    () => sortPlaylists(sources, general.playlistSort, general.playlistOrder),
+    [sources, general.playlistSort, general.playlistOrder],
+  );
+
   const groups = usePlaylistGroups(
-    sources,
+    ordered,
     FIXED_LISTS,
     MediaType.LIVESTREAM,
     groupsVersion,
@@ -527,28 +558,87 @@ export function Home() {
 
   // Settings
 
-  const settingsItems = (): string[] => {
+  // The playlist a playlist's page is for, as it is now.
+  const settingsSource = settings.source
+    ? sources.find(s => s.id === settings.source!.id) ?? settings.source
+    : undefined;
+
+  // The settings page's rows, and their switches, second lines and checks.
+  const settingsList = (): {
+    items: string[];
+    toggles?: (boolean | undefined)[];
+    details?: (string | undefined)[];
+    checks?: (boolean | undefined)[];
+  } => {
     switch (settings.page) {
       case 'root':
-        return SETTINGS_ITEMS;
+        return { items: SETTINGS_ITEMS };
       case 'general':
-        return GENERAL_ITEMS.map(item => item.label);
+        return {
+          items: GENERAL_ITEMS.map(item => item.label),
+          ...generalList(general),
+        };
       case 'playlists':
-        return [
-          ...sources.map(s => s.name),
-          'Add playlist',
-          ...(__DEV__ ? ['Add the demo playlist'] : []),
-        ];
+        return {
+          items: [...ordered.map(s => s.name), ...PLAYLIST_ACTIONS],
+          checks: ordered.map(s => s.enabled),
+          details: [
+            ...ordered.map(s => countsText(counts.get(String(s.id)))),
+            ...PLAYLIST_ACTIONS.map(action =>
+              action === 'Playlists sorting'
+                ? SORT_LABELS[general.playlistSort]
+                : undefined,
+            ),
+          ],
+        };
       case 'playlist':
-        return [
-          'Update playlist',
-          'Update guide',
-          settings.confirmDelete
-            ? 'Press OK again to delete'
-            : 'Delete playlist',
-        ];
+        return {
+          items: [
+            'Use this playlist',
+            'Update playlist',
+            'Update guide',
+            settings.confirmDelete
+              ? 'Press OK again to delete'
+              : 'Delete playlist',
+          ],
+          toggles: [settingsSource?.enabled ?? false],
+        };
+      case 'sorting':
+        return {
+          items: SORTS.map(sort => SORT_LABELS[sort]),
+          checks: SORTS.map(sort => sort === general.playlistSort),
+        };
+      case 'reorder':
+        return {
+          items: ordered.map(s => s.name),
+          details: ordered.map((_, i) =>
+            settings.moving && i === settings.index
+              ? 'Up and Down move it, OK puts it down'
+              : undefined,
+          ),
+        };
     }
   };
+
+  // Each playlist's counts, whenever the Playlists page is shown.
+  const showingPlaylists = area === 'settings' && settings.page === 'playlists';
+  useEffect(() => {
+    if (!showingPlaylists) {
+      return;
+    }
+    for (const source of sources) {
+      if (source.id == null) {
+        continue;
+      }
+      getSourceCounts(source.id)
+        .then(found =>
+          setCounts(previous =>
+            new Map(previous).set(String(source.id), found),
+          ),
+        )
+        .catch(() => {});
+    }
+  }, [showingPlaylists, sources]);
 
   const run = async (
     busyText: string,
@@ -568,7 +658,7 @@ export function Home() {
     if (busy) {
       return;
     }
-    const items = settingsItems();
+    const { items } = settingsList();
     const item = items[settings.index];
     if (settings.page === 'root') {
       if (item === 'General') {
@@ -583,11 +673,28 @@ export function Home() {
     } else if (settings.page === 'general') {
       chooseGeneral(GENERAL_ITEMS[settings.index]);
     } else if (settings.page === 'playlists') {
-      const source = sources[settings.index];
+      const source = ordered[settings.index];
       if (source) {
         setSettings({ page: 'playlist', index: 0, source });
       } else if (item === 'Add playlist') {
         setArea('form');
+      } else if (item === 'Update all playlists') {
+        run(
+          'Updating all playlists…',
+          async () => {
+            await refreshAll();
+            await reload();
+            setCounts(new Map());
+          },
+          'Updated all playlists.',
+        );
+      } else if (item === 'Playlists sorting') {
+        setSettings({
+          page: 'sorting',
+          index: SORTS.indexOf(general.playlistSort),
+        });
+      } else if (item === 'Reorder playlists') {
+        setSettings({ page: 'reorder', index: 0 });
       } else {
         run(
           'Adding the demo playlist…',
@@ -598,10 +705,34 @@ export function Home() {
           'Added the demo playlist.',
         );
       }
+    } else if (settings.page === 'sorting') {
+      const sort = SORTS[settings.index];
+      updateGeneral({
+        ...general,
+        playlistSort: sort,
+        // Manual starts from the order they're in now.
+        playlistOrder:
+          sort === 'manual' && general.playlistOrder.length === 0
+            ? ordered.map(s => String(s.id))
+            : general.playlistOrder,
+      });
+    } else if (settings.page === 'reorder') {
+      setSettings({ ...settings, moving: !settings.moving });
     } else {
-      const source = settings.source!;
+      const source = settingsSource!;
       const id = source.id!;
       if (settings.index === 0) {
+        run(
+          source.enabled ? `Hiding ${source.name}…` : `Showing ${source.name}…`,
+          async () => {
+            await setSourceEnabled(id, !source.enabled);
+            await reload();
+          },
+          source.enabled
+            ? `${source.name} isn't in use.`
+            : `${source.name} is in use.`,
+        );
+      } else if (settings.index === 1) {
         run(
           `Updating ${source.name}…`,
           async () => {
@@ -610,7 +741,7 @@ export function Home() {
           },
           `Updated ${source.name}.`,
         );
-      } else if (settings.index === 1) {
+      } else if (settings.index === 2) {
         run(
           `Loading the guide for ${source.name}…`,
           async () => {
@@ -817,18 +948,45 @@ export function Home() {
       }
     },
     settings: key => {
-      const count = settingsItems().length;
-      if (key === 'up' || key === 'down') {
+      const count = settingsList().items.length;
+      const step = key === 'up' ? -1 : 1;
+      if ((key === 'up' || key === 'down') && settings.moving) {
+        // Reorder playlists: moves the picked-up playlist.
+        const next = movePlaylist(ordered, settings.index, step);
+        updateGeneral({
+          ...general,
+          playlistSort: 'manual',
+          playlistOrder: next.map(s => String(s.id)),
+        });
+        setSettings(s => ({ ...s, index: clamp(s.index + step, count) }));
+      } else if (key === 'up' || key === 'down') {
         setSettings(s => ({
           ...s,
-          index: clamp(s.index + (key === 'up' ? -1 : 1), count),
+          index: clamp(s.index + step, count),
           confirmDelete: false,
         }));
       } else if (key === 'select' || key === 'right') {
         chooseSetting();
+      } else if (key === 'back' && settings.moving) {
+        setSettings({ ...settings, moving: false });
       } else if (key === 'back' || key === 'left') {
+        const playlistsAt = (action: string) =>
+          ordered.length + PLAYLIST_ACTIONS.indexOf(action);
         if (settings.page === 'playlist') {
-          setSettings({ page: 'playlists', index: 0 });
+          setSettings({
+            page: 'playlists',
+            index: Math.max(0, ordered.indexOf(settingsSource!)),
+          });
+        } else if (settings.page === 'sorting') {
+          setSettings({
+            page: 'playlists',
+            index: playlistsAt('Playlists sorting'),
+          });
+        } else if (settings.page === 'reorder') {
+          setSettings({
+            page: 'playlists',
+            index: playlistsAt('Reorder playlists'),
+          });
         } else if (settings.page === 'playlists') {
           setSettings({
             page: 'root',
@@ -1002,7 +1160,7 @@ export function Home() {
         <Vod
           key={vodSection}
           section={vodSection}
-          sources={sources}
+          sources={ordered}
           sourceIds={sourceIds}
           version={groupsVersion}
           active={inVod}
@@ -1093,19 +1251,20 @@ export function Home() {
       {area === 'settings' && (
         <SettingsPanel
           title={
-            settings.page === 'root'
-              ? 'Settings'
-              : settings.page === 'general'
-              ? 'General'
-              : settings.page === 'playlists'
-              ? 'Playlists'
-              : settings.source?.name ?? ''
+            {
+              root: 'Settings',
+              general: 'General',
+              playlists: 'Playlists',
+              playlist: settingsSource?.name ?? '',
+              sorting: 'Playlists sorting',
+              reorder: 'Reorder playlists',
+            }[settings.page]
           }
         >
           <SettingsList
-            items={settingsItems()}
+            {...settingsList()}
             index={settings.index}
-            {...(settings.page === 'general' && generalList(general))}
+            moving={settings.moving}
           />
         </SettingsPanel>
       )}

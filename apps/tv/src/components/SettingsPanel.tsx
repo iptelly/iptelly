@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { colors, fonts, px } from '../theme';
+import { Icon } from './Icon';
 import { useFirstVisible } from './scroll';
 import { Panel } from './Panel';
 
@@ -28,20 +29,26 @@ export function SettingsPanel({
   );
 }
 
-// `toggles` gives items an on/off switch (undefined for none), and
-// `details` a second line under them, such as a setting's value.
+// `toggles` gives items an on/off switch (undefined for none), `details` a
+// second line under them, such as a setting's value, and `checks` a check
+// or an empty circle on their left, as for the playlists in use.
+// `moving` marks the item being moved, in Reorder playlists.
 export function SettingsList({
   items,
   index,
   note,
   toggles,
   details,
+  checks,
+  moving,
 }: {
   items: string[];
   index: number;
   note?: string;
   toggles?: (boolean | undefined)[];
   details?: (string | undefined)[];
+  checks?: (boolean | undefined)[];
+  moving?: boolean;
 }) {
   const top = useFirstVisible(index, items.length, VISIBLE_ROWS);
   return (
@@ -52,8 +59,23 @@ export function SettingsList({
           const focused = at === index;
           const toggle = toggles?.[at];
           const detail = details?.[at];
+          const check = checks?.[at];
           return (
-            <View key={at} style={[styles.item, focused && styles.focused]}>
+            <View
+              key={at}
+              style={[
+                styles.item,
+                focused && styles.focused,
+                focused && moving && styles.moving,
+              ]}
+            >
+              {check != null && (
+                <Icon
+                  name={check ? 'checked' : 'unchecked'}
+                  size={px(44)}
+                  color={focused ? colors.textDark : colors.text}
+                />
+              )}
               <View style={styles.text}>
                 <Text
                   numberOfLines={2}
@@ -63,7 +85,7 @@ export function SettingsList({
                 </Text>
                 {detail != null && (
                   <Text
-                    numberOfLines={1}
+                    numberOfLines={2}
                     style={[styles.detail, focused && styles.dark]}
                   >
                     {detail}
@@ -123,6 +145,10 @@ const styles = StyleSheet.create({
   },
   focused: {
     backgroundColor: colors.pill,
+  },
+  moving: {
+    borderWidth: px(4),
+    borderColor: colors.accent,
   },
   text: {
     flex: 1,

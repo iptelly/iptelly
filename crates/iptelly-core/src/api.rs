@@ -158,6 +158,7 @@ fn epg_key(channel: &Channel) -> Result<(i64, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::SourceCounts;
     use crate::{media_type, test_db};
 
     fn xmltv_time(timestamp: i64) -> String {
@@ -200,6 +201,35 @@ mod tests {
         assert_eq!(guide[0][0].title, "Headlines");
         assert_eq!(guide[0][0].start_timestamp, hour);
         assert!(guide[1].is_empty());
+    }
+
+    #[test]
+    fn counts_a_sources_channels_movies_and_series() {
+        let _db = test_db::lock();
+        let source = test_db::add_source("counts");
+        for (name, kind) in [
+            ("Live One", media_type::LIVESTREAM),
+            ("Live Two", media_type::LIVESTREAM),
+            ("A Film", media_type::MOVIE),
+            ("A Series", media_type::SERIE),
+        ] {
+            let url = format!("http://example.com/{name}");
+            test_db::add_channel(&source, test_db::channel(name, &url, kind), None);
+        }
+        // An episode is stored as a movie with its series' id.
+        let mut episode = test_db::channel("Episode 1", "http://example.com/e1", media_type::MOVIE);
+        episode.series_id = Some(7);
+        test_db::add_channel(&source, episode, None);
+
+        let counts = sql::get_source_counts(source.id.unwrap()).unwrap();
+        assert_eq!(
+            counts,
+            SourceCounts {
+                channels: 2,
+                movies: 1,
+                series: 1
+            }
+        );
     }
 
     #[test]

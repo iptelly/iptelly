@@ -41,6 +41,14 @@ pub struct Channel {
     pub rating: Option<f64>,
 }
 
+// How many live channels, movies and series a source has.
+#[derive(Clone, PartialEq, Debug, Deserialize, Serialize, Default)]
+pub struct SourceCounts {
+    pub channels: u64,
+    pub movies: u64,
+    pub series: u64,
+}
+
 // A movie or series' details, from its Xtream info page.
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize, Default)]
 pub struct MediaInfo {

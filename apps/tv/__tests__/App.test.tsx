@@ -59,6 +59,10 @@ jest.mock('react-native-iptelly', () => {
         return Promise.resolve(mediaType === 1 ? movies : channels);
       },
     ),
+    getSourceCounts: jest.fn(() =>
+      Promise.resolve({ channels: 2n, movies: 1n, series: 0n }),
+    ),
+    setSourceEnabled: jest.fn(() => Promise.resolve()),
     getMediaInfo: jest.fn(() =>
       Promise.resolve({ year: '2025', genre: 'Thriller', plot: 'A plot.' }),
     ),
@@ -318,6 +322,36 @@ test('Settings > General saves its switches, and can confirm exits', async () =>
     handled = mockRemote.press!('back');
   });
   expect(handled).toBe(false);
+
+  await ReactTestRenderer.act(async () => renderer.unmount());
+});
+
+test('Settings > Playlists shows each playlist with its counts', async () => {
+  const core = jest.requireMock('react-native-iptelly');
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    renderer = ReactTestRenderer.create(<App />);
+  });
+  await settle();
+
+  // From the groups to the menu, down to Settings, then Playlists.
+  await press('back');
+  for (const key of ['down', 'down', 'down', 'down', 'select'] as const) {
+    await press(key);
+  }
+  await press('down');
+  await press('select');
+  expect(text(renderer)).toContain('My playlist');
+  expect(text(renderer)).toContain('Channels: 2, movies: 1, series: 0');
+  expect(text(renderer)).toContain('Update all playlists');
+  expect(text(renderer)).toContain('By name');
+
+  // OK on the playlist opens its page, where the first switch takes it
+  // out of use.
+  await press('select');
+  expect(text(renderer)).toContain('Use this playlist');
+  await press('select');
+  expect(core.setSourceEnabled).toHaveBeenCalledWith(1n, false);
 
   await ReactTestRenderer.act(async () => renderer.unmount());
 });

@@ -474,6 +474,59 @@ export async function getSettings(asyncOpts_?: {
   }
 }
 
+/**
+ * How many live channels, movies and series a source has.
+ */
+export async function getSourceCounts(
+  sourceId: bigint,
+  asyncOpts_?: { signal: AbortSignal }
+): Promise<SourceCounts> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_iptelly_ffi_fn_func_get_source_counts(
+          FfiConverterInt64.lower(sourceId, nativeModule().rustbuffer_alloc)
+        );
+      },
+      /*pollFunc:*/ nativeModule()
+        .ubrn_ffi_iptelly_ffi_rust_future_poll_rust_buffer,
+      /*cancelFunc:*/ nativeModule()
+        .ubrn_ffi_iptelly_ffi_rust_future_cancel_rust_buffer,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_iptelly_ffi_rust_future_complete_rust_buffer,
+      /*freeFunc:*/ nativeModule()
+        .ubrn_ffi_iptelly_ffi_rust_future_free_rust_buffer,
+      // Async returns always go through the JS-side converter: the
+      // FFI symbol returns the future handle (u64), and the user-level
+      // RustBuffer comes back via the shared `rust_future_complete_*`
+      // export. The bytes the runtime hands back must be deserialized
+      // here using the per-callable return-type converter.
+      // Borrowed view over foreign memory: the call site owns the free,
+      // as on the sync paths. Unconditional — a no-op where buffers are
+      // already JS-owned.
+      /*liftFunc:*/ (__rb) => {
+        try {
+          return FfiConverterTypeSourceCounts.lift(__rb);
+        } finally {
+          nativeModule().rustbuffer_free(__rb);
+        }
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeIptellyError.lift.bind(
+        FfiConverterTypeIptellyError
+      )
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
 export async function getSources(asyncOpts_?: {
   signal: AbortSignal;
 }): Promise<Array<Source>> /*throws*/ {
@@ -1818,6 +1871,55 @@ const FfiConverterTypeSource = (() => {
   return new FFIConverter();
 })();
 
+export type SourceCounts = {
+  channels: bigint;
+  movies: bigint;
+  series: bigint;
+};
+
+/**
+ * Generated factory for {@link SourceCounts} record objects.
+ */
+export const SourceCounts = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<SourceCounts, ReturnType<typeof defaults>>(
+      defaults
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<SourceCounts>,
+  });
+})();
+
+const FfiConverterTypeSourceCounts = (() => {
+  type TypeName = SourceCounts;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    readFromCursor(c: Cursor): TypeName {
+      return {
+        channels: FfiConverterUInt64.readFromCursor(c),
+        movies: FfiConverterUInt64.readFromCursor(c),
+        series: FfiConverterUInt64.readFromCursor(c),
+      };
+    }
+    writeIntoCursor(value: TypeName, c: Cursor): void {
+      FfiConverterUInt64.writeIntoCursor(value.channels, c);
+      FfiConverterUInt64.writeIntoCursor(value.movies, c);
+      FfiConverterUInt64.writeIntoCursor(value.series, c);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterUInt64.allocationSize(value.channels) +
+        FfiConverterUInt64.allocationSize(value.movies) +
+        FfiConverterUInt64.allocationSize(value.series)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 // Error type: IptellyError
 export enum IptellyError_Tags {
   Failed = 'Failed',
@@ -2054,6 +2156,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_iptelly_ffi_checksum_func_get_source_counts() !==
+    30292
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_iptelly_ffi_checksum_func_get_source_counts'
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_iptelly_ffi_checksum_func_get_sources() !== 1021
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
@@ -2193,5 +2303,6 @@ export default Object.freeze({
     FfiConverterTypePlayRequest,
     FfiConverterTypeSettings,
     FfiConverterTypeSource,
+    FfiConverterTypeSourceCounts,
   },
 });

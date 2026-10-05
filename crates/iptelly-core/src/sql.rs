@@ -8,7 +8,7 @@ use crate::log::log;
 use crate::sort_type;
 use crate::types::{
     ChannelPreserve, CustomChannel, CustomChannelExtraData, DownloadHistoryItem, EPG, EPGNotify,
-    ExportedGroup, Group, IdName, Season, SeriesEpisode,
+    ExportedGroup, Group, IdName, Season, SeriesEpisode, SourceCounts,
 };
 use crate::{
     media_type, source_type,
@@ -1839,6 +1839,31 @@ pub fn get_channel_count_by_source(id: i64) -> Result<u64> {
         |row| row.get::<_, u64>(0),
     )?;
     Ok(count)
+}
+
+// How many live channels, movies and series a source has. Series episodes
+// are stored as movies with a series_id, so they're left out.
+pub fn get_source_counts(id: i64) -> Result<SourceCounts> {
+    let sql = get_conn()?;
+    let mut counts = SourceCounts::default();
+    let mut statement = sql.prepare(
+        "SELECT media_type, COUNT(*) FROM channels
+         WHERE source_id = ? AND series_id IS NULL
+         GROUP BY media_type",
+    )?;
+    let rows = statement.query_map(params![id], |row| {
+        Ok((row.get::<_, u8>(0)?, row.get::<_, u64>(1)?))
+    })?;
+    for row in rows {
+        let (kind, count) = row?;
+        match kind {
+            media_type::LIVESTREAM => counts.channels = count,
+            media_type::MOVIE => counts.movies = count,
+            media_type::SERIE => counts.series = count,
+            _ => {}
+        }
+    }
+    Ok(counts)
 }
 
 pub fn source_name_exists(name: &str) -> Result<bool> {

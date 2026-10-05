@@ -1,12 +1,14 @@
-// Settings > General, kept as settings.json in the app's files folder.
-// The Android side reads the auto-start settings from there too
-// (android/.../AutoStart.kt), so their names mustn't change.
+// The app's own settings (Settings > General, and the playlists' order),
+// kept as settings.json in the app's files folder. The Android side reads the
+// auto-start settings from there too (android/.../AutoStart.kt), so their
+// names mustn't change.
 
 import {
   DocumentDirectoryPath,
   readFile,
   writeFile,
 } from '@dr.pogodin/react-native-fs';
+import type { PlaylistSort } from './playlists';
 
 export type GeneralSettings = {
   autoStartOnBoot: boolean;
@@ -18,6 +20,10 @@ export type GeneralSettings = {
   userAgent: string;
   // A udpxy-style proxy for udp:// and rtp:// streams, "address:port".
   udpProxy: string;
+  // Settings > Playlists: how playlists are ordered, and the manual order
+  // (playlist ids).
+  playlistSort: PlaylistSort;
+  playlistOrder: string[];
 };
 
 export const DEFAULT_SETTINGS: GeneralSettings = {
@@ -28,6 +34,8 @@ export const DEFAULT_SETTINGS: GeneralSettings = {
   confirmExit: false,
   userAgent: '',
   udpProxy: '',
+  playlistSort: 'name',
+  playlistOrder: [],
 };
 
 // The rows of Settings > General, in order.
