@@ -206,7 +206,8 @@ mod tests {
     fn searches_keep_a_movies_rating_and_find_hidden_ones() {
         let _db = test_db::lock();
         let source = test_db::add_source("ratings");
-        let mut film = test_db::channel("Rated Film", "http://example.com/rated", media_type::MOVIE);
+        let mut film =
+            test_db::channel("Rated Film", "http://example.com/rated", media_type::MOVIE);
         film.rating = Some(6.5);
         let film = test_db::add_channel(&source, film, None);
         let filters = |view_type| Filters {
