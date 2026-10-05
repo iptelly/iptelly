@@ -4,15 +4,19 @@ import type { Channel } from 'react-native-iptelly';
 import { formatRating } from '../media';
 import { colors, fonts, px } from '../theme';
 
-// Movie and series posters are tall; episode pictures are wide.
+// Movie and series posters are tall, episode pictures are wide, and channel
+// logos are shown whole (`contain`). The small ones are for search's rows.
 export const SHAPES = {
-  poster: { columns: 5, width: 232, height: 348 },
-  wide: { columns: 3, width: 400, height: 225 },
+  poster: { columns: 5, width: 232, height: 348, contain: false },
+  wide: { columns: 3, width: 400, height: 225, contain: false },
+  logo: { columns: 5, width: 232, height: 160, contain: true },
+  smallPoster: { columns: 8, width: 200, height: 300, contain: false },
+  smallLogo: { columns: 8, width: 200, height: 130, contain: true },
 };
 export type Shape = keyof typeof SHAPES;
 
-const GAP = 24;
-const CAPTION_HEIGHT = 56;
+export const GAP = 24;
+export const CAPTION_HEIGHT = 56;
 
 // A grid of posters with their titles. The highlighted poster's row is
 // always the top one, with the next row peeking out below it.
@@ -52,7 +56,7 @@ export function PosterGrid({
   );
 }
 
-const Poster = memo(function PosterCard({
+export const Poster = memo(function PosterCard({
   item,
   shape,
   highlighted,
@@ -75,8 +79,10 @@ const Poster = memo(function PosterCard({
         {item.image && !failed ? (
           <Image
             source={{ uri: item.image }}
-            style={StyleSheet.absoluteFill}
-            resizeMode="cover"
+            style={
+              SHAPES[shape].contain ? styles.logo : StyleSheet.absoluteFill
+            }
+            resizeMode={SHAPES[shape].contain ? 'contain' : 'cover'}
             onError={() => setFailed(true)}
           />
         ) : (
@@ -122,6 +128,13 @@ const styles = StyleSheet.create({
   },
   highlightedPicture: {
     borderColor: colors.pill,
+  },
+  logo: {
+    position: 'absolute',
+    top: px(20),
+    bottom: px(20),
+    left: px(20),
+    right: px(20),
   },
   noPicture: {
     color: colors.textDim,

@@ -5,7 +5,7 @@ IPTelly for Android TV, built with React Native ([react-native-tvos](https://git
 The home screen is laid out like TiviMate's:
 
 - **Menu:** a menu on the left, which shrinks to icons when you move right.
-- **Groups:** the playlist's groups, with Favourites and All channels at the top.
+- **Groups:** Favourites and All channels, then each playlist's name with its groups under it. OK on a playlist's name collapses or expands its groups.
 - **Guide:** the guide for the chosen group, with the playing channel in a preview above it.
 
 The remote works like this:
@@ -21,11 +21,20 @@ Movies and Series show the categories on the left and a grid of posters on the r
 - **Movies:** OK plays a movie full screen. OK pauses it, Left and Right move back and forward 10 seconds, and Back returns to the grid.
 - **Series:** OK opens a series' seasons and episodes.
 
+The Favourites screen lists favourite channels, movies and series, each in its own list on the left.
+
+Search works like TiviMate's:
+
+- **Searching:** OK on the search box opens the keyboard, and matching movies, series and channels appear in rows as you type.
+- **History:** with the box empty, your past searches are shown, and the bin clears them.
+- **Settings:** the cog opens the search settings: showing the history, putting favourite channels first, and whether Back from a channel returns to search.
+- **Saved:** the history and settings are kept in `search.json` in the app's storage.
+
 Settings, then Playlists, adds an Xtream account or an M3U link. Debug builds also offer a demo playlist, with made-up channels and a guide that play public test streams, and four open films from the Internet Archive.
 
 The screens draw their own highlight instead of using Android's focus, so the guide can scroll in time. `src/remote.ts` turns the remote's keys into moves.
 
-Search and most settings aren't done yet.
+Most settings, and searching the guide's programmes, aren't done yet.
 
 ## What you need
 

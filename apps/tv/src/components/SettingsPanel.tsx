@@ -28,14 +28,17 @@ export function SettingsPanel({
   );
 }
 
+// `toggles` gives each item an on/off switch, as in the Search settings.
 export function SettingsList({
   items,
   index,
   note,
+  toggles,
 }: {
   items: string[];
   index: number;
   note?: string;
+  toggles?: boolean[];
 }) {
   const top = useFirstVisible(index, items.length, VISIBLE_ROWS);
   return (
@@ -49,11 +52,23 @@ export function SettingsList({
               style={[styles.item, focused && styles.focused]}
             >
               <Text
-                numberOfLines={1}
+                numberOfLines={2}
                 style={[styles.label, focused && { color: colors.textDark }]}
               >
                 {item}
               </Text>
+              {toggles && (
+                <View
+                  style={[styles.track, toggles[top + i] && styles.trackOn]}
+                >
+                  <View
+                    style={[
+                      styles.knob,
+                      toggles[top + i] ? styles.knobOn : styles.knobOff,
+                    ]}
+                  />
+                </View>
+              )}
             </View>
           );
         })}
@@ -87,9 +102,11 @@ const styles = StyleSheet.create({
     paddingTop: px(14),
   },
   item: {
-    height: px(ROW_HEIGHT - 6),
+    minHeight: px(ROW_HEIGHT - 6),
     marginVertical: px(3),
-    justifyContent: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: px(24),
     paddingHorizontal: px(34),
     borderRadius: px(10),
   },
@@ -97,8 +114,31 @@ const styles = StyleSheet.create({
     backgroundColor: colors.pill,
   },
   label: {
+    flex: 1,
     color: colors.text,
     fontSize: fonts.normal,
+  },
+  track: {
+    width: px(64),
+    height: px(30),
+    borderRadius: px(15),
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.35)',
+  },
+  trackOn: {
+    backgroundColor: 'rgba(62, 166, 242, 0.45)',
+  },
+  knob: {
+    width: px(38),
+    height: px(38),
+    borderRadius: px(19),
+  },
+  knobOff: {
+    backgroundColor: '#eeeeee',
+  },
+  knobOn: {
+    alignSelf: 'flex-end',
+    backgroundColor: colors.accent,
   },
   note: {
     position: 'absolute',

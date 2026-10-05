@@ -42,12 +42,13 @@ import {
   enabledSourceIds,
   errorMessage,
   lastWatched,
+  listKey,
   loadChannels,
-  loadGroups,
   ready,
   type ChannelList,
 } from './core';
 import { addDemoPlaylist } from './demo';
+import { usePlaylistGroups } from './playlistGroups';
 import {
   RANGE,
   blockAt,
@@ -59,9 +60,11 @@ import {
 } from './guide';
 import { useRemote, type Key } from './remote';
 import { colors, fonts, px } from './theme';
-import { Vod } from './Vod';
+import { Search } from './Search';
+import { Vod, type VodSection } from './Vod';
 
-// 'vod' is the Movies or Series screen, which handles the remote itself.
+// 'vod' is the Movies, Series or Favourites screen and 'search' the search
+// screen, which handle the remote themselves.
 type Area =
   | 'menu'
   | 'groups'
@@ -69,7 +72,8 @@ type Area =
   | 'settings'
   | 'form'
   | 'fullscreen'
-  | 'vod';
+  | 'vod'
+  | 'search';
 
 // How far Left and Right move through a movie.
 const SEEK_SECONDS = 10;
@@ -85,8 +89,12 @@ const PREVIEW = { top: 40, left: 40, width: 640, height: 360 };
 
 const CHANNELS = MENU_ITEMS.findIndex(i => i.key === 'channels');
 const MOVIES = MENU_ITEMS.findIndex(i => i.key === 'movies');
-const SERIES = MENU_ITEMS.findIndex(i => i.key === 'series');
-const FAVOURITES_LIST = FIXED_LISTS.findIndex(l => l.kind === 'favorites');
+const SEARCH = MENU_ITEMS.findIndex(i => i.key === 'search');
+const VOD_MENU: Record<VodSection, number> = {
+  movies: MOVIES,
+  series: MENU_ITEMS.findIndex(i => i.key === 'series'),
+  favourites: MENU_ITEMS.findIndex(i => i.key === 'favourites'),
+};
 const SETTINGS = MENU_ITEMS.findIndex(i => i.key === 'settings');
 
 const SETTINGS_ITEMS = [
@@ -135,10 +143,12 @@ export function Home() {
   const [menuIndex, setMenuIndex] = useState(CHANNELS);
   const [sources, setSources] = useState<Source[]>([]);
   const [sourceIds, setSourceIds] = useState<bigint[]>();
-  const [groups, setGroups] = useState<ChannelList[]>(FIXED_LISTS);
-  const groupPaging = useRef(firstPage());
+  // Bumped when playlists change, to load their groups again.
+  const [groupsVersion, setGroupsVersion] = useState(0);
   const [groupIndex, setGroupIndex] = useState(1);
-  const [openGroup, setOpenGroup] = useState(1);
+  // The list in the guide. It's kept by value, since collapsing a playlist
+  // moves the rows below it.
+  const [list, setList] = useState<ChannelList>(FIXED_LISTS[1]);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [channelsLoading, setChannelsLoading] = useState(true);
   const channelPaging = useRef(firstPage());
@@ -158,7 +168,14 @@ export function Home() {
   const [duration, setDuration] = useState(0);
   // Where Left and Right have moved to, until the player gets there.
   const [seekTo, setSeekTo] = useState<number>();
-  const [vodKind, setVodKind] = useState<number>();
+  const [vodSection, setVodSection] = useState<VodSection>();
+  // A series chosen in search, for the Series screen to open.
+  const [seriesToOpen, setSeriesToOpen] = useState<Channel>();
+  // The search screen, kept once opened so its results stay.
+  const [searchOpened, setSearchOpened] = useState(false);
+  // The screen Back from full screen returns to, when what's playing was
+  // started from Movies, Series, Favourites or search.
+  const [returnTo, setReturnTo] = useState<'vod' | 'search'>();
   const [settings, setSettings] = useState<SettingsPage>({
     page: 'root',
     index: 0,
@@ -195,13 +212,21 @@ export function Home() {
     const ids = await enabledSourceIds();
     setSources(all);
     setSourceIds(ids);
-    groupPaging.current = firstPage();
-    const first = ids.length > 0 ? await loadGroups(ids, 1) : [];
-    groupPaging.current.done = first.length < PAGE_SIZE;
-    setGroups([...FIXED_LISTS, ...first]);
+    setGroupsVersion(v => v + 1);
     setGuide(new Map());
     return ids;
   }, []);
+
+  const groups = usePlaylistGroups(
+    sources,
+    FIXED_LISTS,
+    MediaType.LIVESTREAM,
+    groupsVersion,
+    say,
+  );
+  const openRow = groups.rows.findIndex(
+    r => r.kind === 'list' && listKey(r.list) === listKey(list),
+  );
 
   const play = useCallback(
     async (channel: Channel, number?: number) => {
@@ -240,15 +265,47 @@ export function Home() {
   const playVod = useCallback(
     async (item: Channel) => {
       await play(item);
+      setReturnTo('vod');
       setArea('fullscreen');
     },
     [play],
   );
 
   const closeVod = useCallback(() => {
-    setMenuIndex(vodKind === MediaType.SERIE ? SERIES : MOVIES);
+    setMenuIndex(vodSection ? VOD_MENU[vodSection] : MOVIES);
     setArea('menu');
-  }, [vodKind]);
+  }, [vodSection]);
+
+  const closeSearch = useCallback(() => {
+    setMenuIndex(SEARCH);
+    setArea('menu');
+  }, []);
+
+  // A search result: a series opens in Series, and movies and channels
+  // play full screen. Back from a channel goes to the guide, unless the
+  // "Stay on search screen" setting is on.
+  const openFromSearch = useCallback(
+    async (item: Channel, stayOnSearch: boolean) => {
+      if (item.mediaType === MediaType.SERIE) {
+        setVodSection('series');
+        setSeriesToOpen(item);
+        setArea('vod');
+        return;
+      }
+      await play(item);
+      const live = item.mediaType === MediaType.LIVESTREAM;
+      setReturnTo(live && !stayOnSearch ? undefined : 'search');
+      setArea('fullscreen');
+    },
+    [play],
+  );
+
+  // Back from full screen to the screen it was started from.
+  const backFromPlayer = () => {
+    setPlaying(undefined);
+    setArea(returnTo ?? 'guide');
+    setReturnTo(undefined);
+  };
 
   useEffect(() => {
     (async () => {
@@ -271,41 +328,22 @@ export function Home() {
     })();
   }, [reload, play, say]);
 
+  // Moving through the groups shows each one in the guide after a moment.
+  const highlighted = groups.rows[groupIndex];
   useEffect(() => {
-    const paging = groupPaging.current;
     if (
-      !sourceIds ||
-      paging.done ||
-      paging.loading ||
-      groupIndex < groups.length - 6
+      area !== 'groups' ||
+      highlighted?.kind !== 'list' ||
+      listKey(highlighted.list) === listKey(list)
     ) {
       return;
     }
-    paging.loading = true;
-    loadGroups(sourceIds, paging.page + 1)
-      .then(more => {
-        paging.page += 1;
-        paging.done = more.length < PAGE_SIZE;
-        setGroups(g => [...g, ...more]);
-      })
-      .catch(e => say(errorMessage(e)))
-      .finally(() => {
-        paging.loading = false;
-      });
-  }, [groupIndex, groups.length, sourceIds, say]);
-
-  // Moving through the groups shows each one in the guide after a moment.
-  useEffect(() => {
-    if (area !== 'groups' || groupIndex === openGroup) {
-      return;
-    }
-    const timer = setTimeout(() => setOpenGroup(groupIndex), 300);
+    const timer = setTimeout(() => setList(highlighted.list), 300);
     return () => clearTimeout(timer);
-  }, [area, groupIndex, openGroup]);
+  }, [area, highlighted, list]);
 
   // Channels
 
-  const list = groups[openGroup];
   useEffect(() => {
     if (!sourceIds || !list) {
       return;
@@ -362,7 +400,7 @@ export function Home() {
     LAYOUTS[
       area === 'settings' || area === 'form'
         ? 'menu'
-        : area === 'fullscreen' || area === 'vod'
+        : area === 'fullscreen' || area === 'vod' || area === 'search'
         ? 'guide'
         : area
     ];
@@ -440,13 +478,13 @@ export function Home() {
     setArea('guide');
   };
 
-  // Opens the guide on the list at `index` in the groups column.
-  const openList = (index: number) => {
-    if (index === openGroup) {
+  // Opens the guide on a list.
+  const openList = (next: ChannelList) => {
+    if (listKey(next) === listKey(list)) {
       openGuide();
       return;
     }
-    setOpenGroup(index);
+    setList(next);
     setRow(0);
     setFocusTime(now);
     setWindowStart(floorHalfHour(now));
@@ -580,7 +618,7 @@ export function Home() {
     Math.max(0, Math.min(value, count - 1));
 
   const keys: Record<
-    Exclude<Area, 'form' | 'vod'>,
+    Exclude<Area, 'form' | 'vod' | 'search'>,
     (key: Key) => boolean | void
   > = {
     menu: key => {
@@ -592,11 +630,16 @@ export function Home() {
         const item = MENU_ITEMS[menuIndex];
         if (item.key === 'channels') {
           setArea('groups');
-        } else if (item.key === 'favourites') {
-          setGroupIndex(FAVOURITES_LIST);
-          openList(FAVOURITES_LIST);
-        } else if (item.key === 'movies' || item.key === 'series') {
-          setVodKind(item.key === 'movies' ? MediaType.MOVIE : MediaType.SERIE);
+        } else if (item.key === 'search') {
+          setSearchOpened(true);
+          setArea('search');
+        } else if (
+          item.key === 'movies' ||
+          item.key === 'series' ||
+          item.key === 'favourites'
+        ) {
+          setSeriesToOpen(undefined);
+          setVodSection(item.key);
           setArea('vod');
         } else if (item.key === 'settings') {
           setSettings({ page: 'root', index: 0 });
@@ -612,10 +655,18 @@ export function Home() {
       }
     },
     groups: key => {
+      const current = groups.rows[groupIndex];
       if (key === 'up' || key === 'down') {
-        setGroupIndex(i => clamp(i + (key === 'up' ? -1 : 1), groups.length));
-      } else if (key === 'right' || key === 'select') {
-        openList(groupIndex);
+        setGroupIndex(i =>
+          clamp(i + (key === 'up' ? -1 : 1), groups.rows.length),
+        );
+      } else if (current?.kind === 'playlist' && key === 'select') {
+        groups.toggle(current.sourceId);
+      } else if (
+        current?.kind === 'list' &&
+        (key === 'right' || key === 'select')
+      ) {
+        openList(current.list);
       } else if (key === 'left' || key === 'back') {
         setMenuIndex(CHANNELS);
         setArea('menu');
@@ -635,7 +686,7 @@ export function Home() {
           focusedBlock &&
           focusedBlocks[focusedBlocks.indexOf(focusedBlock) - 1];
         if (!focusedBlock || focusedBlock.start <= now || !previous) {
-          setGroupIndex(openGroup);
+          setGroupIndex(i => (openRow >= 0 ? openRow : i));
           setArea('groups');
         } else {
           setFocusTime(Math.max(previous.start, now));
@@ -659,7 +710,7 @@ export function Home() {
           })
           .catch(e => say(errorMessage(e)));
       } else if (key === 'back') {
-        setGroupIndex(openGroup);
+        setGroupIndex(i => (openRow >= 0 ? openRow : i));
         setArea('groups');
       }
     },
@@ -689,6 +740,15 @@ export function Home() {
     fullscreen: key => {
       if (playingVod) {
         return vodPlayerKey(key);
+      }
+      // A channel from Favourites or search isn't in the guide's list.
+      if (returnTo) {
+        if (key === 'back' || key === 'left') {
+          backFromPlayer();
+        } else {
+          setInfo(i => key !== 'info' || !i);
+        }
+        return;
       }
       const at = playingRow;
       if (
@@ -732,23 +792,27 @@ export function Home() {
       setSeekTo(Math.max(0, Math.min(from + step, end)));
       setInfo(true);
     } else if (key === 'back') {
-      setPlaying(undefined);
-      setArea('vod');
+      backFromPlayer();
     } else {
       setInfo(true);
     }
   };
 
   useRemote(
-    key => (area === 'form' || area === 'vod' ? true : keys[area](key)),
-    area !== 'form' && area !== 'vod',
+    key =>
+      area === 'form' || area === 'vod' || area === 'search'
+        ? true
+        : keys[area](key),
+    area !== 'form' && area !== 'vod' && area !== 'search',
   );
 
   // Drawing
 
   const fullscreen = area === 'fullscreen';
   const inVod = area === 'vod';
-  const menuShown = area !== 'guide' && !fullscreen;
+  const inSearch = area === 'search';
+  // Search fills the screen, like TiviMate's.
+  const menuShown = area !== 'guide' && !fullscreen && !inSearch;
   const previewStyle = [
     styles.video,
     fullscreen
@@ -778,7 +842,7 @@ export function Home() {
       {area !== 'form' && (
         <Pressable focusable hasTVPreferredFocus style={styles.focusAnchor} />
       )}
-      {!fullscreen && !inVod && (
+      {!fullscreen && !inVod && !inSearch && (
         <>
           <View
             style={[
@@ -826,18 +890,30 @@ export function Home() {
           )}
         </>
       )}
-      {sourceIds && vodKind != null && (
+      {sourceIds && vodSection && (
         <Vod
-          key={vodKind}
-          kind={vodKind}
+          key={vodSection}
+          section={vodSection}
+          sources={sources}
           sourceIds={sourceIds}
+          version={groupsVersion}
           active={inVod}
           onExit={closeVod}
           onPlay={playVod}
+          seriesToOpen={seriesToOpen}
           say={say}
         />
       )}
-      {playing && !inVod && (
+      {sourceIds && searchOpened && (
+        <Search
+          sourceIds={sourceIds}
+          active={inSearch}
+          onExit={closeSearch}
+          onOpen={openFromSearch}
+          say={say}
+        />
+      )}
+      {playing && !inVod && !inSearch && (
         <Video
           ref={video}
           key={channelKey(playing.channel)}
@@ -879,18 +955,16 @@ export function Home() {
             section={
               area === 'settings' || area === 'form'
                 ? SETTINGS
-                : inVod
-                ? vodKind === MediaType.SERIE
-                  ? SERIES
-                  : MOVIES
+                : inVod && vodSection
+                ? VOD_MENU[vodSection]
                 : CHANNELS
             }
           />
           {!inVod && (
             <GroupList
-              groups={groups}
+              rows={groups.rows}
               index={groupIndex}
-              open={openGroup}
+              open={openRow}
               focused={area === 'groups'}
               width={layout.groupsWidth}
             />

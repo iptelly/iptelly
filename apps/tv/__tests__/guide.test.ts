@@ -82,6 +82,17 @@ describe('blocks', () => {
     );
     expect(row.map(b => b.programme?.title)).toEqual(['A']);
   });
+
+  test('skips programmes that start inside the one before but end later', () => {
+    // Providers send these, and they'd share a start time with the first.
+    const row = blocks(
+      [epg('A', NOON, NOON + HOUR), epg('B', NOON, NOON + 2 * HOUR)],
+      NOON,
+      NOON + 2 * HOUR,
+    );
+    expect(row.map(b => b.programme?.title ?? '-')).toEqual(['A', '-']);
+    expect(new Set(row.map(b => b.start)).size).toBe(row.length);
+  });
 });
 
 test('blockAt finds the block on at a time, or the nearest', () => {
