@@ -1,7 +1,10 @@
 import type { Group, Source } from 'react-native-iptelly';
 import { stepRow } from '../src/components/SettingsPanel';
 import {
+  connectionsText,
   countsText,
+  expiryText,
+  formatText,
   groupKinds,
   movePlaylist,
   playlistRows,
@@ -9,6 +12,7 @@ import {
   serverText,
   shownText,
   sortPlaylists,
+  xtreamChanged,
 } from '../src/playlists';
 
 jest.mock('@dr.pogodin/react-native-fs', () => ({}));
@@ -103,6 +107,27 @@ test('Manage groups has a page for each kind of group', () => {
     'Shows',
     'Other',
   ]);
+});
+
+test("an Xtream playlist's output format, changes and account", () => {
+  expect(formatText(undefined)).toBe('MPEG-TS');
+  expect(formatText('m3u8')).toBe('HLS');
+
+  const saved = { ...source(1n, 'A'), url: 'http://a:80/player_api.php' };
+  // The server as typed matches the saved one, and unset is the default.
+  expect(
+    xtreamChanged(saved, { ...saved, url: 'http://a:80', includeLive: true }),
+  ).toBe(false);
+  expect(xtreamChanged(saved, { ...saved, outputFormat: 'm3u8' })).toBe(true);
+  expect(xtreamChanged(saved, { ...saved, includeVod: false })).toBe(true);
+
+  expect(expiryText(undefined)).toBe('Loading…');
+  expect(expiryText(null)).toBe('Unknown');
+  expect(expiryText({ expires: undefined, maxConnections: 1 })).toBe(
+    'Unlimited',
+  );
+  expect(connectionsText({ expires: 1n, maxConnections: 1 })).toBe('1');
+  expect(connectionsText(null)).toBe('Unknown');
 });
 
 test('Up and Down skip headings and stop at the ends', () => {

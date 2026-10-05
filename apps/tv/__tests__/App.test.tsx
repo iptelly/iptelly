@@ -78,6 +78,10 @@ jest.mock('react-native-iptelly', () => {
       ]),
     ),
     setGroupHidden: jest.fn(() => Promise.resolve()),
+    updateSource: jest.fn(() => Promise.resolve()),
+    getXtreamAccount: jest.fn(() =>
+      Promise.resolve({ expires: undefined, maxConnections: 2 }),
+    ),
     getMediaInfo: jest.fn(() =>
       Promise.resolve({ year: '2025', genre: 'Thriller', plot: 'A plot.' }),
     ),
@@ -474,6 +478,54 @@ test('browses the movies and plays one', async () => {
   await press('back');
   expect(text(renderer)).not.toContain('"display":"none"');
   expect(renderer.root.findAllByProps({ testID: 'video' })).toHaveLength(0);
+
+  await ReactTestRenderer.act(async () => renderer.unmount());
+});
+
+test('Xtream Codes parameters wait for Apply changes', async () => {
+  const core = jest.requireMock('react-native-iptelly');
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    renderer = ReactTestRenderer.create(<App />);
+  });
+  await settle();
+
+  // Settings, Playlists, the playlist, then down past Use this playlist,
+  // Catch-up and User-Agent to Xtream Codes parameters.
+  await press('back');
+  for (const key of ['down', 'down', 'down', 'down', 'select'] as const) {
+    await press(key);
+  }
+  await press('down');
+  await press('select');
+  await press('select');
+  for (const key of ['down', 'down', 'down', 'select'] as const) {
+    await press(key);
+  }
+  expect(core.getXtreamAccount).toHaveBeenCalledWith(1n);
+  expect(text(renderer)).toContain('MPEG-TS');
+  expect(text(renderer)).toContain('Unlimited');
+  expect(text(renderer)).toContain('Max connections');
+
+  // Down to Output format and choose HLS.
+  for (const key of ['down', 'down', 'down', 'select'] as const) {
+    await press(key);
+  }
+  await press('down');
+  await press('select');
+  expect(text(renderer)).toContain('HLS');
+
+  // Turn off Include VOD; nothing is saved until Apply changes.
+  await press('down');
+  await press('down');
+  await press('select');
+  expect(core.updateSource).not.toHaveBeenCalled();
+  await press('down');
+  await press('select');
+  expect(core.updateSource).toHaveBeenCalledWith(
+    expect.objectContaining({ outputFormat: 'm3u8', includeVod: false }),
+  );
+  expect(core.refreshSource).toHaveBeenCalledWith(1n);
 
   await ReactTestRenderer.act(async () => renderer.unmount());
 });

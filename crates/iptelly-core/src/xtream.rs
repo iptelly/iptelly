@@ -8,6 +8,7 @@ use crate::types::ChannelPreserve;
 use crate::types::MediaInfo;
 use crate::types::Season;
 use crate::types::Source;
+use crate::types::XtreamAccount;
 use crate::types::XtreamStatus;
 use crate::utils::get_user_agent_from_source;
 use anyhow::anyhow;
@@ -189,22 +190,23 @@ pub async fn get_xtream(mut source: Source, wipe: bool) -> Result<()> {
     let refresh_start = std::time::Instant::now();
     let url = build_xtream_url(&mut source)?;
     let user_agent = get_user_agent_from_source(&source)?;
+    // A source can leave out its TV channels, or its movies and series:
+    // those lists aren't downloaded, so it ends up with none of them.
+    let live_on = source.include_live != Some(false);
+    let vod_on = source.include_vod != Some(false);
     let fetch_start = std::time::Instant::now();
     let (live, live_cats, vods, vods_cats, series, series_cats) = join!(
-        get_xtream_http_data::<Vec<XtreamStream>>(url.clone(), GET_LIVE_STREAMS, &user_agent),
-        get_xtream_http_data::<Vec<XtreamCategory>>(
+        get_xtream_list::<XtreamStream>(live_on, url.clone(), GET_LIVE_STREAMS, &user_agent),
+        get_xtream_list::<XtreamCategory>(
+            live_on,
             url.clone(),
             GET_LIVE_STREAM_CATEGORIES,
             &user_agent
         ),
-        get_xtream_http_data::<Vec<XtreamStream>>(url.clone(), GET_VODS, &user_agent),
-        get_xtream_http_data::<Vec<XtreamCategory>>(url.clone(), GET_VOD_CATEGORIES, &user_agent),
-        get_xtream_http_data::<Vec<XtreamStream>>(url.clone(), GET_SERIES, &user_agent),
-        get_xtream_http_data::<Vec<XtreamCategory>>(
-            url.clone(),
-            GET_SERIES_CATEGORIES,
-            &user_agent
-        ),
+        get_xtream_list::<XtreamStream>(vod_on, url.clone(), GET_VODS, &user_agent),
+        get_xtream_list::<XtreamCategory>(vod_on, url.clone(), GET_VOD_CATEGORIES, &user_agent),
+        get_xtream_list::<XtreamStream>(vod_on, url.clone(), GET_SERIES, &user_agent),
+        get_xtream_list::<XtreamCategory>(vod_on, url.clone(), GET_SERIES_CATEGORIES, &user_agent),
     );
     // Timing is phase-level rather than per-request because the 6 calls
     // above run concurrently via join! - wall-clock time for this block is
@@ -316,6 +318,22 @@ pub async fn get_xtream(mut source: Source, wipe: bool) -> Result<()> {
         refresh_start.elapsed()
     ));
     Ok(())
+}
+
+// A list from the panel, or an empty one without asking when it's left out.
+async fn get_xtream_list<T>(
+    include: bool,
+    url: Url,
+    action: &str,
+    user_agent: &String,
+) -> Result<Vec<T>>
+where
+    T: serde::de::DeserializeOwned,
+{
+    if !include {
+        return Ok(Vec::new());
+    }
+    get_xtream_http_data(url, action, user_agent).await
 }
 
 async fn get_xtream_http_data<T>(mut url: Url, action: &str, user_agent: &String) -> Result<T>
@@ -488,6 +506,11 @@ fn get_url(
     stream_type: u8,
     extension: Option<String>,
 ) -> Result<String> {
+    // Live channels play in the source's output format, if it has one.
+    let extension = match &source.output_format {
+        Some(format) if stream_type == media_type::LIVESTREAM => Some(format.clone()),
+        _ => extension,
+    };
     Ok(format!(
         "{}/{}/{}/{}/{}.{}",
         source.url_origin.clone().unwrap(),
@@ -864,6 +887,16 @@ pub async fn get_all_expiries() -> Result<HashMap<i64, i64>> {
     Ok(statuses)
 }
 
+pub async fn get_account(source_id: i64) -> Result<XtreamAccount> {
+    let mut source = sql::get_source_from_id(source_id)?;
+    let (_, status) = get_status(&mut source).await?;
+    Ok(XtreamAccount {
+        expires: get_serde_json_i64(&status.user_info.exp_date),
+        max_connections: get_serde_json_u64(&status.user_info.max_connections)
+            .and_then(|n| u32::try_from(n).ok()),
+    })
+}
+
 // Surfaced in settings so it's clear which timezone convention the timeshift
 // URL (see get_timeshift_url_for_epg) is computing against for this source.
 pub async fn get_all_timezones() -> Result<HashMap<i64, String>> {
@@ -962,6 +995,9 @@ mod test_xtream {
             epg_url: None,
             timezone: None,
             epg_retention_days: None,
+            output_format: None,
+            include_live: None,
+            include_vod: None,
         }
     }
 
@@ -1100,6 +1136,25 @@ mod test_xtream {
         assert_eq!(get_media_type_string(media_type::MOVIE).unwrap(), "movie");
         assert_eq!(get_media_type_string(media_type::SERIE).unwrap(), "series");
         assert!(get_media_type_string(media_type::GROUP).is_err());
+    }
+
+    #[test]
+    fn test_get_url_uses_the_output_format_for_live_channels() {
+        let mut source = test_source();
+        assert_eq!(
+            get_url("1".into(), &source, media_type::LIVESTREAM, None).unwrap(),
+            "http://panel.example/live/user/pass/1.ts"
+        );
+        source.output_format = Some("m3u8".into());
+        assert_eq!(
+            get_url("1".into(), &source, media_type::LIVESTREAM, None).unwrap(),
+            "http://panel.example/live/user/pass/1.m3u8"
+        );
+        // Films keep their own container.
+        assert_eq!(
+            get_url("2".into(), &source, media_type::MOVIE, Some("mkv".into())).unwrap(),
+            "http://panel.example/movie/user/pass/2.mkv"
+        );
     }
 
     #[test]

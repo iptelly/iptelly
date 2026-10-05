@@ -20,6 +20,7 @@ import {
   FfiConverterInt64,
   FfiConverterOptional,
   FfiConverterUInt16,
+  FfiConverterUInt32,
   FfiConverterUInt64,
   FfiConverterUInt8,
   RustBuffer,
@@ -609,6 +610,59 @@ export async function getSources(asyncOpts_?: {
       /*liftFunc:*/ (__rb) => {
         try {
           return FfiConverterSequenceTypeSource.lift(__rb);
+        } finally {
+          nativeModule().rustbuffer_free(__rb);
+        }
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeIptellyError.lift.bind(
+        FfiConverterTypeIptellyError
+      )
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+/**
+ * An Xtream source's expiry date and maximum connections, from its panel.
+ */
+export async function getXtreamAccount(
+  sourceId: bigint,
+  asyncOpts_?: { signal: AbortSignal }
+): Promise<XtreamAccount> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_iptelly_ffi_fn_func_get_xtream_account(
+          FfiConverterInt64.lower(sourceId, nativeModule().rustbuffer_alloc)
+        );
+      },
+      /*pollFunc:*/ nativeModule()
+        .ubrn_ffi_iptelly_ffi_rust_future_poll_rust_buffer,
+      /*cancelFunc:*/ nativeModule()
+        .ubrn_ffi_iptelly_ffi_rust_future_cancel_rust_buffer,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_iptelly_ffi_rust_future_complete_rust_buffer,
+      /*freeFunc:*/ nativeModule()
+        .ubrn_ffi_iptelly_ffi_rust_future_free_rust_buffer,
+      // Async returns always go through the JS-side converter: the
+      // FFI symbol returns the future handle (u64), and the user-level
+      // RustBuffer comes back via the shared `rust_future_complete_*`
+      // export. The bytes the runtime hands back must be deserialized
+      // here using the per-callable return-type converter.
+      // Borrowed view over foreign memory: the call site owns the free,
+      // as on the sync paths. Unconditional — a no-op where buffers are
+      // already JS-owned.
+      /*liftFunc:*/ (__rb) => {
+        try {
+          return FfiConverterTypeXtreamAccount.lift(__rb);
         } finally {
           nativeModule().rustbuffer_free(__rb);
         }
@@ -1975,6 +2029,9 @@ export type Source = {
   epgUrl?: string;
   timezone?: string;
   epgRetentionDays?: number;
+  outputFormat?: string;
+  includeLive?: boolean;
+  includeVod?: boolean;
 };
 
 /**
@@ -2013,6 +2070,9 @@ const FfiConverterTypeSource = (() => {
         epgUrl: FfiConverterOptionalString.readFromCursor(c),
         timezone: FfiConverterOptionalString.readFromCursor(c),
         epgRetentionDays: FfiConverterOptionalUInt16.readFromCursor(c),
+        outputFormat: FfiConverterOptionalString.readFromCursor(c),
+        includeLive: FfiConverterOptionalBoolean.readFromCursor(c),
+        includeVod: FfiConverterOptionalBoolean.readFromCursor(c),
       };
     }
     writeIntoCursor(value: TypeName, c: Cursor): void {
@@ -2032,6 +2092,9 @@ const FfiConverterTypeSource = (() => {
       FfiConverterOptionalString.writeIntoCursor(value.epgUrl, c);
       FfiConverterOptionalString.writeIntoCursor(value.timezone, c);
       FfiConverterOptionalUInt16.writeIntoCursor(value.epgRetentionDays, c);
+      FfiConverterOptionalString.writeIntoCursor(value.outputFormat, c);
+      FfiConverterOptionalBoolean.writeIntoCursor(value.includeLive, c);
+      FfiConverterOptionalBoolean.writeIntoCursor(value.includeVod, c);
     }
     allocationSize(value: TypeName): number {
       return (
@@ -2050,7 +2113,10 @@ const FfiConverterTypeSource = (() => {
         FfiConverterOptionalInt64.allocationSize(value.lastUpdated) +
         FfiConverterOptionalString.allocationSize(value.epgUrl) +
         FfiConverterOptionalString.allocationSize(value.timezone) +
-        FfiConverterOptionalUInt16.allocationSize(value.epgRetentionDays)
+        FfiConverterOptionalUInt16.allocationSize(value.epgRetentionDays) +
+        FfiConverterOptionalString.allocationSize(value.outputFormat) +
+        FfiConverterOptionalBoolean.allocationSize(value.includeLive) +
+        FfiConverterOptionalBoolean.allocationSize(value.includeVod)
       );
     }
   }
@@ -2100,6 +2166,51 @@ const FfiConverterTypeSourceCounts = (() => {
         FfiConverterUInt64.allocationSize(value.channels) +
         FfiConverterUInt64.allocationSize(value.movies) +
         FfiConverterUInt64.allocationSize(value.series)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type XtreamAccount = {
+  expires?: bigint;
+  maxConnections?: number;
+};
+
+/**
+ * Generated factory for {@link XtreamAccount} record objects.
+ */
+export const XtreamAccount = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<XtreamAccount, ReturnType<typeof defaults>>(
+      defaults
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<XtreamAccount>,
+  });
+})();
+
+const FfiConverterTypeXtreamAccount = (() => {
+  type TypeName = XtreamAccount;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    readFromCursor(c: Cursor): TypeName {
+      return {
+        expires: FfiConverterOptionalInt64.readFromCursor(c),
+        maxConnections: FfiConverterOptionalUInt32.readFromCursor(c),
+      };
+    }
+    writeIntoCursor(value: TypeName, c: Cursor): void {
+      FfiConverterOptionalInt64.writeIntoCursor(value.expires, c);
+      FfiConverterOptionalUInt32.writeIntoCursor(value.maxConnections, c);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterOptionalInt64.allocationSize(value.expires) +
+        FfiConverterOptionalUInt32.allocationSize(value.maxConnections)
       );
     }
   }
@@ -2231,6 +2342,9 @@ const FfiConverterSequenceString = new FfiConverterArray(FfiConverterString);
 
 // FfiConverter for number | undefined
 const FfiConverterOptionalUInt16 = new FfiConverterOptional(FfiConverterUInt16);
+
+// FfiConverter for number | undefined
+const FfiConverterOptionalUInt32 = new FfiConverterOptional(FfiConverterUInt32);
 
 // FfiConverter for Array<Epg>
 const FfiConverterSequenceTypeEPG = new FfiConverterArray(FfiConverterTypeEPG);
@@ -2367,6 +2481,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_iptelly_ffi_checksum_func_get_sources'
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_iptelly_ffi_checksum_func_get_xtream_account() !==
+    62106
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_iptelly_ffi_checksum_func_get_xtream_account'
     );
   }
   if (
@@ -2520,5 +2642,6 @@ export default Object.freeze({
     FfiConverterTypeSettings,
     FfiConverterTypeSource,
     FfiConverterTypeSourceCounts,
+    FfiConverterTypeXtreamAccount,
   },
 });

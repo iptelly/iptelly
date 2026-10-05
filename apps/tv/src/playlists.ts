@@ -2,7 +2,12 @@
 // Reorder playlists), their counts, a playlist's own page, and when
 // playlists update by themselves.
 
-import type { Group, Source, SourceCounts } from 'react-native-iptelly';
+import type {
+  Group,
+  Source,
+  SourceCounts,
+  XtreamAccount,
+} from 'react-native-iptelly';
 import { MediaType, SourceType } from './core';
 
 export type PlaylistSort = 'name' | 'added' | 'manual';
@@ -109,6 +114,67 @@ export function playlistRows(source: Source): PlaylistRow[] {
 // update_source adds back.
 export function serverText(url: string | undefined): string {
   return (url ?? '').replace(/\/player_api\.php$/, '');
+}
+
+// The Xtream Codes parameters page, as in TiviMate. Changes wait for Apply
+// changes, which saves them and updates the playlist. The last two rows
+// come from the provider.
+export const XTREAM_ROWS = [
+  'Server',
+  'Username',
+  'Password',
+  'Output format',
+  'Include TV channels',
+  'Include VOD',
+  'Apply changes',
+  'Expiration date',
+  'Max connections',
+] as const;
+export type XtreamRow = (typeof XTREAM_ROWS)[number];
+
+// What live channels play as: the Xtream output formats.
+export const OUTPUT_FORMATS = ['ts', 'm3u8'];
+const FORMAT_LABELS: Record<string, string> = { ts: 'MPEG-TS', m3u8: 'HLS' };
+
+export function formatText(format: string | undefined): string {
+  return FORMAT_LABELS[format ?? 'ts'] ?? format!;
+}
+
+// What Apply changes would save.
+export function xtreamChanged(saved: Source, draft: Source): boolean {
+  return (
+    serverText(saved.url) !== serverText(draft.url) ||
+    (saved.username ?? '') !== (draft.username ?? '') ||
+    (saved.password ?? '') !== (draft.password ?? '') ||
+    (saved.outputFormat ?? 'ts') !== (draft.outputFormat ?? 'ts') ||
+    (saved.includeLive ?? true) !== (draft.includeLive ?? true) ||
+    (saved.includeVod ?? true) !== (draft.includeVod ?? true)
+  );
+}
+
+// The account details from the provider: undefined while they load, null
+// if they couldn't be loaded.
+export type Account = XtreamAccount | null | undefined;
+
+export function expiryText(account: Account): string {
+  if (account === undefined) {
+    return 'Loading…';
+  }
+  if (account === null) {
+    return 'Unknown';
+  }
+  return account.expires == null
+    ? 'Unlimited'
+    : new Date(Number(account.expires) * 1000).toLocaleDateString();
+}
+
+export function connectionsText(account: Account): string {
+  if (account === undefined) {
+    return 'Loading…';
+  }
+  return account?.maxConnections == null
+    ? 'Unknown'
+    : String(account.maxConnections);
 }
 
 // The catch-up the app can use for a playlist: the Xtream Codes archive.

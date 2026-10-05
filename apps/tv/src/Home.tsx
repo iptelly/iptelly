@@ -13,6 +13,7 @@ import {
   getGuide,
   getSourceCounts,
   getSourceGroups,
+  getXtreamAccount,
   importAppData,
   playRequest,
   refreshAll,
@@ -33,11 +34,16 @@ import {
 import { canDrawOverlays, openOverlaySettings } from './appControl';
 import {
   DEFAULT_UPDATES,
+  OUTPUT_FORMATS,
   PLAYLIST_ROW_LABELS,
   SORT_LABELS,
   UPDATE_HOURS,
+  XTREAM_ROWS,
   catchupText,
+  connectionsText,
   countsText,
+  expiryText,
+  formatText,
   groupKinds,
   hoursText,
   movePlaylist,
@@ -46,9 +52,12 @@ import {
   serverText,
   shownText,
   sortPlaylists,
+  xtreamChanged,
+  type Account,
   type PlaylistRow,
   type PlaylistSort,
   type PlaylistUpdates,
+  type XtreamRow,
 } from './playlists';
 import {
   DEFAULT_SETTINGS,
@@ -180,10 +189,13 @@ type SettingsPage = {
     | 'reorder'
     | 'interval'
     | 'xtream'
+    | 'outputFormat'
     | 'groups'
     | 'groupKind';
   index: number;
   source?: Source;
+  // Xtream Codes parameters: the changes waiting for Apply changes.
+  draft?: Source;
   // Manage groups: the kind of group whose page is open.
   kind?: number;
   confirmDelete?: boolean;
@@ -200,7 +212,6 @@ const PLAYLIST_ACTIONS = [
   ...(__DEV__ ? ['Add the demo playlist'] : []),
 ];
 const SORTS: PlaylistSort[] = ['name', 'added', 'manual'];
-const XTREAM_FIELDS = ['Server', 'Username', 'Password'] as const;
 
 // The player's red LIVE badge is hidden: the info bar shows what's playing.
 const NO_LIVE_BADGE = { hideLiveBadge: true };
@@ -290,6 +301,8 @@ export function Home() {
   const [textSetting, setTextSetting] = useState<TextForm>();
   // Manage groups: the playlist's groups, until they've loaded.
   const [sourceGroups, setSourceGroups] = useState<Group[]>();
+  // Xtream Codes parameters: the account's expiry and connections.
+  const [account, setAccount] = useState<Account>();
   // When Back was first pressed to exit, with exits confirmed.
   const exitPressed = useRef(0);
   // Settings > Playlists: each playlist's channel, movie and series counts.
@@ -739,14 +752,32 @@ export function Home() {
           ),
         };
       case 'xtream': {
-        const source = settingsSource!;
+        const draft = settings.draft ?? settingsSource!;
+        const details: Partial<Record<XtreamRow, string>> = {
+          Server: serverText(draft.url) || 'Not set',
+          Username: draft.username || 'Not set',
+          Password: draft.password ? '••••••••' : 'Not set',
+          'Output format': formatText(draft.outputFormat),
+          'Expiration date': expiryText(account),
+          'Max connections': connectionsText(account),
+        };
         return {
-          items: [...XTREAM_FIELDS],
-          details: [
-            serverText(source.url) || 'Not set',
-            source.username || 'Not set',
-            source.password ? '••••••••' : 'Not set',
-          ],
+          items: [...XTREAM_ROWS],
+          details: XTREAM_ROWS.map(item => details[item]),
+          toggles: XTREAM_ROWS.map(item =>
+            item === 'Include TV channels'
+              ? draft.includeLive ?? true
+              : item === 'Include VOD'
+              ? draft.includeVod ?? true
+              : undefined,
+          ),
+        };
+      }
+      case 'outputFormat': {
+        const format = settings.draft?.outputFormat ?? 'ts';
+        return {
+          items: OUTPUT_FORMATS.map(formatText),
+          checks: OUTPUT_FORMATS.map(f => f === format),
         };
       }
       case 'groups':
@@ -821,6 +852,29 @@ export function Home() {
         say(errorMessage(e));
       });
   }, [groupsSourceId, say]);
+
+  // Xtream Codes parameters: the account details from the provider, when
+  // the page opens and after its login is changed. They're kept while
+  // typing in a field.
+  const accountSourceId =
+    (area === 'settings' || area === 'form') &&
+    (settings.page === 'xtream' || settings.page === 'outputFormat')
+      ? settings.source?.id
+      : undefined;
+  useEffect(() => {
+    if (accountSourceId == null) {
+      return;
+    }
+    setAccount(undefined);
+    getXtreamAccount(accountSourceId)
+      .then(setAccount)
+      .catch(() => setAccount(null));
+  }, [
+    accountSourceId,
+    settingsSource?.url,
+    settingsSource?.username,
+    settingsSource?.password,
+  ]);
 
   const run = async (
     busyText: string,
@@ -907,7 +961,17 @@ export function Home() {
         hours: UPDATE_HOURS[settings.index],
       });
     } else if (settings.page === 'xtream') {
-      chooseXtreamField(settingsSource!, XTREAM_FIELDS[settings.index]);
+      chooseXtreamRow(settingsSource!, XTREAM_ROWS[settings.index]);
+    } else if (settings.page === 'outputFormat') {
+      setSettings({
+        ...settings,
+        page: 'xtream',
+        index: XTREAM_ROWS.indexOf('Output format'),
+        draft: {
+          ...(settings.draft ?? settingsSource!),
+          outputFormat: OUTPUT_FORMATS[settings.index],
+        },
+      });
     } else if (settings.page === 'groups') {
       if (sourceGroups) {
         setSettings({
@@ -955,37 +1019,81 @@ export function Home() {
       doneText,
     );
 
-  const chooseXtreamField = (
-    source: Source,
-    field: (typeof XTREAM_FIELDS)[number],
-  ) => {
-    const saved = `Saved. Choose Update playlist to load ${source.name} with it.`;
-    if (field === 'Server') {
+  // The Xtream Codes parameters page. Its changes are kept in the draft
+  // until Apply changes saves them and updates the playlist.
+  const chooseXtreamRow = (source: Source, choice: XtreamRow) => {
+    const draft = settings.draft ?? source;
+    const edit = (change: Partial<Source>) =>
+      setSettings(s => ({
+        ...s,
+        draft: { ...(s.draft ?? source), ...change },
+      }));
+    const type = (
+      form: Omit<TextForm, 'save'>,
+      change: (value: string | undefined) => Partial<Source>,
+    ) => {
       setTextSetting({
-        label: 'Server',
-        placeholder: 'e.g. http://example.com:8080',
-        value: serverText(source.url),
-        save: url => saveSource({ ...source, url: url || undefined }, saved),
+        ...form,
+        save: value => edit(change(value || undefined)),
       });
-    } else if (field === 'Username') {
-      setTextSetting({
-        label: 'Username',
-        placeholder: 'Username',
-        value: source.username ?? '',
-        save: username =>
-          saveSource({ ...source, username: username || undefined }, saved),
+      setArea('form');
+    };
+    if (choice === 'Server') {
+      type(
+        {
+          label: 'Server',
+          placeholder: 'e.g. http://example.com:8080',
+          value: serverText(draft.url),
+        },
+        url => ({ url }),
+      );
+    } else if (choice === 'Username') {
+      type(
+        {
+          label: 'Username',
+          placeholder: 'Username',
+          value: draft.username ?? '',
+        },
+        username => ({ username }),
+      );
+    } else if (choice === 'Password') {
+      type(
+        {
+          label: 'Password',
+          placeholder: 'Password',
+          secure: true,
+          value: draft.password ?? '',
+        },
+        password => ({ password }),
+      );
+    } else if (choice === 'Output format') {
+      setSettings({
+        ...settings,
+        page: 'outputFormat',
+        index: Math.max(0, OUTPUT_FORMATS.indexOf(draft.outputFormat ?? 'ts')),
+        draft,
       });
-    } else {
-      setTextSetting({
-        label: 'Password',
-        placeholder: 'Password',
-        secure: true,
-        value: source.password ?? '',
-        save: password =>
-          saveSource({ ...source, password: password || undefined }, saved),
-      });
+    } else if (choice === 'Include TV channels') {
+      edit({ includeLive: !(draft.includeLive ?? true) });
+    } else if (choice === 'Include VOD') {
+      edit({ includeVod: !(draft.includeVod ?? true) });
+    } else if (choice === 'Apply changes') {
+      if (!xtreamChanged(source, draft)) {
+        say('Nothing to apply.');
+        return;
+      }
+      run(
+        `Updating ${source.name}…`,
+        async () => {
+          await updateSource(draft);
+          setSettings(s => ({ ...s, draft: undefined }));
+          await refreshSource(source.id!);
+          await reload();
+          setCounts(new Map());
+        },
+        `Applied the changes and updated ${source.name}.`,
+      );
     }
-    setArea('form');
   };
 
   const choosePlaylistRow = (source: Source, choice: PlaylistRow) => {
@@ -1294,6 +1402,12 @@ export function Home() {
             page: 'groups',
             index: settings.kind ?? 0,
             source: settings.source,
+          });
+        } else if (settings.page === 'outputFormat') {
+          setSettings({
+            ...settings,
+            page: 'xtream',
+            index: XTREAM_ROWS.indexOf('Output format'),
           });
         } else if (parent) {
           setSettings({
@@ -1611,6 +1725,7 @@ export function Home() {
               reorder: 'Reorder playlists',
               interval: PLAYLIST_ROW_LABELS.interval,
               xtream: PLAYLIST_ROW_LABELS.xtream,
+              outputFormat: 'Output format',
               groups: PLAYLIST_ROW_LABELS.groups,
               groupKind: kinds[settings.kind ?? 0]?.label ?? '',
             }[settings.page]

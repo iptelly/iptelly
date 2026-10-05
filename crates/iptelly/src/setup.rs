@@ -151,6 +151,9 @@ fn source_from_form(state: &SetupState) -> Source {
         },
         timezone: None,
         epg_retention_days: None,
+        output_format: None,
+        include_live: None,
+        include_vod: None,
     }
 }
 

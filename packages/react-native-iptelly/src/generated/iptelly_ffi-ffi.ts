@@ -184,6 +184,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_iptelly_ffi_fn_func_get_source_counts(sourceId: bigint): bigint;
   ubrn_uniffi_iptelly_ffi_fn_func_get_source_groups(sourceId: bigint): bigint;
   ubrn_uniffi_iptelly_ffi_fn_func_get_sources(): bigint;
+  ubrn_uniffi_iptelly_ffi_fn_func_get_xtream_account(sourceId: bigint): bigint;
   ubrn_uniffi_iptelly_ffi_fn_func_has_adult_pin(): bigint;
   ubrn_uniffi_iptelly_ffi_fn_func_import_app_data(path: Uint8Array): bigint;
   ubrn_uniffi_iptelly_ffi_fn_func_init(
@@ -229,6 +230,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_iptelly_ffi_checksum_func_get_source_counts(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_get_source_groups(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_get_sources(): number;
+  ubrn_uniffi_iptelly_ffi_checksum_func_get_xtream_account(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_has_adult_pin(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_import_app_data(): number;
   ubrn_uniffi_iptelly_ffi_checksum_func_init(): number;

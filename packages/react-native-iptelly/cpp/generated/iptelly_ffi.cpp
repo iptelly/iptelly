@@ -116,6 +116,8 @@ uniffi_iptelly_ffi_fn_func_get_source_counts(int64_t source_id);
 /*handle*/ uint64_t
 uniffi_iptelly_ffi_fn_func_get_source_groups(int64_t source_id);
 /*handle*/ uint64_t uniffi_iptelly_ffi_fn_func_get_sources();
+/*handle*/ uint64_t
+uniffi_iptelly_ffi_fn_func_get_xtream_account(int64_t source_id);
 /*handle*/ uint64_t uniffi_iptelly_ffi_fn_func_has_adult_pin();
 /*handle*/ uint64_t uniffi_iptelly_ffi_fn_func_import_app_data(RustBuffer path);
 /*handle*/ uint64_t uniffi_iptelly_ffi_fn_func_init(RustBuffer data_dir,
@@ -273,6 +275,7 @@ uint16_t uniffi_iptelly_ffi_checksum_func_get_settings();
 uint16_t uniffi_iptelly_ffi_checksum_func_get_source_counts();
 uint16_t uniffi_iptelly_ffi_checksum_func_get_source_groups();
 uint16_t uniffi_iptelly_ffi_checksum_func_get_sources();
+uint16_t uniffi_iptelly_ffi_checksum_func_get_xtream_account();
 uint16_t uniffi_iptelly_ffi_checksum_func_has_adult_pin();
 uint16_t uniffi_iptelly_ffi_checksum_func_import_app_data();
 uint16_t uniffi_iptelly_ffi_checksum_func_init();
@@ -1822,6 +1825,17 @@ NativeIptellyFfi::NativeIptellyFfi(
             return this->cpp_uniffi_iptelly_ffi_fn_func_get_sources(
                 rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_iptelly_ffi_fn_func_get_xtream_account"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_iptelly_ffi_fn_func_get_xtream_account"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_iptelly_ffi_fn_func_get_xtream_account(
+                rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_iptelly_ffi_fn_func_has_adult_pin"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -2679,6 +2693,18 @@ NativeIptellyFfi::NativeIptellyFfi(
             return this->cpp_uniffi_iptelly_ffi_checksum_func_get_sources(
                 rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_iptelly_ffi_checksum_func_get_xtream_account"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_iptelly_ffi_checksum_func_get_xtream_account"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_iptelly_ffi_checksum_func_get_xtream_account(
+                    rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_iptelly_ffi_checksum_func_has_adult_pin"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -3176,6 +3202,15 @@ jsi::Value NativeIptellyFfi::cpp_uniffi_iptelly_ffi_fn_func_get_sources(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
   auto value = uniffi_iptelly_ffi_fn_func_get_sources();
+
+  return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
+                                                         value);
+}
+jsi::Value NativeIptellyFfi::cpp_uniffi_iptelly_ffi_fn_func_get_xtream_account(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_iptelly_ffi_fn_func_get_xtream_account(
+      uniffi_jsi::Bridging<int64_t>::fromJs(rt, callInvoker, args[0]));
 
   return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
                                                          value);
@@ -3994,6 +4029,14 @@ jsi::Value NativeIptellyFfi::cpp_uniffi_iptelly_ffi_checksum_func_get_sources(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
   auto value = uniffi_iptelly_ffi_checksum_func_get_sources();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value
+NativeIptellyFfi::cpp_uniffi_iptelly_ffi_checksum_func_get_xtream_account(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_iptelly_ffi_checksum_func_get_xtream_account();
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }

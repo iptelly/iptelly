@@ -12,6 +12,7 @@ use std::sync::LazyLock;
 use iptelly_core::playback::PlayRequest;
 use iptelly_core::types::{
     AppState, Channel, EPG, Filters, Group, MediaInfo, Settings, Source, SourceCounts,
+    XtreamAccount,
 };
 use iptelly_core::{
     api, app_data, m3u, paths, playback, settings, source_type, sql, utils, xmltv, xtream,
@@ -238,6 +239,12 @@ pub async fn get_source_counts(source_id: i64) -> Result<SourceCounts> {
     blocking(move || sql::get_source_counts(source_id)).await
 }
 
+/// An Xtream source's expiry date and maximum connections, from its panel.
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn get_xtream_account(source_id: i64) -> Result<XtreamAccount> {
+    Ok(xtream::get_account(source_id).await?)
+}
+
 /// Writes a backup of the playlists, favourites, history and settings to
 /// `path`. It includes the playlists' logins.
 #[uniffi::export(async_runtime = "tokio")]
@@ -350,6 +357,15 @@ pub struct Source {
     pub epg_url: Option<String>,
     pub timezone: Option<String>,
     pub epg_retention_days: Option<u16>,
+    pub output_format: Option<String>,
+    pub include_live: Option<bool>,
+    pub include_vod: Option<bool>,
+}
+
+#[uniffi::remote(Record)]
+pub struct XtreamAccount {
+    pub expires: Option<i64>,
+    pub max_connections: Option<u32>,
 }
 
 #[uniffi::remote(Record)]
