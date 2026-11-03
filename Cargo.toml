@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/iptelly-core", "crates/iptelly", "crates/iptelly-ffi"]
+members = ["crates/iptelly-core", "crates/iptelly"]
 
 # Smaller, slightly faster release builds, at the cost of a longer build.
 [profile.release]
