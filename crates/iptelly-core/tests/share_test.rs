@@ -74,6 +74,7 @@ fn channel(name: &str, url: &str) -> Channel {
         hidden: None,
         tvg_id: None,
         is_adult: false,
+        rating: None,
     }
 }
 

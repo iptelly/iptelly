@@ -36,6 +36,31 @@ pub struct Channel {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tvg_id: Option<String>,
     pub is_adult: bool,
+    // Out of 10, for movies and series from Xtream sources.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rating: Option<f64>,
+}
+
+// How many live channels, movies and series a source has.
+#[derive(Clone, PartialEq, Debug, Deserialize, Serialize, Default)]
+pub struct SourceCounts {
+    pub channels: u64,
+    pub movies: u64,
+    pub series: u64,
+}
+
+// A movie or series' details, from its Xtream info page.
+#[derive(Clone, PartialEq, Debug, Deserialize, Serialize, Default)]
+pub struct MediaInfo {
+    pub plot: Option<String>,
+    pub cast: Option<String>,
+    pub director: Option<String>,
+    pub genre: Option<String>,
+    pub year: Option<String>,
+    // A movie's length, or a series' episode length.
+    pub duration_secs: Option<u64>,
+    pub rating: Option<f64>,
+    pub backdrop: Option<String>,
 }
 
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize, Default)]
@@ -65,10 +90,15 @@ pub struct Source {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<i64>,
     pub name: String,
+    // An M3U URL source's playlist link, or an Xtream source's server
+    // ("http://host:port").
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
+    // Backups for url, tried in order when it doesn't answer (see urls()).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub url_origin: Option<String>,
+    pub url_2: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url_3: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub username: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -87,6 +117,37 @@ pub struct Source {
     pub timezone: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub epg_retention_days: Option<u16>,
+    // Xtream: what live channels play as, "ts" (MPEG-TS) or "m3u8" (HLS).
+    // Unset is MPEG-TS.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_format: Option<String>,
+    // Xtream: whether an update loads the TV channels, and the movies and
+    // series. Unset is yes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_live: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_vod: Option<bool>,
+}
+
+impl Source {
+    /// The source's URLs in the order they're tried, blank ones left out.
+    pub fn urls(&self) -> Vec<String> {
+        [&self.url, &self.url_2, &self.url_3]
+            .into_iter()
+            .flatten()
+            .map(|url| url.trim())
+            .filter(|url| !url.is_empty())
+            .map(str::to_string)
+            .collect()
+    }
+}
+
+// An Xtream account's expiry (a Unix time; None for one that doesn't
+// expire) and how many streams it can play at once.
+#[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
+pub struct XtreamAccount {
+    pub expires: Option<i64>,
+    pub max_connections: Option<u32>,
 }
 
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
@@ -99,6 +160,8 @@ pub struct XtreamStatus {
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
 pub struct XtreamStatusUserInfo {
     pub exp_date: serde_json::Value,
+    #[serde(default)]
+    pub max_connections: serde_json::Value,
 }
 
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]

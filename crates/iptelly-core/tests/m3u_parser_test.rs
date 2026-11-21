@@ -49,7 +49,8 @@ fn fixture_source() -> Source {
         id: None,
         name: "m3u_parser_test fixture".to_string(),
         url: Some(FIXTURE.to_string()),
-        url_origin: None,
+        url_2: None,
+        url_3: None,
         username: None,
         password: None,
         source_type: source_type::M3U,
@@ -62,6 +63,9 @@ fn fixture_source() -> Source {
         epg_url: None,
         timezone: None,
         epg_retention_days: None,
+        output_format: None,
+        include_live: None,
+        include_vod: None,
     }
 }
 

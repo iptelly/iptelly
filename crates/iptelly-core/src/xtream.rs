@@ -1,3 +1,4 @@
+use crate::failover;
 use crate::log;
 use crate::media_type;
 use crate::source_type;
@@ -5,8 +6,10 @@ use crate::sql;
 use crate::sql::insert_season;
 use crate::types::Channel;
 use crate::types::ChannelPreserve;
+use crate::types::MediaInfo;
 use crate::types::Season;
 use crate::types::Source;
+use crate::types::XtreamAccount;
 use crate::types::XtreamStatus;
 use crate::utils::get_user_agent_from_source;
 use anyhow::anyhow;
@@ -54,6 +57,9 @@ struct XtreamStream {
     // (Value::Null) on panels that don't send it at all.
     #[serde(default)]
     is_adult: serde_json::Value,
+    // Movies and series only, out of 10 - "6.5", 6.5, "" or absent.
+    #[serde(default)]
+    rating: serde_json::Value,
 }
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct XtreamSeries {
@@ -132,56 +138,130 @@ struct XtreamCategory {
     category_name: String,
 }
 
-fn build_xtream_url(source: &mut Source) -> Result<Url> {
-    let mut url = Url::parse(&source.url.clone().context("Missing URL")?)?;
-    source.url_origin = Some(
-        Url::from_str(&source.url.clone().unwrap())?
-            .origin()
-            .ascii_serialization(),
-    );
+const API_PATH: &str = "/player_api.php";
+const XMLTV_PATH: &str = "/xmltv.php";
+
+/// A server address as people type it, as "scheme://host:port": "host:port"
+/// gets http, and a path (usually /player_api.php) is dropped, since the
+/// API and the streams each add their own.
+pub fn server_address(input: &str) -> Option<String> {
+    let input = input.trim();
+    if input.is_empty() {
+        return None;
+    }
+    let url = if input.contains("://") {
+        input.to_string()
+    } else {
+        format!("http://{input}")
+    };
+    let origin = Url::parse(&url).ok()?.origin();
+    origin.is_tuple().then(|| origin.ascii_serialization())
+}
+
+/// The source's servers, in the order they're tried.
+pub fn servers(source: &Source) -> Vec<String> {
+    source
+        .urls()
+        .iter()
+        .filter_map(|url| server_address(url))
+        .collect()
+}
+
+// `path` on `server`, with the account's login.
+fn login_url(server: &str, path: &str, source: &Source) -> Result<Url> {
+    let mut url = Url::parse(&format!("{server}{path}"))?;
     url.query_pairs_mut()
         .append_pair(
             "username",
-            &source.username.clone().context("Missing username")?,
+            source.username.as_deref().context("Missing username")?,
         )
         .append_pair(
             "password",
-            &source.password.clone().context("Missing password")?,
+            source.password.as_deref().context("Missing password")?,
         );
     Ok(url)
+}
+
+// An API call, made on each of the source's servers in turn until one
+// answers, with the server that did. Without an action, the API answers
+// with the account's status.
+async fn api_call<T>(
+    source: &Source,
+    action: Option<&str>,
+    args: &[(&str, String)],
+) -> Result<(String, T)>
+where
+    T: serde::de::DeserializeOwned,
+{
+    let user_agent = get_user_agent_from_source(source)?;
+    let user_agent = &user_agent;
+    failover::first_working(source.id, servers(source), |server| async move {
+        let mut url = login_url(&server, API_PATH, source)?;
+        for (name, value) in args {
+            url.query_pairs_mut().append_pair(name, value);
+        }
+        get_xtream_http_data(url, action, user_agent).await
+    })
+    .await
+}
+
+// The first of the source's servers to answer, with the account's status.
+async fn connect(source: &Source) -> Result<(String, XtreamStatus)> {
+    api_call(source, None, &[]).await
+}
+
+/// The server the source's streams play from: the one that answered last,
+/// if one did recently, or else the first that answers now. When none
+/// answers, the first, so the player can still try it and say what's wrong.
+pub async fn stream_server(source: &Source) -> Result<String> {
+    let servers = servers(source);
+    if let Some(server) = failover::remembered(source.id, &servers) {
+        return Ok(server);
+    }
+    match connect(source).await {
+        Ok((server, _)) => Ok(server),
+        Err(e) => {
+            log::log(format!("No server answered for {}: {e:?}", source.name));
+            servers
+                .into_iter()
+                .next()
+                .context("The source has no server")
+        }
+    }
 }
 
 // Xtream Codes panels also expose a bulk XMLTV dump for the whole
 // playlist at xmltv.php - a single reliable request instead of the
 // flaky per-channel get_simple_data_table calls in get_epg() below.
-// Reuses build_xtream_url for its username/password query pairs (and
-// url_origin side effect), just swapping the path.
-pub async fn refresh_xtream_epg(mut source: Source) -> Result<()> {
-    let mut url = build_xtream_url(&mut source)?;
-    url.set_path("/xmltv.php");
+pub async fn refresh_xtream_epg(source: Source) -> Result<()> {
+    let server = stream_server(&source).await?;
+    let url = login_url(&server, XMLTV_PATH, &source)?;
     crate::xmltv::refresh_epg_from_url(source, url.to_string()).await
 }
 
 pub async fn get_xtream(mut source: Source, wipe: bool) -> Result<()> {
     let refresh_start = std::time::Instant::now();
-    let url = build_xtream_url(&mut source)?;
+    // The lists below all come from the first server that answers.
+    let (server, _) = connect(&source).await?;
+    let url = login_url(&server, API_PATH, &source)?;
     let user_agent = get_user_agent_from_source(&source)?;
+    // A source can leave out its TV channels, or its movies and series:
+    // those lists aren't downloaded, so it ends up with none of them.
+    let live_on = source.include_live != Some(false);
+    let vod_on = source.include_vod != Some(false);
     let fetch_start = std::time::Instant::now();
     let (live, live_cats, vods, vods_cats, series, series_cats) = join!(
-        get_xtream_http_data::<Vec<XtreamStream>>(url.clone(), GET_LIVE_STREAMS, &user_agent),
-        get_xtream_http_data::<Vec<XtreamCategory>>(
+        get_xtream_list::<XtreamStream>(live_on, url.clone(), GET_LIVE_STREAMS, &user_agent),
+        get_xtream_list::<XtreamCategory>(
+            live_on,
             url.clone(),
             GET_LIVE_STREAM_CATEGORIES,
             &user_agent
         ),
-        get_xtream_http_data::<Vec<XtreamStream>>(url.clone(), GET_VODS, &user_agent),
-        get_xtream_http_data::<Vec<XtreamCategory>>(url.clone(), GET_VOD_CATEGORIES, &user_agent),
-        get_xtream_http_data::<Vec<XtreamStream>>(url.clone(), GET_SERIES, &user_agent),
-        get_xtream_http_data::<Vec<XtreamCategory>>(
-            url.clone(),
-            GET_SERIES_CATEGORIES,
-            &user_agent
-        ),
+        get_xtream_list::<XtreamStream>(vod_on, url.clone(), GET_VODS, &user_agent),
+        get_xtream_list::<XtreamCategory>(vod_on, url.clone(), GET_VOD_CATEGORIES, &user_agent),
+        get_xtream_list::<XtreamStream>(vod_on, url.clone(), GET_SERIES, &user_agent),
+        get_xtream_list::<XtreamCategory>(vod_on, url.clone(), GET_SERIES_CATEGORIES, &user_agent),
     );
     // Timing is phase-level rather than per-request because the 6 calls
     // above run concurrently via join! - wall-clock time for this block is
@@ -295,14 +375,41 @@ pub async fn get_xtream(mut source: Source, wipe: bool) -> Result<()> {
     Ok(())
 }
 
-async fn get_xtream_http_data<T>(mut url: Url, action: &str, user_agent: &String) -> Result<T>
+// A list from the panel, or an empty one without asking when it's left out.
+async fn get_xtream_list<T>(
+    include: bool,
+    url: Url,
+    action: &str,
+    user_agent: &String,
+) -> Result<Vec<T>>
+where
+    T: serde::de::DeserializeOwned,
+{
+    if !include {
+        return Ok(Vec::new());
+    }
+    get_xtream_http_data(url, Some(action), user_agent).await
+}
+
+async fn get_xtream_http_data<T>(
+    mut url: Url,
+    action: Option<&str>,
+    user_agent: &String,
+) -> Result<T>
 where
     T: serde::de::DeserializeOwned,
 {
     let client = crate::utils::new_http_client(user_agent)?;
-    url.query_pairs_mut().append_pair("action", action);
+    let label = match action {
+        Some(action) => {
+            url.query_pairs_mut().append_pair("action", action);
+            format!("action '{action}'")
+        }
+        None => "the account status".to_string(),
+    };
+    log::log_url("Xtream API request", url.as_str());
     let response = client.get(url).send().await?;
-    parse_xtream_json(response, &format!("action '{action}'")).await
+    parse_xtream_json(response, &label).await
 }
 
 // A panel returning a non-2xx status, an empty body, or an HTML error page
@@ -445,7 +552,18 @@ fn convert_xtream_live_to_channel(
         episode_num: None,
         hidden: Some(false),
         is_adult: get_serde_json_bool(&stream.is_adult).unwrap_or(false),
+        rating: get_rating(&stream.rating),
     })
+}
+
+// Panels send 0 or "" for films nobody has rated.
+fn get_rating(value: &serde_json::Value) -> Option<f64> {
+    let rating = match value {
+        serde_json::Value::Number(n) => n.as_f64(),
+        serde_json::Value::String(s) => s.trim().parse().ok(),
+        _ => None,
+    }?;
+    (rating > 0.0 && rating <= 10.0).then_some(rating)
 }
 
 fn get_url(
@@ -454,12 +572,18 @@ fn get_url(
     stream_type: u8,
     extension: Option<String>,
 ) -> Result<String> {
+    // Live channels play in the source's output format, if it has one.
+    let extension = match &source.output_format {
+        Some(format) if stream_type == media_type::LIVESTREAM => Some(format.clone()),
+        _ => extension,
+    };
+    // Only the path: the server is added when it's played, from whichever
+    // of the source's servers is working (see playback::stream_server).
     Ok(format!(
-        "{}/{}/{}/{}/{}.{}",
-        source.url_origin.clone().unwrap(),
+        "/{}/{}/{}/{}.{}",
         get_media_type_string(stream_type)?,
-        source.username.clone().unwrap(),
-        source.password.clone().unwrap(),
+        source.username.as_deref().context("Missing username")?,
+        source.password.as_deref().context("Missing password")?,
         stream_id,
         extension.unwrap_or(LIVE_STREAM_EXTENSION.to_string())
     ))
@@ -484,13 +608,13 @@ pub async fn get_episodes(channel: Channel) -> Result<()> {
     {
         return Ok(());
     }
-    let mut source = sql::get_source_from_id(channel.source_id.context("no source id")?)?;
-    let mut url = build_xtream_url(&mut source)?;
-    let user_agent = get_user_agent_from_source(&source)?;
-    url.query_pairs_mut()
-        .append_pair("series_id", &series_id.to_string());
-    let mut series =
-        get_xtream_http_data::<XtreamSeries>(url, GET_SERIES_INFO, &user_agent).await?;
+    let source = sql::get_source_from_id(channel.source_id.context("no source id")?)?;
+    let (_, mut series) = api_call::<XtreamSeries>(
+        &source,
+        Some(GET_SERIES_INFO),
+        &[("series_id", series_id.to_string())],
+    )
+    .await?;
     let mut episodes: Vec<XtreamEpisode> = series
         .episodes
         .into_values()
@@ -716,6 +840,7 @@ fn episode_to_channel(
         // only the parent series' list entry does (already stored on that
         // series' own Channel row).
         is_adult: false,
+        rating: None,
     })
 }
 
@@ -734,11 +859,7 @@ pub async fn get_timeshift_url_for_epg(
     start_timestamp: i64,
     end_timestamp: i64,
 ) -> Result<String> {
-    let mut source = sql::get_source_from_id(channel.source_id.context("no source id")?)?;
-    // source.url_origin is never persisted to the DB - it's only ever set
-    // as a side effect of build_xtream_url(), so it has to be called here
-    // explicitly or get_timeshift_url_base() below fails with "no origin".
-    build_xtream_url(&mut source)?;
+    let source = sql::get_source_from_id(channel.source_id.context("no source id")?)?;
     let stream_id = channel.stream_id.context("No stream id")?.to_string();
     // timeshift.php wants the start time expressed in the panel's own local
     // time, not UTC and not the viewer's local time. Confirmed by testing
@@ -750,7 +871,9 @@ pub async fn get_timeshift_url_for_epg(
     // Amsterdam falls back to CET for winter, or for any other provider
     // hosted elsewhere - fetch the panel's own reported timezone and use it
     // to compute the correct wall-clock offset for this specific instant.
-    let tz = get_source_timezone(&mut source).await?;
+    // The server that reports it is the one the catch-up plays from.
+    let (server, status) = connect(&source).await?;
+    let tz = source_timezone(&source, &status);
     let start_local = Utc
         .timestamp_opt(start_timestamp, 0)
         .single()
@@ -767,8 +890,7 @@ pub async fn get_timeshift_url_for_epg(
     // even when live channels are .ts, so this deliberately doesn't reuse
     // LIVE_STREAM_EXTENSION.
     let url = format!(
-        "{}/timeshift/{}/{}/{}/{}/{}.m3u8",
-        source.url_origin.as_ref().context("no origin")?,
+        "{server}/timeshift/{}/{}/{}/{}/{}.m3u8",
         source.username.as_ref().context("no username")?,
         source.password.as_ref().context("no password")?,
         duration_minutes,
@@ -778,44 +900,39 @@ pub async fn get_timeshift_url_for_epg(
     Ok(url)
 }
 
-async fn get_status(source: &mut Source) -> Result<(i64, XtreamStatus)> {
-    let url = build_xtream_url(source)?;
-    let user_agent = get_user_agent_from_source(&source)?;
-    let client = crate::utils::new_http_client(&user_agent)?;
-    let response = client.get(url).send().await?;
-    let data: XtreamStatus = parse_xtream_json(response, "get_status").await?;
-    Ok((source.id.context("no id")?, data))
+async fn get_status(source: &Source) -> Result<(i64, XtreamStatus)> {
+    let (_, status) = connect(source).await?;
+    Ok((source.id.context("no id")?, status))
 }
 
 // Falls back to UTC rather than failing outright when the panel doesn't
 // report a timezone (or reports one chrono_tz doesn't recognize) - without
 // this, get_timeshift_url_for_epg would propagate the error and catch-up
 // would just silently be unavailable for the whole source.
-async fn get_source_timezone(source: &mut Source) -> Result<chrono_tz::Tz> {
-    let (_, status) = get_status(source).await?;
-    let tz_name = status.server_info.and_then(|info| info.timezone);
-    let tz_name = match tz_name {
-        Some(tz_name) => tz_name,
-        None => {
-            log::log(format!(
-                "Source '{}' did not report a timezone, defaulting to UTC for timeshift URLs",
-                source.name
-            ));
-            return Ok(chrono_tz::Tz::UTC);
-        }
+fn source_timezone(source: &Source, status: &XtreamStatus) -> chrono_tz::Tz {
+    let tz_name = status
+        .server_info
+        .as_ref()
+        .and_then(|info| info.timezone.as_deref());
+    let Some(tz_name) = tz_name else {
+        log::log(format!(
+            "Source '{}' did not report a timezone, defaulting to UTC for timeshift URLs",
+            source.name
+        ));
+        return chrono_tz::Tz::UTC;
     };
-    chrono_tz::Tz::from_str(&tz_name).or_else(|e| {
+    chrono_tz::Tz::from_str(tz_name).unwrap_or_else(|e| {
         log::log(format!(
             "Source '{}' reported unrecognized timezone '{tz_name}' ({e}), defaulting to UTC for timeshift URLs",
             source.name
         ));
-        Ok(chrono_tz::Tz::UTC)
+        chrono_tz::Tz::UTC
     })
 }
 
 pub async fn get_all_expiries() -> Result<HashMap<i64, i64>> {
-    let mut sources = sql::get_sources_by_type(source_type::XTREAM)?;
-    let to_await = sources.iter_mut().map(|source| get_status(source));
+    let sources = sql::get_sources_by_type(source_type::XTREAM)?;
+    let to_await = sources.iter().map(get_status);
     let results: Vec<std::result::Result<(i64, XtreamStatus), anyhow::Error>> =
         join_all(to_await).await;
     let statuses: HashMap<i64, i64> = results
@@ -829,11 +946,21 @@ pub async fn get_all_expiries() -> Result<HashMap<i64, i64>> {
     Ok(statuses)
 }
 
+pub async fn get_account(source_id: i64) -> Result<XtreamAccount> {
+    let source = sql::get_source_from_id(source_id)?;
+    let (_, status) = connect(&source).await?;
+    Ok(XtreamAccount {
+        expires: get_serde_json_i64(&status.user_info.exp_date),
+        max_connections: get_serde_json_u64(&status.user_info.max_connections)
+            .and_then(|n| u32::try_from(n).ok()),
+    })
+}
+
 // Surfaced in settings so it's clear which timezone convention the timeshift
 // URL (see get_timeshift_url_for_epg) is computing against for this source.
 pub async fn get_all_timezones() -> Result<HashMap<i64, String>> {
-    let mut sources = sql::get_sources_by_type(source_type::XTREAM)?;
-    let to_await = sources.iter_mut().map(|source| get_status(source));
+    let sources = sql::get_sources_by_type(source_type::XTREAM)?;
+    let to_await = sources.iter().map(get_status);
     let results: Vec<std::result::Result<(i64, XtreamStatus), anyhow::Error>> =
         join_all(to_await).await;
     let timezones: HashMap<i64, String> = results
@@ -842,6 +969,61 @@ pub async fn get_all_timezones() -> Result<HashMap<i64, String>> {
         .filter_map(|(id, status)| Some((id, status.server_info?.timezone?)))
         .collect();
     Ok(timezones)
+}
+
+const GET_VOD_INFO: &str = "get_vod_info";
+
+#[derive(Deserialize)]
+struct XtreamInfoPage {
+    #[serde(default)]
+    info: serde_json::Value,
+}
+
+// A movie's or series' details from its info page. Movies are looked up by
+// stream id, series by the series id kept in their url.
+pub async fn get_media_info(channel: Channel) -> Result<MediaInfo> {
+    let source = sql::get_source_from_id(channel.source_id.context("no source id")?)?;
+    let (action, arg) = if channel.media_type == media_type::SERIE {
+        let series_id = channel.url.context("no series id")?;
+        (GET_SERIES_INFO, ("series_id", series_id))
+    } else {
+        let stream_id = channel.stream_id.context("no stream id")?;
+        (GET_VOD_INFO, ("vod_id", stream_id.to_string()))
+    };
+    let (_, page) = api_call::<XtreamInfoPage>(&source, Some(action), &[arg]).await?;
+    Ok(media_info_from_json(&page.info))
+}
+
+// Panels differ in which keys they fill in, and send "" or [] for missing
+// ones, so this takes the first key with a real value.
+fn media_info_from_json(info: &serde_json::Value) -> MediaInfo {
+    let text = |keys: &[&str]| {
+        keys.iter().find_map(|key| {
+            let value = match &info[key] {
+                serde_json::Value::Array(items) => items.first()?.as_str()?.trim(),
+                value => value.as_str()?.trim(),
+            };
+            (!value.is_empty()).then(|| value.to_string())
+        })
+    };
+    let duration_secs = get_serde_json_u64(&info["duration_secs"])
+        .or_else(|| text(&["duration_secs"])?.parse().ok())
+        .or_else(|| {
+            let minutes: u64 = text(&["episode_run_time"])?.parse().ok()?;
+            Some(minutes * 60)
+        })
+        .filter(|secs| *secs > 0);
+    MediaInfo {
+        plot: text(&["plot", "description"]),
+        cast: text(&["cast", "actors"]),
+        director: text(&["director"]),
+        genre: text(&["genre"]),
+        year: text(&["releasedate", "releaseDate", "release_date"])
+            .and_then(|date| date.get(..4).map(str::to_string)),
+        duration_secs,
+        rating: get_rating(&info["rating"]),
+        backdrop: text(&["backdrop_path"]),
+    }
 }
 
 #[cfg(test)]
@@ -853,8 +1035,9 @@ mod test_xtream {
         Source {
             id: Some(1),
             name: "Test Source".to_string(),
-            url: Some("http://panel.example/".to_string()),
-            url_origin: Some("http://panel.example".to_string()),
+            url: Some("http://panel.example".to_string()),
+            url_2: None,
+            url_3: None,
             username: Some("user".to_string()),
             password: Some("pass".to_string()),
             source_type: source_type::XTREAM,
@@ -867,6 +1050,9 @@ mod test_xtream {
             epg_url: None,
             timezone: None,
             epg_retention_days: None,
+            output_format: None,
+            include_live: None,
+            include_vod: None,
         }
     }
 
@@ -1008,6 +1194,25 @@ mod test_xtream {
     }
 
     #[test]
+    fn test_get_url_uses_the_output_format_for_live_channels() {
+        let mut source = test_source();
+        assert_eq!(
+            get_url("1".into(), &source, media_type::LIVESTREAM, None).unwrap(),
+            "/live/user/pass/1.ts"
+        );
+        source.output_format = Some("m3u8".into());
+        assert_eq!(
+            get_url("1".into(), &source, media_type::LIVESTREAM, None).unwrap(),
+            "/live/user/pass/1.m3u8"
+        );
+        // Films keep their own container.
+        assert_eq!(
+            get_url("2".into(), &source, media_type::MOVIE, Some("mkv".into())).unwrap(),
+            "/movie/user/pass/2.mkv"
+        );
+    }
+
+    #[test]
     fn test_create_makeshift_season() {
         let season = create_makeshift_season(3, 10, 1, None);
         assert_eq!(season.name, "Season 3");
@@ -1081,6 +1286,7 @@ mod test_xtream {
             tv_archive: json!(null),
             epg_channel_id: json!("0"),
             is_adult: json!(null),
+            rating: json!(null),
         };
         let channel = convert_xtream_live_to_channel(
             stream,
@@ -1104,10 +1310,111 @@ mod test_xtream {
             tv_archive: json!(null),
             epg_channel_id: json!("real.epg.id"),
             is_adult: json!(null),
+            rating: json!(null),
         };
         let channel =
             convert_xtream_live_to_channel(stream_with_real_id, &source, media_type::SERIE, None)
                 .unwrap();
         assert_eq!(channel.tvg_id, Some("real.epg.id".to_string()));
+    }
+
+    #[test]
+    fn server_addresses_are_scheme_host_and_port() {
+        for (input, expected) in [
+            ("http://panel.example:8080", "http://panel.example:8080"),
+            (" panel.example:8080/ ", "http://panel.example:8080"),
+            (
+                "https://panel.example/player_api.php?username=a",
+                "https://panel.example",
+            ),
+            ("http://panel.example:80/", "http://panel.example"),
+        ] {
+            assert_eq!(server_address(input).as_deref(), Some(expected), "{input}");
+        }
+        assert_eq!(server_address(""), None);
+        assert_eq!(server_address("http://"), None);
+    }
+
+    #[test]
+    fn servers_skip_blank_and_invalid_urls() {
+        let mut source = test_source();
+        source.url = Some("http://one.example/player_api.php".to_string());
+        source.url_2 = Some("  ".to_string());
+        source.url_3 = Some("two.example:8080".to_string());
+        assert_eq!(
+            servers(&source),
+            ["http://one.example", "http://two.example:8080"]
+        );
+    }
+
+    #[test]
+    fn login_urls_go_on_the_server() {
+        let url = login_url("http://panel.example:8080", API_PATH, &test_source()).unwrap();
+        assert_eq!(
+            url.as_str(),
+            "http://panel.example:8080/player_api.php?username=user&password=pass"
+        );
+    }
+
+    #[test]
+    fn reads_ratings_as_strings_or_numbers() {
+        assert_eq!(get_rating(&json!("6.5")), Some(6.5));
+        assert_eq!(get_rating(&json!(7.9)), Some(7.9));
+        assert_eq!(get_rating(&json!(8)), Some(8.0));
+        // Unrated films come as 0, "" or nothing.
+        assert_eq!(get_rating(&json!("0")), None);
+        assert_eq!(get_rating(&json!("")), None);
+        assert_eq!(get_rating(&json!(null)), None);
+    }
+
+    #[test]
+    fn reads_a_movie_info_page() {
+        let info = media_info_from_json(&json!({
+            "plot": "A volcanologist faces two disasters at once.",
+            "description": "",
+            "cast": "",
+            "actors": "Vigdís Hrefna Pálsdóttir, Pilou Asbæk",
+            "director": "Ugla Hauksdóttir",
+            "genre": "Thriller",
+            "releasedate": "2025-03-14",
+            "duration_secs": 6300,
+            "rating": "6.5",
+            "backdrop_path": ["https://image.example/backdrop.jpg"],
+        }));
+        assert_eq!(
+            info,
+            MediaInfo {
+                plot: Some("A volcanologist faces two disasters at once.".to_string()),
+                cast: Some("Vigdís Hrefna Pálsdóttir, Pilou Asbæk".to_string()),
+                director: Some("Ugla Hauksdóttir".to_string()),
+                genre: Some("Thriller".to_string()),
+                year: Some("2025".to_string()),
+                duration_secs: Some(6300),
+                rating: Some(6.5),
+                backdrop: Some("https://image.example/backdrop.jpg".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn reads_a_series_info_page() {
+        let info = media_info_from_json(&json!({
+            "plot": "",
+            "releaseDate": "2019",
+            "episode_run_time": "45",
+            "rating": 0,
+            "backdrop_path": [],
+        }));
+        assert_eq!(info.plot, None);
+        assert_eq!(info.year, Some("2019".to_string()));
+        assert_eq!(info.duration_secs, Some(45 * 60));
+        assert_eq!(info.rating, None);
+        assert_eq!(info.backdrop, None);
+    }
+
+    #[test]
+    fn an_empty_info_page_has_no_details() {
+        // Panels send [] instead of {} when a film has no details.
+        assert_eq!(media_info_from_json(&json!([])), MediaInfo::default());
     }
 }

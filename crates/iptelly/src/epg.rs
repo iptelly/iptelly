@@ -453,6 +453,7 @@ fn catch_up_channel(channel: &Channel, programme: &EPG, id: i64) -> Option<Chann
         hidden: None,
         tvg_id: None,
         is_adult: false,
+        rating: None,
     })
 }
 

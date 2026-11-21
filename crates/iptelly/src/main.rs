@@ -3,6 +3,7 @@
 
 mod categories;
 mod custom;
+mod details;
 mod dialog;
 mod downloads;
 mod epg;

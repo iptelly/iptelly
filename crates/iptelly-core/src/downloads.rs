@@ -100,7 +100,9 @@ async fn probe_remote_size(channel: &Channel) -> Result<Option<i64>> {
     let source_id = channel.source_id.context("no source id")?;
     let source = sql::get_source_from_id(source_id)?;
     let client = build_channel_client(channel, &source)?;
-    let url = channel.url.clone().context("no url")?;
+    let server = crate::playback::stream_server(&Some(source)).await?;
+    let url =
+        crate::playback::full_url(channel.url.as_deref().context("no url")?, server.as_deref());
     let response = client.get(url).header("Range", "bytes=0-0").send().await?;
     Ok(response
         .headers()
@@ -139,7 +141,11 @@ pub async fn start(
         .insert(download_id.to_string(), control_tx);
 
     let client = build_channel_client(&channel, &source)?;
-    let url = channel.url.clone().context("no url provided")?;
+    let server = crate::playback::stream_server(&Some(source.clone())).await?;
+    let url = crate::playback::full_url(
+        channel.url.as_deref().context("no url provided")?,
+        server.as_deref(),
+    );
     let name = channel.name.clone();
     let path = match path {
         Some(p) => p,
@@ -166,6 +172,7 @@ pub async fn start(
         tokio::fs::create_dir_all(parent).await?;
     }
 
+    crate::log::log_url("Downloading", &url);
     let mut request = client.get(&url);
     if let Some(offset) = resume_from {
         request = request.header("Range", format!("bytes={offset}-"));
@@ -487,7 +494,7 @@ pub async fn play_file(path: String) -> Result<()> {
         if let Some(volume) = settings.volume {
             args.push(format!("--gain={}", volume as f32 / 100.0));
         }
-        crate::utils::get_bin("vlc")
+        "vlc"
     } else {
         args.push(format!("--title={title}"));
         args.push("--msg-level=all=error".to_string());
@@ -501,11 +508,11 @@ pub async fn play_file(path: String) -> Result<()> {
         if let Some(volume) = settings.volume {
             args.push(format!("--volume={volume}"));
         }
-        crate::utils::get_bin("mpv")
+        "mpv"
     };
     args.push("--".to_string());
     args.push(path);
-    let status = tokio::process::Command::new(bin)
+    let status = tokio::process::Command::from(crate::utils::host_command(bin))
         .args(args)
         .kill_on_drop(true)
         .status()

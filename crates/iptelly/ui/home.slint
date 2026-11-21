@@ -1,6 +1,6 @@
 import { LineEdit, ListView, Button } from "std-widgets.slint";
 import { Theme, Icons, Icon } from "theme.slint";
-import { HomeState, ChannelItem, SidebarRow, Rail } from "state.slint";
+import { HomeState, ChannelItem, SidebarRow, Rail, MediaDetails } from "state.slint";
 import { SettingsView } from "settings.slint";
 import { CategoriesView } from "categories.slint";
 import { DownloadSidebar, DownloadManager } from "downloads.slint";
@@ -262,6 +262,159 @@ global ListLayout {
     out property <length> timeline-x: 8px + info-width + 10px;
 }
 
+// A movie's or series' rating out of 10.
+component RatingBadge inherits Rectangle {
+    in property <string> rating;
+    in property <length> font-size: 11px;
+    width: label.preferred-width + 10px;
+    height: label.preferred-height + 4px;
+    border-radius: 4px;
+    background: Theme.accent;
+    label := Text {
+        text: root.rating;
+        font-size: root.font-size;
+        font-weight: 600;
+        color: Theme.accent-contrast;
+    }
+}
+
+component Credit inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> names;
+    spacing: 8px;
+    Text {
+        text: root.label;
+        width: 70px;
+        font-size: 14px;
+        color: Theme.text-secondary;
+    }
+    Text {
+        text: root.names;
+        horizontal-stretch: 1;
+        overflow: elide;
+        font-size: 14px;
+        color: Theme.text-primary;
+    }
+}
+
+// The highlighted movie or series at the top of the Movies and Series
+// views, like TiviMate's: its poster and details over its backdrop.
+component DetailsPanel inherits Rectangle {
+    property <MediaDetails> details: HomeState.details;
+    property <length> pad: 16px;
+    clip: true;
+
+    if details.has-backdrop: Image {
+        x: parent.width * 0.35;
+        width: parent.width * 0.65;
+        height: parent.height;
+        source: root.details.backdrop;
+        image-fit: cover;
+    }
+    // Fades the backdrop into the background behind the text.
+    Rectangle {
+        background: @linear-gradient(90deg, Theme.bg-base 0%, Theme.bg-base 35%, Theme.bg-base.with-alpha(0.55) 65%, Theme.bg-base.with-alpha(0.1) 100%);
+    }
+    Rectangle {
+        background: @linear-gradient(180deg, Theme.bg-base.with-alpha(0) 55%, Theme.bg-base 100%);
+    }
+
+    poster := Rectangle {
+        x: root.pad;
+        y: root.pad;
+        height: root.height - 2 * root.pad;
+        width: root.details.has-poster ? self.height * 2 / 3 : 0;
+        border-radius: Theme.radius-sm;
+        clip: true;
+        if root.details.has-poster: Image {
+            width: parent.width;
+            height: parent.height;
+            source: root.details.poster;
+            image-fit: cover;
+        }
+    }
+
+    VerticalLayout {
+        x: poster.x + poster.width + (root.details.has-poster ? 24px : 0);
+        y: root.pad;
+        width: min(root.width - self.x - root.pad, 900px);
+        height: root.height - 2 * root.pad;
+        spacing: 10px;
+
+        Text {
+            text: root.details.title;
+            font-size: 28px;
+            font-weight: 700;
+            overflow: elide;
+            color: Theme.text-primary;
+        }
+        if root.details.rating != "" || root.details.line != "": HorizontalLayout {
+            alignment: start;
+            spacing: 14px;
+            if root.details.rating != "": RatingBadge {
+                rating: root.details.rating;
+                font-size: 14px;
+                y: (parent.height - self.height) / 2;
+            }
+            Text {
+                text: root.details.line;
+                font-size: 15px;
+                vertical-alignment: center;
+                color: Theme.text-secondary;
+            }
+        }
+        if root.details.cast != "": Credit {
+            label: "Cast:";
+            names: root.details.cast;
+        }
+        if root.details.director != "": Credit {
+            label: "Director:";
+            names: root.details.director;
+        }
+        if root.details.plot != "": Text {
+            text: root.details.plot;
+            wrap: word-wrap;
+            overflow: elide;
+            vertical-stretch: 1;
+            font-size: 14px;
+            color: Theme.text-primary;
+        }
+        // Keeps the Play button at the bottom.
+        if root.details.plot == "": Rectangle {
+            vertical-stretch: 1;
+        }
+        if root.details.playable: HorizontalLayout {
+            alignment: start;
+            play := Rectangle {
+                width: label.preferred-width + 60px;
+                height: 40px;
+                border-radius: Theme.radius-sm;
+                background: HomeState.details-starting ? Theme.accent.with-alpha(0.5) : play-touch.has-hover ? Theme.accent-hover : Theme.accent;
+                play-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { HomeState.details-play(); }
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 8px;
+                    if !HomeState.details-starting: Icon {
+                        data: Icons.play;
+                        color: Theme.accent-contrast;
+                        y: (parent.height - self.height) / 2;
+                    }
+                    label := Text {
+                        text: HomeState.details-starting ? "Starting… (click to cancel)" : "Play";
+                        font-size: 15px;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                        color: Theme.accent-contrast;
+                    }
+                }
+            }
+        }
+    }
+}
+
 component Tile inherits Rectangle {
     in property <ChannelItem> item;
     in property <int> index;
@@ -412,6 +565,9 @@ component Tile inherits Rectangle {
                             width: 16px;
                             height: 16px;
                             color: Theme.favorite;
+                        }
+                        if item.rating != "": RatingBadge {
+                            rating: item.rating;
                         }
                     }
                 }
@@ -744,6 +900,12 @@ component ChannelsView inherits FocusScope {
         padding: 16px;
         padding-right: 4px;
         spacing: 12px;
+
+        // The selected movie in the top half, with the grid below.
+        if HomeState.show-details: DetailsPanel {
+            vertical-stretch: 1;
+            min-height: 220px;
+        }
 
         HorizontalLayout {
             padding-right: 12px;

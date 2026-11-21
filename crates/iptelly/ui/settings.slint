@@ -139,6 +139,23 @@ component SourceTile inherits Rectangle {
             LineEdit { text <=> SettingsState.edit-url; }
         }
 
+        if !editing && (type == 1 || type == 2) && source.url-2 != "": InfoRow { label: "Backup URL 1"; value: source.url-2; }
+        if editing && (type == 1 || type == 2): EditRow {
+            label: "Backup URL 1";
+            LineEdit {
+                placeholder-text: "Optional";
+                text <=> SettingsState.edit-url-2;
+            }
+        }
+        if !editing && (type == 1 || type == 2) && source.url-3 != "": InfoRow { label: "Backup URL 2"; value: source.url-3; }
+        if editing && (type == 1 || type == 2): EditRow {
+            label: "Backup URL 2";
+            LineEdit {
+                placeholder-text: "Optional";
+                text <=> SettingsState.edit-url-3;
+            }
+        }
+
         if (type == 1 || type == 2) && !editing: InfoRow { label: "User-agent"; value: source.user-agent == "" ? "IPTelly" : source.user-agent; }
         if (type == 1 || type == 2) && editing: EditRow {
             label: "User-agent";
@@ -351,7 +368,7 @@ export component SettingsView inherits Rectangle {
                     }
                 }
 
-                if !SettingsState.is-flatpak: SettingRow {
+                SettingRow {
                     label: "Global VLC parameters";
                     hint: "Passed to VLC for every stream";
                     LineEdit {
@@ -386,7 +403,7 @@ export component SettingsView inherits Rectangle {
                     }
                 }
 
-                if !SettingsState.is-flatpak: SettingRow {
+                SettingRow {
                     label: "Player";
                     ComboBox {
                         model: ["MPV", "VLC"];

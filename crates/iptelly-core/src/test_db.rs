@@ -88,6 +88,7 @@ pub(crate) fn channel(name: &str, url: &str, media_type: u8) -> Channel {
         hidden: None,
         tvg_id: None,
         is_adult: false,
+        rating: None,
     }
 }
 

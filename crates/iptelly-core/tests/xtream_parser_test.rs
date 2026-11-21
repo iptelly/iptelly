@@ -56,7 +56,8 @@ fn fixture_source() -> Source {
         id: None,
         name: "xtream_parser_test fixture".to_string(),
         url: Some("http://panel.example/".to_string()),
-        url_origin: Some("http://panel.example".to_string()),
+        url_2: None,
+        url_3: None,
         username: Some("user".to_string()),
         password: Some("pass".to_string()),
         source_type: source_type::XTREAM,
@@ -69,6 +70,9 @@ fn fixture_source() -> Source {
         epg_url: None,
         timezone: None,
         epg_retention_days: None,
+        output_format: None,
+        include_live: None,
+        include_vod: None,
     }
 }
 

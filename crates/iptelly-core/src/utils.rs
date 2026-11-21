@@ -252,11 +252,45 @@ pub fn get_bin(bin: &str) -> String {
     return get_bin_from_deps(bin);
 }
 
-/// Whether `bin` can be run: it's on the PATH, or bundled in the deps folder
-/// (Windows) or in a Homebrew or MacPorts folder (macOS). The Windows
-/// installer only bundles mpv, so ffmpeg and yt-dlp may be missing there.
+/// Whether `bin` can be run: it's on the PATH (the host's, in the Flatpak),
+/// or bundled in the deps folder (Windows) or in a Homebrew or MacPorts
+/// folder (macOS). The Windows installer only bundles mpv, so ffmpeg and
+/// yt-dlp may be missing there.
 pub fn is_installed(bin: &str) -> bool {
+    if is_flatpak() {
+        return host_command("sh")
+            .args(["-c", "command -v \"$0\"", bin])
+            .stdout(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success());
+    }
     which(get_bin(bin)).is_ok()
+}
+
+/// A command that runs `bin`: mpv, VLC, ffmpeg or yt-dlp. The Flatpak
+/// doesn't bundle them, so there they run on the host through
+/// flatpak-spawn, and --watch-bus stops them when IPTelly exits.
+pub fn host_command(bin: &str) -> std::process::Command {
+    if is_flatpak() {
+        let mut command = std::process::Command::new("flatpak-spawn");
+        command.args(["--host", "--watch-bus", bin]);
+        command
+    } else {
+        std::process::Command::new(get_bin(bin))
+    }
+}
+
+/// Asks a process started by host_command() to stop. In the Flatpak that
+/// process is flatpak-spawn, which passes SIGTERM on to the program on the
+/// host but can't pass on SIGKILL, so the program would keep running.
+pub fn terminate(pid: Option<u32>) -> bool {
+    #[cfg(unix)]
+    if let Some(pid) = pid.and_then(|pid| i32::try_from(pid).ok()) {
+        // SAFETY: kill() only sends a signal; pid is our own child.
+        return unsafe { libc::kill(pid, libc::SIGTERM) } == 0;
+    }
+    let _ = pid;
+    false
 }
 
 fn get_bin_from_deps(bin: &str) -> String {

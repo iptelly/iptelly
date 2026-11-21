@@ -17,9 +17,7 @@ IPTelly is a fast and powerful IPTV player for desktop, carefully crafted to del
 - Re-stream channels to friends or other devices (phone, tv)
 
 ## Prerequisites
-If you use the flatpak on Linux, SKIP THIS PART. 
-
-The app depends on mpv, ffmpeg and yt-dlp. 
+The app depends on mpv, ffmpeg and yt-dlp, including the Flatpak, which uses the ones installed on your system. 
 If you are on MacOS, you must use Brew or MacPorts to install those dependencies. 
 
 On Fedora, you must add rpmfusion to install those packages.

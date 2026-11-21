@@ -8,7 +8,7 @@ use iptelly_core::types::Source;
 use iptelly_core::{api, app_data, m3u, share, source_type, sql, xtream};
 use slint::{ComponentHandle, Timer, TimerMode};
 
-use crate::{AppWindow, Page, SetupState, dialog};
+use crate::{AppWindow, Page, SetupState};
 
 thread_local! {
     static NAME_CHECK: RefCell<Timer> = RefCell::new(Timer::default());
@@ -113,15 +113,13 @@ fn source_from_form(state: &SetupState) -> Source {
     let source_type = state.get_source_type() as u8;
     let has_login = source_type == source_type::XTREAM;
     let has_url = matches!(source_type, source_type::M3U_LINK | source_type::XTREAM);
+    let url = |text: slint::SharedString| if has_url { optional(&text) } else { None };
     Source {
         id: None,
         name: state.get_name().trim().to_string(),
-        url: if has_url {
-            optional(&state.get_url())
-        } else {
-            None
-        },
-        url_origin: None,
+        url: url(state.get_url()),
+        url_2: url(state.get_url_2()),
+        url_3: url(state.get_url_3()),
         username: if has_login {
             optional(&state.get_username())
         } else {
@@ -151,66 +149,31 @@ fn source_from_form(state: &SetupState) -> Source {
         },
         timezone: None,
         epg_retention_days: None,
+        output_format: None,
+        include_live: None,
+        include_vod: None,
     }
 }
 
 fn submit(window: &AppWindow) {
     let state = window.global::<SetupState>();
     let mut source = source_from_form(&state);
-
     if source.source_type == source_type::XTREAM {
-        if let Some(url) = source.url.as_mut() {
-            if !url.starts_with("http://") && !url.starts_with("https://") {
-                *url = format!("http://{url}");
-                crate::show_toast(
-                    window,
-                    "Since the given URL lacked a protocol, http was assumed",
-                );
-            }
-        }
-        // A bare server address is usually missing the API path.
-        if let Some((base, path, rest)) = source.url.as_deref().map(split_url) {
-            if path.is_empty() || path == "/" {
-                let corrected = format!("{base}/player_api.php{rest}");
-                let mut fixed = source.clone();
-                fixed.url = Some(corrected);
-                let unchanged = source.clone();
-                dialog::choose(
-                    window,
-                    "Is this the right URL?",
-                    "It seems your URL is not pointing to an Xtream API server. You can proceed \
-                     anyway, or have the URL corrected automatically.\n\nIf the corrected URL \
-                     still fails, please ask your provider for its Xtream API URL or check your \
-                     credentials.",
-                    "Correct URL automatically",
-                    "Proceed anyway",
-                    move |window| add_source(window, fixed.clone()),
-                    move |window| add_source(window, unchanged.clone()),
-                );
-                return;
-            }
-        }
+        tidy_servers(&mut source);
     }
     add_source(window, source);
 }
 
-// Splits a URL into "scheme://host:port", the path, and any query or
-// fragment.
-fn split_url(url: &str) -> (String, String, String) {
-    let host_start = url.find("://").map(|i| i + 3).unwrap_or(0);
-    let path_start = url[host_start..]
-        .find(['/', '?', '#'])
-        .map(|i| host_start + i)
-        .unwrap_or(url.len());
-    let rest_start = url[path_start..]
-        .find(['?', '#'])
-        .map(|i| path_start + i)
-        .unwrap_or(url.len());
-    (
-        url[..path_start].to_string(),
-        url[path_start..rest_start].to_string(),
-        url[rest_start..].to_string(),
-    )
+/// Keeps just the server of each of an Xtream source's URLs
+/// ("http://host:port"): people often paste the whole API URL, and the
+/// API path is added when it's called. Text that isn't a URL is left for
+/// the refresh to report.
+pub fn tidy_servers(source: &mut Source) {
+    for url in [&mut source.url, &mut source.url_2, &mut source.url_3] {
+        if let Some(server) = url.as_deref().and_then(xtream::server_address) {
+            *url = Some(server);
+        }
+    }
 }
 
 fn add_source(window: &AppWindow, mut source: Source) {
@@ -281,6 +244,8 @@ fn clear_form(window: &AppWindow) {
     for set in [
         SetupState::set_name,
         SetupState::set_url,
+        SetupState::set_url_2,
+        SetupState::set_url_3,
         SetupState::set_user_agent,
         SetupState::set_epg_url,
         SetupState::set_username,

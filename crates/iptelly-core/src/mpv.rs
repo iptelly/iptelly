@@ -43,12 +43,9 @@ pub async fn play(
     record_path: Option<String>,
     state: &Mutex<AppState>,
 ) -> Result<()> {
-    eprintln!(
-        "{} playing",
-        channel.url.as_ref().context("no channel url")?
-    );
     let source = playback::get_source(&channel);
-    let args = get_play_args(&channel, record, record_path, &source)?;
+    let server = playback::stream_server(&source).await?;
+    let args = get_play_args(&channel, record, record_path, &source, server.as_deref())?;
     external_player::run(&MPV_PATH, args, &channel, &source, state).await
 }
 
@@ -65,10 +62,11 @@ fn get_play_args(
     record: bool,
     record_path: Option<String>,
     source: &Option<Source>,
+    server: Option<&str>,
 ) -> Result<Vec<String>> {
     let mut args = Vec::new();
     let settings = get_settings()?;
-    let request = playback::build(channel, source, &settings)?;
+    let request = playback::build(channel, source, &settings, server)?;
     if !request.resume {
         args.push(ARG_NO_RESUME_PLAYBACK.to_string());
     }
@@ -189,7 +187,7 @@ mod tests {
     }
 
     fn play_args(channel: &Channel) -> Vec<String> {
-        get_play_args(channel, false, None, &None).unwrap()
+        get_play_args(channel, false, None, &None, None).unwrap()
     }
 
     #[test]
@@ -381,7 +379,7 @@ mod tests {
             ),
             None,
         );
-        assert!(get_play_args(&channel, false, None, &None).is_err());
+        assert!(get_play_args(&channel, false, None, &None, None).is_err());
     }
 
     #[test]
@@ -397,7 +395,14 @@ mod tests {
             ),
             None,
         );
-        let args = get_play_args(&channel, true, Some("/tmp/news.mp4".to_string()), &None).unwrap();
+        let args = get_play_args(
+            &channel,
+            true,
+            Some("/tmp/news.mp4".to_string()),
+            &None,
+            None,
+        )
+        .unwrap();
         assert!(options(&args).contains(&"--stream-record=/tmp/news.mp4".to_string()));
     }
 
@@ -415,7 +420,7 @@ mod tests {
             ),
             None,
         );
-        let args = get_play_args(&channel, true, None, &None).unwrap();
+        let args = get_play_args(&channel, true, None, &None, None).unwrap();
         let record = options(&args)
             .iter()
             .find_map(|a| a.strip_prefix(ARG_RECORD))
@@ -491,11 +496,11 @@ mod tests {
             "http://example.com/live/1.ts",
             media_type::LIVESTREAM,
         );
-        assert!(get_play_args(&channel, false, None, &None).is_err());
+        assert!(get_play_args(&channel, false, None, &None, None).is_err());
 
         let source = test_db::add_source("mpv no url");
         let mut channel = test_db::add_channel(&source, channel, None);
         channel.url = None;
-        assert!(get_play_args(&channel, false, None, &None).is_err());
+        assert!(get_play_args(&channel, false, None, &None, None).is_err());
     }
 }

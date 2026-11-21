@@ -8,7 +8,7 @@ use crate::log::log;
 use crate::sort_type;
 use crate::types::{
     ChannelPreserve, CustomChannel, CustomChannelExtraData, DownloadHistoryItem, EPG, EPGNotify,
-    ExportedGroup, Group, IdName, Season, SeriesEpisode,
+    ExportedGroup, Group, IdName, Season, SeriesEpisode, SourceCounts,
 };
 use crate::{
     media_type, source_type,
@@ -174,6 +174,26 @@ pub fn create_or_initialize_db() -> Result<()> {
     apply_migrations()?;
     Ok(())
 }
+
+// Up to two backup URLs per source, tried when the first doesn't answer. An
+// Xtream source now keeps just its server ("http://host:port", the API path
+// is added when it's called) and its channels just their path
+// ("/live/user/pass/1.ts"), so they can play from whichever server is
+// working. Series rows keep their series id, which has no "://".
+const BACKUP_URLS_MIGRATION: &str = r#"
+  ALTER TABLE sources ADD COLUMN url_2 TEXT;
+  ALTER TABLE sources ADD COLUMN url_3 TEXT;
+  UPDATE sources
+  SET url = substr(url, 1, instr(url, '://') + 1 + instr(substr(url, instr(url, '://') + 3), '/'))
+  WHERE source_type = 2
+    AND instr(url, '://') > 0
+    AND instr(substr(url, instr(url, '://') + 3), '/') > 0;
+  UPDATE channels
+  SET url = substr(url, instr(url, '://') + 2 + instr(substr(url, instr(url, '://') + 3), '/'))
+  WHERE source_id IN (SELECT id FROM sources WHERE source_type = 2)
+    AND instr(url, '://') > 0
+    AND instr(substr(url, instr(url, '://') + 3), '/') > 0;
+"#;
 
 fn apply_migrations() -> Result<()> {
     let mut sql = get_conn()?;
@@ -441,6 +461,23 @@ fn apply_migrations() -> Result<()> {
               );
             "#,
         ),
+        // A movie or series' rating out of 10, from the Xtream list, for the
+        // TV app's poster grid.
+        M::up(
+            r#"
+              ALTER TABLE channels ADD COLUMN rating REAL;
+            "#,
+        ),
+        // An Xtream source's output format, and whether it loads its TV
+        // channels and its movies and series.
+        M::up(
+            r#"
+              ALTER TABLE sources ADD COLUMN output_format TEXT;
+              ALTER TABLE sources ADD COLUMN include_live INTEGER;
+              ALTER TABLE sources ADD COLUMN include_vod INTEGER;
+            "#,
+        ),
+        M::up(BACKUP_URLS_MIGRATION),
     ]);
     // foreign_keys can't be toggled from inside a migration itself (each
     // one already runs inside its own transaction, where SQLite silently
@@ -473,8 +510,8 @@ pub fn create_or_find_source_by_name(tx: &Transaction, source: &Source) -> Resul
         return Ok(id);
     }
     tx.execute(
-    "INSERT INTO sources (name, source_type, url, username, password, use_tvg_id, user_agent, max_streams, last_updated, epg_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    params![source.name, source.source_type.clone() as u8, source.url, source.username, source.password, source.use_tvg_id, source.user_agent, source.max_streams, chrono::Utc::now().timestamp(), source.epg_url],
+    "INSERT INTO sources (name, source_type, url, url_2, url_3, username, password, use_tvg_id, user_agent, max_streams, last_updated, epg_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    params![source.name, source.source_type.clone() as u8, source.url, source.url_2, source.url_3, source.username, source.password, source.use_tvg_id, source.user_agent, source.max_streams, chrono::Utc::now().timestamp(), source.epg_url],
     )?;
     Ok(tx.last_insert_rowid())
 }
@@ -501,13 +538,15 @@ pub fn import_source_full(tx: &Transaction, source: &Source) -> Result<i64> {
     tx.execute(
         r#"
         INSERT INTO sources
-          (name, source_type, url, username, password, enabled, use_tvg_id, user_agent, max_streams, stream_user_agent, last_updated, epg_url, timezone, epg_retention_days)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (name, source_type, url, url_2, url_3, username, password, enabled, use_tvg_id, user_agent, max_streams, stream_user_agent, last_updated, epg_url, timezone, epg_retention_days, output_format, include_live, include_vod)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
         params![
             source.name,
             source.source_type,
             source.url,
+            source.url_2,
+            source.url_3,
             source.username,
             source.password,
             source.enabled,
@@ -519,6 +558,9 @@ pub fn import_source_full(tx: &Transaction, source: &Source) -> Result<i64> {
             source.epg_url,
             source.timezone,
             source.epg_retention_days,
+            source.output_format,
+            source.include_live,
+            source.include_vod,
         ],
     )?;
     Ok(tx.last_insert_rowid())
@@ -563,8 +605,8 @@ pub fn insert_channel(tx: &Transaction, channel: Channel) -> Result<()> {
     // call with the same SQL text.
     tx.prepare_cached(
         r#"
-INSERT INTO channels (name, group_id, image, url, source_id, media_type, series_id, favorite, stream_id, tv_archive, tvg_id, season_id, episode_num, is_adult)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO channels (name, group_id, image, url, source_id, media_type, series_id, favorite, stream_id, tv_archive, tvg_id, season_id, episode_num, is_adult, rating)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (name, source_id, url, series_id, season_id)
 DO UPDATE SET
     url = excluded.url,
@@ -575,7 +617,8 @@ DO UPDATE SET
     tv_archive = excluded.tv_archive,
     tvg_id = excluded.tvg_id,
     season_id = excluded.season_id,
-    is_adult = excluded.is_adult;
+    is_adult = excluded.is_adult,
+    rating = excluded.rating;
 "#,
     )?
     .execute(params![
@@ -592,7 +635,8 @@ DO UPDATE SET
         channel.tvg_id,
         channel.season_id,
         channel.episode_num,
-        channel.is_adult
+        channel.is_adult,
+        channel.rating
     ])?;
     Ok(())
 }
@@ -609,10 +653,10 @@ const CHANNEL_INSERT_BATCH_SIZE: usize = 500;
 pub(crate) fn insert_channels_batch(tx: &Transaction, channels: &[Channel]) -> Result<()> {
     for chunk in channels.chunks(CHANNEL_INSERT_BATCH_SIZE) {
         let placeholders =
-            vec!["(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"; chunk.len()].join(", ");
+            vec!["(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"; chunk.len()].join(", ");
         let sql = format!(
             r#"
-INSERT INTO channels (name, group_id, image, url, source_id, media_type, series_id, favorite, stream_id, tv_archive, tvg_id, season_id, episode_num, is_adult)
+INSERT INTO channels (name, group_id, image, url, source_id, media_type, series_id, favorite, stream_id, tv_archive, tvg_id, season_id, episode_num, is_adult, rating)
 VALUES {placeholders}
 ON CONFLICT (name, source_id, url, series_id, season_id)
 DO UPDATE SET
@@ -624,10 +668,11 @@ DO UPDATE SET
     tv_archive = excluded.tv_archive,
     tvg_id = excluded.tvg_id,
     season_id = excluded.season_id,
-    is_adult = excluded.is_adult;
+    is_adult = excluded.is_adult,
+    rating = excluded.rating;
 "#
         );
-        let mut params: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(chunk.len() * 14);
+        let mut params: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(chunk.len() * 15);
         for channel in chunk {
             params.push(&channel.name);
             params.push(&channel.group_id);
@@ -643,6 +688,7 @@ DO UPDATE SET
             params.push(&channel.season_id);
             params.push(&channel.episode_num);
             params.push(&channel.is_adult);
+            params.push(&channel.rating);
         }
         tx.prepare_cached(&sql)?.execute(params_from_iter(params))?;
     }
@@ -1164,6 +1210,7 @@ fn season_row_to_channel(row: &Row) -> std::result::Result<Channel, rusqlite::Er
         episode_num: None,
         hidden: Some(false),
         is_adult: false,
+        rating: None,
     })
 }
 
@@ -1508,7 +1555,7 @@ fn search_hidden(filters: Filters, hide_adult: bool) -> Result<Vec<Channel>> {
 
     let sql_query = format!(
         r#"
-        SELECT id, image, name, series_id, source_id, stream_id, tv_archive, url, episode_num, hidden, media_type, NULL as group_id, NULL as season_id, favorite, is_adult
+        SELECT id, image, name, series_id, source_id, stream_id, tv_archive, url, episode_num, hidden, media_type, NULL as group_id, NULL as season_id, favorite, is_adult, tvg_id, rating
         FROM channels
         WHERE ({})
         AND media_type IN ({})
@@ -1516,7 +1563,7 @@ fn search_hidden(filters: Filters, hide_adult: bool) -> Result<Vec<Channel>> {
         AND hidden = 1
         {adult_filter}
         UNION ALL
-        SELECT id, image, name, NULL as series_id, source_id, NULL as stream_id, NULL as tv_archive, NULL as url, NULL as episode_num, hidden, 3 as media_type, NULL as group_id, NULL as season_id, 0 as favorite, 0 as is_adult
+        SELECT id, image, name, NULL as series_id, source_id, NULL as stream_id, NULL as tv_archive, NULL as url, NULL as episode_num, hidden, 3 as media_type, NULL as group_id, NULL as season_id, 0 as favorite, 0 as is_adult, NULL as tvg_id, NULL as rating
         FROM groups
         WHERE ({})
         AND source_id IN ({})
@@ -1669,6 +1716,7 @@ fn row_to_group(row: &Row) -> std::result::Result<Channel, rusqlite::Error> {
         episode_num: None,
         hidden: row.get("hidden")?,
         is_adult: false,
+        rating: None,
     };
     Ok(channel)
 }
@@ -1692,6 +1740,7 @@ fn row_to_channel(row: &Row) -> std::result::Result<Channel, rusqlite::Error> {
         season_id: row.get("season_id")?,
         hidden: row.get("hidden")?,
         is_adult: row.get("is_adult")?,
+        rating: row.get("rating")?,
     };
     Ok(channel)
 }
@@ -1827,6 +1876,31 @@ pub fn get_channel_count_by_source(id: i64) -> Result<u64> {
     Ok(count)
 }
 
+// How many live channels, movies and series a source has. Series episodes
+// are stored as movies with a series_id, so they're left out.
+pub fn get_source_counts(id: i64) -> Result<SourceCounts> {
+    let sql = get_conn()?;
+    let mut counts = SourceCounts::default();
+    let mut statement = sql.prepare(
+        "SELECT media_type, COUNT(*) FROM channels
+         WHERE source_id = ? AND series_id IS NULL
+         GROUP BY media_type",
+    )?;
+    let rows = statement.query_map(params![id], |row| {
+        Ok((row.get::<_, u8>(0)?, row.get::<_, u64>(1)?))
+    })?;
+    for row in rows {
+        let (kind, count) = row?;
+        match kind {
+            media_type::LIVESTREAM => counts.channels = count,
+            media_type::MOVIE => counts.movies = count,
+            media_type::SERIE => counts.series = count,
+            _ => {}
+        }
+    }
+    Ok(counts)
+}
+
 pub fn source_name_exists(name: &str) -> Result<bool> {
     let sql = get_conn()?;
     Ok(sql
@@ -1896,6 +1970,23 @@ pub fn get_all_groups() -> Result<Vec<Group>> {
     "#,
         )?
         .query_map(params![], row_to_custom_group)?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(result)
+}
+
+// One source's groups, hidden ones included, for the TV app's Manage groups.
+pub fn get_source_groups(source_id: i64) -> Result<Vec<Group>> {
+    let sql = get_conn()?;
+    let result = sql
+        .prepare(
+            r#"
+        SELECT * FROM groups
+        WHERE source_id = ?
+        ORDER BY media_type, name
+    "#,
+        )?
+        .query_map(params![source_id], row_to_custom_group)?
         .filter_map(Result::ok)
         .collect();
     Ok(result)
@@ -2001,8 +2092,9 @@ fn row_to_source(row: &Row) -> std::result::Result<Source, rusqlite::Error> {
         username: row.get("username")?,
         password: row.get("password")?,
         url: row.get("url")?,
+        url_2: row.get("url_2")?,
+        url_3: row.get("url_3")?,
         source_type: row.get("source_type")?,
-        url_origin: None,
         enabled: row.get("enabled")?,
         use_tvg_id: row.get("use_tvg_id")?,
         user_agent: row.get("user_agent")?,
@@ -2012,6 +2104,9 @@ fn row_to_source(row: &Row) -> std::result::Result<Source, rusqlite::Error> {
         epg_url: row.get("epg_url")?,
         timezone: row.get("timezone")?,
         epg_retention_days: row.get("epg_retention_days")?,
+        output_format: row.get("output_format")?,
+        include_live: row.get("include_live")?,
+        include_vod: row.get("include_vod")?,
     })
 }
 
@@ -2066,7 +2161,8 @@ pub fn get_custom_source(name: String) -> Source {
         password: None,
         source_type: source_type::CUSTOM,
         url: None,
-        url_origin: None,
+        url_2: None,
+        url_3: None,
         use_tvg_id: None,
         user_agent: None,
         max_streams: None,
@@ -2075,6 +2171,9 @@ pub fn get_custom_source(name: String) -> Source {
         epg_url: None,
         timezone: None,
         epg_retention_days: None,
+        output_format: None,
+        include_live: None,
+        include_vod: None,
     }
 }
 
@@ -2342,6 +2441,7 @@ fn row_to_custom_channel(row: &Row) -> Result<CustomChannel, rusqlite::Error> {
             episode_num: None,
             hidden: Some(false),
             is_adult: false,
+            rating: None,
         },
         headers: Some(ChannelHttpHeaders {
             http_origin: row.get("http_origin")?,
@@ -2405,18 +2505,23 @@ pub fn update_source(source: Source) -> Result<()> {
     sql.execute(
         r#"
         UPDATE sources
-        SET username = ?, password = ?, url = ?, use_tvg_id = ?, user_agent = ?, max_streams = ?, stream_user_agent = ?, epg_url = ?, epg_retention_days = ?
+        SET username = ?, password = ?, url = ?, url_2 = ?, url_3 = ?, use_tvg_id = ?, user_agent = ?, max_streams = ?, stream_user_agent = ?, epg_url = ?, epg_retention_days = ?, output_format = ?, include_live = ?, include_vod = ?
         WHERE id = ?"#,
         params![
             source.username,
             source.password,
             source.url,
+            source.url_2,
+            source.url_3,
             source.use_tvg_id,
             source.user_agent,
             source.max_streams,
             source.stream_user_agent,
             source.epg_url,
             source.epg_retention_days,
+            source.output_format,
+            source.include_live,
+            source.include_vod,
             source.id
         ],
     )?;
@@ -2758,4 +2863,50 @@ pub fn update_source_last_updated(source_id: i64) -> Result<()> {
         params![chrono::Utc::now().timestamp(), source_id],
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backup_urls_migration_keeps_xtream_servers_and_paths() {
+        let db = rusqlite::Connection::open_in_memory().unwrap();
+        db.execute_batch(
+            r#"
+            CREATE TABLE sources (id INTEGER PRIMARY KEY, source_type INTEGER, url TEXT);
+            CREATE TABLE channels (id INTEGER PRIMARY KEY, source_id INTEGER, url TEXT);
+            INSERT INTO sources VALUES
+              (1, 2, 'http://panel.example:8080/player_api.php'),
+              (2, 2, 'https://panel.example'),
+              (3, 1, 'http://lists.example/get.php?type=m3u');
+            INSERT INTO channels VALUES
+              (1, 1, 'http://panel.example:8080/live/u/p/1.ts'),
+              (2, 1, '12345'),
+              (3, 3, 'http://cdn.example/live/1.ts');
+            "#,
+        )
+        .unwrap();
+        db.execute_batch(BACKUP_URLS_MIGRATION).unwrap();
+        let column = |sql: &str| -> Vec<String> {
+            db.prepare(sql)
+                .unwrap()
+                .query_map([], |row| row.get(0))
+                .unwrap()
+                .map(Result::unwrap)
+                .collect()
+        };
+        assert_eq!(
+            column("SELECT url FROM sources ORDER BY id"),
+            [
+                "http://panel.example:8080",
+                "https://panel.example",
+                "http://lists.example/get.php?type=m3u",
+            ]
+        );
+        assert_eq!(
+            column("SELECT url FROM channels ORDER BY id"),
+            ["/live/u/p/1.ts", "12345", "http://cdn.example/live/1.ts"]
+        );
+    }
 }

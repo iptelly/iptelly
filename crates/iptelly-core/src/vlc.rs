@@ -24,14 +24,19 @@ static VLC_PATH: LazyLock<String> = LazyLock::new(|| get_bin(VLC_BIN_NAME));
 // mpv::play: no record/record_path params.
 pub async fn play(channel: Channel, state: &Mutex<AppState>) -> Result<()> {
     let source = playback::get_source(&channel);
-    let args = get_play_args(&channel, &source)?;
+    let server = playback::stream_server(&source).await?;
+    let args = get_play_args(&channel, &source, server.as_deref())?;
     external_player::run(&VLC_PATH, args, &channel, &source, state).await
 }
 
-fn get_play_args(channel: &Channel, source: &Option<Source>) -> Result<Vec<String>> {
+fn get_play_args(
+    channel: &Channel,
+    source: &Option<Source>,
+    server: Option<&str>,
+) -> Result<Vec<String>> {
     let mut args = Vec::new();
     let settings = get_settings()?;
-    let request = playback::build(channel, source, &settings)?;
+    let request = playback::build(channel, source, &settings, server)?;
     args.push(ARG_PLAY_AND_EXIT.to_string());
     args.push(format!("{ARG_TITLE}{}", request.title));
     if !request.stream_caching {
@@ -138,7 +143,7 @@ mod tests {
             test_db::channel("Evil", "--extraintf=lua", media_type::LIVESTREAM),
             None,
         );
-        let args = get_play_args(&channel, &None).unwrap();
+        let args = get_play_args(&channel, &None, None).unwrap();
         assert_eq!(&args[args.len() - 2..], ["--", "--extraintf=lua"]);
         assert!(options(&args).contains(&"--no-audio".to_string()));
     }
@@ -148,7 +153,7 @@ mod tests {
         let _db = test_db::lock();
         let channel = livestream("vlc livestream defaults");
         assert_eq!(
-            get_play_args(&channel, &None).unwrap(),
+            get_play_args(&channel, &None, None).unwrap(),
             [
                 ARG_PLAY_AND_EXIT,
                 "--meta-title=News",
@@ -170,7 +175,7 @@ mod tests {
             None,
         );
         assert!(
-            !get_play_args(&channel, &None)
+            !get_play_args(&channel, &None, None)
                 .unwrap()
                 .contains(&"--loop".to_string())
         );
@@ -183,7 +188,7 @@ mod tests {
         test_db::set_setting(settings::USE_STREAM_CACHING, "false");
         test_db::set_setting(settings::VOLUME, "50");
         let channel = livestream("vlc settings");
-        let args = get_play_args(&channel, &None).unwrap();
+        let args = get_play_args(&channel, &None, None).unwrap();
         let options = options(&args);
         assert!(!options.contains(&ARG_HWDEC_ON.to_string()));
         for expected in [ARG_HWDEC_OFF, "--network-caching=300", "--gain=0.5"] {
@@ -202,7 +207,7 @@ mod tests {
             r#"--sub-file="/tmp/my subs.srt" --no-audio"#,
         );
         let channel = livestream("vlc params");
-        let args = get_play_args(&channel, &None).unwrap();
+        let args = get_play_args(&channel, &None, None).unwrap();
         let options = options(&args);
         assert_eq!(
             &options[options.len() - 2..],
@@ -229,7 +234,7 @@ mod tests {
         let second = episode(2);
         let _third = episode(3);
 
-        let args = get_play_args(&second, &None).unwrap();
+        let args = get_play_args(&second, &None, None).unwrap();
         let after_separator = &args[options(&args).len() + 1..];
         assert_eq!(
             after_separator,
