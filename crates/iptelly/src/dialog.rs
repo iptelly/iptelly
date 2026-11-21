@@ -12,8 +12,6 @@ type Handler = Rc<dyn Fn(&AppWindow, String)>;
 
 thread_local! {
     static HANDLER: RefCell<Option<Handler>> = const { RefCell::new(None) };
-    // Run when the dialog is cancelled (only set by `choose`).
-    static CANCEL_HANDLER: RefCell<Option<Handler>> = const { RefCell::new(None) };
 }
 
 pub fn setup(window: &AppWindow) {
@@ -42,11 +40,7 @@ pub fn setup(window: &AppWindow) {
     let weak = window.as_weak();
     state.on_cancelled(move || {
         if let Some(window) = weak.upgrade() {
-            let cancel = CANCEL_HANDLER.with_borrow(|h| h.clone());
             close(&window);
-            if let Some(cancel) = cancel {
-                cancel(&window, String::new());
-            }
         }
     });
 }
@@ -67,24 +61,6 @@ pub fn inform(window: &AppWindow, title: &str, message: &str) {
     open(window, DialogKind::Confirm, title, message, "OK");
     window.global::<DialogState>().set_cancel_label("".into());
     HANDLER.set(Some(Rc::new(|_, _| {})));
-}
-
-/// Two choices, both of which carry on (Escape counts as the second).
-pub fn choose(
-    window: &AppWindow,
-    title: &str,
-    message: &str,
-    first_label: &str,
-    second_label: &str,
-    on_first: impl Fn(&AppWindow) + 'static,
-    on_second: impl Fn(&AppWindow) + 'static,
-) {
-    open(window, DialogKind::Confirm, title, message, first_label);
-    window
-        .global::<DialogState>()
-        .set_cancel_label(second_label.into());
-    HANDLER.set(Some(Rc::new(move |window, _| on_first(window))));
-    CANCEL_HANDLER.set(Some(Rc::new(move |window, _| on_second(window))));
 }
 
 #[cfg(target_os = "linux")]
@@ -141,7 +117,6 @@ pub fn pin_rejected(window: &AppWindow) {
 pub fn close(window: &AppWindow) {
     window.global::<DialogState>().set_kind(DialogKind::None);
     HANDLER.set(None);
-    CANCEL_HANDLER.set(None);
 }
 
 fn open(window: &AppWindow, kind: DialogKind, title: &str, message: &str, confirm_label: &str) {
@@ -150,7 +125,6 @@ fn open(window: &AppWindow, kind: DialogKind, title: &str, message: &str, confir
     state.set_message(message.into());
     state.set_confirm_label(confirm_label.into());
     state.set_cancel_label("Cancel".into());
-    CANCEL_HANDLER.set(None);
     state.set_pin("".into());
     state.set_pin_error("".into());
     state.set_kind(kind);

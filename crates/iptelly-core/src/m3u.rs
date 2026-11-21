@@ -177,24 +177,30 @@ fn commit_channel(
 
 pub async fn get_m3u8_from_link(source: Source, wipe: bool) -> Result<()> {
     let user_agent = get_user_agent_from_source(&source)?;
-    let client = crate::utils::new_http_client(&user_agent)?;
-    let url = source.url.clone().context("Invalid source")?;
-    let mut response = client.get(&url).send().await?;
+    let client = &crate::utils::new_http_client(&user_agent)?;
+    let path = &get_tmp_path()?;
+    // Each of the source's links in turn, until one downloads.
+    crate::failover::first_working(source.id, source.urls(), |url| async move {
+        download_playlist(client, &url, path).await
+    })
+    .await?;
+    read_m3u8(source, wipe)
+}
+
+async fn download_playlist(client: &reqwest::Client, url: &str, path: &str) -> Result<()> {
+    log::log_url("Downloading playlist", url);
+    let mut response = client.get(url).send().await?;
     if !response.status().is_success() {
-        log::log(format!(
-            "Failed to get m3u8 from link, status: {}",
-            response.status()
-        ));
         bail!(
             "Failed to get m3u8 from link, status: {}",
             response.status()
         );
     }
-    let mut file = std::fs::File::create(get_tmp_path()?)?;
+    let mut file = std::fs::File::create(path)?;
     while let Some(chunk) = response.chunk().await? {
         file.write_all(&chunk)?;
     }
-    read_m3u8(source, wipe)
+    Ok(())
 }
 
 fn get_tmp_path() -> Result<String> {

@@ -2,6 +2,7 @@
 
 # Compiled output
 /target/
+/.flatpak-builder/
 
 # Local machine-specific cargo flags (e.g. AVX2) - never committed, since
 # CI and other contributors' machines may not support them.

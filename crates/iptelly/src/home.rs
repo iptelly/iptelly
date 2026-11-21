@@ -243,16 +243,20 @@ pub fn setup(window: &AppWindow) {
         );
     });
 
-    let weak = window.as_weak();
     state.on_tile_copy_url(move |index| {
-        let Some(window) = weak.upgrade() else { return };
-        let Some(url) = channel_at(index as usize).and_then(|c| c.url) else {
+        let Some(channel) = channel_at(index as usize).filter(|c| c.url.is_some()) else {
             return;
         };
-        match crate::copy_to_clipboard(url) {
-            Ok(()) => crate::show_toast(&window, "Copied channel URL"),
-            Err(e) => crate::show_error(&window, &e.context("Failed to copy the URL")),
-        }
+        // Xtream channels keep only their path; this adds the server.
+        crate::spawn(
+            iptelly_core::playback::resolve(channel),
+            |window, result| match result
+                .and_then(|channel| crate::copy_to_clipboard(channel.url.unwrap_or_default()))
+            {
+                Ok(()) => crate::show_toast(window, "Copied channel URL"),
+                Err(e) => crate::show_error(window, &e.context("Failed to copy the URL")),
+            },
+        );
     });
 
     let weak = window.as_weak();

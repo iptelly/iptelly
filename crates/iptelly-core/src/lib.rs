@@ -9,6 +9,7 @@ pub mod downloads;
 pub mod epg;
 pub mod events;
 pub mod external_player;
+pub mod failover;
 pub mod log;
 pub mod m3u;
 pub mod media_type;

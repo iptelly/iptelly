@@ -7,23 +7,22 @@ authors = ["jeffsmith82"]
 homepage = "https://github.com/iptelly/iptelly"
 repository = "https://github.com/iptelly/iptelly"
 edition = "2024"
-rust-version = "1.91.1"
+rust-version = "1.95"
 license = ""
 
 [dependencies]
 iptelly-core = { path = "../iptelly-core" }
 # unstable-winit-030: the monitor list and focusing the window (window_state.rs,
 # instance.rs).
-slint = { version = "1.18", features = ["unstable-winit-030"] }
+slint = { version = "1.19", features = ["unstable-winit-030"] }
 tokio = { version = "1", features = ["full"] }
 anyhow = "1.0"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
 sha2 = "0.11.0"
 directories = "6.0.0"
 chrono = "0.4"
-# File dialogs on Linux go through the XDG desktop portal, on tokio since
-# the dialogs are opened from tasks on the app's tokio runtime.
-rfd = { version = "0.16", default-features = false, features = ["xdg-portal", "wayland", "tokio"] }
+# File dialogs on Linux go through the XDG desktop portal.
+rfd = { version = "0.18", default-features = false, features = ["xdg-portal", "wayland"] }
 arboard = { version = "3.6", features = ["wayland-data-control"] }
 notify-rust = "4.18"
 serde = { version = "1.0", features = ["derive"] }
@@ -32,7 +31,7 @@ serde_json = "1.0"
 # Linux has no tray icon (see tray.rs), and tray-icon would pull in GTK and
 # libappindicator there.
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
-tray-icon = "0.25"
+tray-icon = "0.26"
 
 # mallopt, to stop glibc's per-thread arenas hoarding image decode buffers
 # (see main.rs).
@@ -41,10 +40,10 @@ libc = "0.2"
 
 [dev-dependencies]
 # Runs the UI headless in tests (testing.rs). Its version must match slint's.
-i-slint-backend-testing = "=1.18.1"
+i-slint-backend-testing = "=1.19.0"
 
 [build-dependencies]
-slint-build = "1.18"
+slint-build = "1.19"
 # The .exe's icon (build.rs).
 embed-resource = "3.0"
 

@@ -28,7 +28,7 @@ pub async fn run(
             .map_err(|e| log::log(format!("{:?}", e)));
     }
 
-    let mut cmd = Command::new(bin_path)
+    let mut cmd = Command::from(crate::utils::host_command(bin_path))
         .args(args)
         .stdout(Stdio::piped())
         .kill_on_drop(true)
@@ -81,7 +81,10 @@ pub async fn run(
             }
         },
         _ = token.cancelled() => {
-            cmd.kill().await?;
+            if !crate::utils::is_flatpak() || !crate::utils::terminate(cmd.id()) {
+                cmd.kill().await?;
+            }
+            cmd.wait().await?;
             Ok(())
         }
     };

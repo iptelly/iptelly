@@ -175,6 +175,26 @@ pub fn create_or_initialize_db() -> Result<()> {
     Ok(())
 }
 
+// Up to two backup URLs per source, tried when the first doesn't answer. An
+// Xtream source now keeps just its server ("http://host:port", the API path
+// is added when it's called) and its channels just their path
+// ("/live/user/pass/1.ts"), so they can play from whichever server is
+// working. Series rows keep their series id, which has no "://".
+const BACKUP_URLS_MIGRATION: &str = r#"
+  ALTER TABLE sources ADD COLUMN url_2 TEXT;
+  ALTER TABLE sources ADD COLUMN url_3 TEXT;
+  UPDATE sources
+  SET url = substr(url, 1, instr(url, '://') + 1 + instr(substr(url, instr(url, '://') + 3), '/'))
+  WHERE source_type = 2
+    AND instr(url, '://') > 0
+    AND instr(substr(url, instr(url, '://') + 3), '/') > 0;
+  UPDATE channels
+  SET url = substr(url, instr(url, '://') + 2 + instr(substr(url, instr(url, '://') + 3), '/'))
+  WHERE source_id IN (SELECT id FROM sources WHERE source_type = 2)
+    AND instr(url, '://') > 0
+    AND instr(substr(url, instr(url, '://') + 3), '/') > 0;
+"#;
+
 fn apply_migrations() -> Result<()> {
     let mut sql = get_conn()?;
     let migrations = Migrations::new(vec![
@@ -457,6 +477,7 @@ fn apply_migrations() -> Result<()> {
               ALTER TABLE sources ADD COLUMN include_vod INTEGER;
             "#,
         ),
+        M::up(BACKUP_URLS_MIGRATION),
     ]);
     // foreign_keys can't be toggled from inside a migration itself (each
     // one already runs inside its own transaction, where SQLite silently
@@ -489,8 +510,8 @@ pub fn create_or_find_source_by_name(tx: &Transaction, source: &Source) -> Resul
         return Ok(id);
     }
     tx.execute(
-    "INSERT INTO sources (name, source_type, url, username, password, use_tvg_id, user_agent, max_streams, last_updated, epg_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    params![source.name, source.source_type.clone() as u8, source.url, source.username, source.password, source.use_tvg_id, source.user_agent, source.max_streams, chrono::Utc::now().timestamp(), source.epg_url],
+    "INSERT INTO sources (name, source_type, url, url_2, url_3, username, password, use_tvg_id, user_agent, max_streams, last_updated, epg_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    params![source.name, source.source_type.clone() as u8, source.url, source.url_2, source.url_3, source.username, source.password, source.use_tvg_id, source.user_agent, source.max_streams, chrono::Utc::now().timestamp(), source.epg_url],
     )?;
     Ok(tx.last_insert_rowid())
 }
@@ -517,13 +538,15 @@ pub fn import_source_full(tx: &Transaction, source: &Source) -> Result<i64> {
     tx.execute(
         r#"
         INSERT INTO sources
-          (name, source_type, url, username, password, enabled, use_tvg_id, user_agent, max_streams, stream_user_agent, last_updated, epg_url, timezone, epg_retention_days, output_format, include_live, include_vod)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (name, source_type, url, url_2, url_3, username, password, enabled, use_tvg_id, user_agent, max_streams, stream_user_agent, last_updated, epg_url, timezone, epg_retention_days, output_format, include_live, include_vod)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
         params![
             source.name,
             source.source_type,
             source.url,
+            source.url_2,
+            source.url_3,
             source.username,
             source.password,
             source.enabled,
@@ -2069,8 +2092,9 @@ fn row_to_source(row: &Row) -> std::result::Result<Source, rusqlite::Error> {
         username: row.get("username")?,
         password: row.get("password")?,
         url: row.get("url")?,
+        url_2: row.get("url_2")?,
+        url_3: row.get("url_3")?,
         source_type: row.get("source_type")?,
-        url_origin: None,
         enabled: row.get("enabled")?,
         use_tvg_id: row.get("use_tvg_id")?,
         user_agent: row.get("user_agent")?,
@@ -2137,7 +2161,8 @@ pub fn get_custom_source(name: String) -> Source {
         password: None,
         source_type: source_type::CUSTOM,
         url: None,
-        url_origin: None,
+        url_2: None,
+        url_3: None,
         use_tvg_id: None,
         user_agent: None,
         max_streams: None,
@@ -2480,12 +2505,14 @@ pub fn update_source(source: Source) -> Result<()> {
     sql.execute(
         r#"
         UPDATE sources
-        SET username = ?, password = ?, url = ?, use_tvg_id = ?, user_agent = ?, max_streams = ?, stream_user_agent = ?, epg_url = ?, epg_retention_days = ?, output_format = ?, include_live = ?, include_vod = ?
+        SET username = ?, password = ?, url = ?, url_2 = ?, url_3 = ?, use_tvg_id = ?, user_agent = ?, max_streams = ?, stream_user_agent = ?, epg_url = ?, epg_retention_days = ?, output_format = ?, include_live = ?, include_vod = ?
         WHERE id = ?"#,
         params![
             source.username,
             source.password,
             source.url,
+            source.url_2,
+            source.url_3,
             source.use_tvg_id,
             source.user_agent,
             source.max_streams,
@@ -2836,4 +2863,50 @@ pub fn update_source_last_updated(source_id: i64) -> Result<()> {
         params![chrono::Utc::now().timestamp(), source_id],
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backup_urls_migration_keeps_xtream_servers_and_paths() {
+        let db = rusqlite::Connection::open_in_memory().unwrap();
+        db.execute_batch(
+            r#"
+            CREATE TABLE sources (id INTEGER PRIMARY KEY, source_type INTEGER, url TEXT);
+            CREATE TABLE channels (id INTEGER PRIMARY KEY, source_id INTEGER, url TEXT);
+            INSERT INTO sources VALUES
+              (1, 2, 'http://panel.example:8080/player_api.php'),
+              (2, 2, 'https://panel.example'),
+              (3, 1, 'http://lists.example/get.php?type=m3u');
+            INSERT INTO channels VALUES
+              (1, 1, 'http://panel.example:8080/live/u/p/1.ts'),
+              (2, 1, '12345'),
+              (3, 3, 'http://cdn.example/live/1.ts');
+            "#,
+        )
+        .unwrap();
+        db.execute_batch(BACKUP_URLS_MIGRATION).unwrap();
+        let column = |sql: &str| -> Vec<String> {
+            db.prepare(sql)
+                .unwrap()
+                .query_map([], |row| row.get(0))
+                .unwrap()
+                .map(Result::unwrap)
+                .collect()
+        };
+        assert_eq!(
+            column("SELECT url FROM sources ORDER BY id"),
+            [
+                "http://panel.example:8080",
+                "https://panel.example",
+                "http://lists.example/get.php?type=m3u",
+            ]
+        );
+        assert_eq!(
+            column("SELECT url FROM channels ORDER BY id"),
+            ["/live/u/p/1.ts", "12345", "http://cdn.example/live/1.ts"]
+        );
+    }
 }

@@ -115,6 +115,16 @@ export component SetupView inherits Rectangle {
                 LineEdit { text <=> SetupState.url; }
             }
 
+            if type == 1 || type == 2: Field {
+                label: "Backup URL 1 (optional, used when the URL doesn't work)";
+                LineEdit { text <=> SetupState.url-2; }
+            }
+
+            if type == 1 || type == 2: Field {
+                label: "Backup URL 2 (optional)";
+                LineEdit { text <=> SetupState.url-3; }
+            }
+
             if type == 2: Field {
                 label: "Username";
                 LineEdit { text <=> SetupState.username; }

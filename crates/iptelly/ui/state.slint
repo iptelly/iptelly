@@ -198,6 +198,9 @@ export struct SourceItem {
     source-type: int,
     type-name: string,
     url: string,
+    // Backups for url, for M3U links and Xtream (url-2 = first backup).
+    url-2: string,
+    url-3: string,
     user-agent: string,
     stream-user-agent: string,
     max-streams: string,
@@ -218,7 +221,6 @@ export enum SourceAction {
 }
 
 export global SettingsState {
-    in-out property <bool> is-flatpak;
     // The tray icon only exists on Windows and macOS.
     in-out property <bool> has-tray;
 
@@ -256,6 +258,8 @@ export global SettingsState {
     // Index of the source being edited, or -1. Its fields are in edit-*.
     in-out property <int> editing: -1;
     in-out property <string> edit-url;
+    in-out property <string> edit-url-2;
+    in-out property <string> edit-url-3;
     in-out property <string> edit-user-agent;
     in-out property <string> edit-stream-user-agent;
     in-out property <string> edit-max-streams;
@@ -455,6 +459,9 @@ export global SetupState {
     in-out property <int> source-type: 0;
     in-out property <string> name;
     in-out property <string> url;
+    // Backups for url, tried in order when it doesn't answer.
+    in-out property <string> url-2;
+    in-out property <string> url-3;
     in-out property <string> user-agent;
     in-out property <string> epg-url;
     in-out property <string> username;

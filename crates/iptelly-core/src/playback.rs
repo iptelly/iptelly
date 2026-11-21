@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::settings::get_settings;
 use crate::types::{Channel, ChannelHttpHeaders, Settings, Source};
-use crate::{media_type, sql};
+use crate::{media_type, source_type, sql, xtream};
 
 #[derive(Clone, PartialEq, Debug, Default, Deserialize, Serialize)]
 pub struct PlayRequest {
@@ -35,8 +35,10 @@ pub struct PlayRequest {
 }
 
 /// How to play `channel`, for an app that plays it itself.
-pub fn request(channel: &Channel) -> Result<PlayRequest> {
-    build(channel, &get_source(channel), &get_settings()?)
+pub async fn request(channel: &Channel) -> Result<PlayRequest> {
+    let source = get_source(channel);
+    let server = stream_server(&source).await?;
+    build(channel, &source, &get_settings()?, server.as_deref())
 }
 
 pub(crate) fn get_source(channel: &Channel) -> Option<Source> {
@@ -47,16 +49,47 @@ pub(crate) fn get_source(channel: &Channel) -> Option<Source> {
     })
 }
 
+/// The server an Xtream source's channels play from, which is whichever of
+/// its servers is working. Other sources' channels keep their whole URL.
+pub async fn stream_server(source: &Option<Source>) -> Result<Option<String>> {
+    match source {
+        Some(source) if source.source_type == source_type::XTREAM => {
+            Ok(Some(xtream::stream_server(source).await?))
+        }
+        _ => Ok(None),
+    }
+}
+
+/// A channel URL as stored, ready to open: Xtream channels keep only the
+/// path ("/live/user/pass/1.ts"), so it goes on `server`.
+pub fn full_url(url: &str, server: Option<&str>) -> String {
+    match server {
+        Some(server) if url.starts_with('/') => format!("{server}{url}"),
+        _ => url.to_string(),
+    }
+}
+
+/// `channel` with its URL ready to open, for anything that hands it to
+/// another program or the clipboard.
+pub async fn resolve(mut channel: Channel) -> Result<Channel> {
+    let server = stream_server(&get_source(&channel)).await?;
+    channel.url = channel.url.map(|url| full_url(&url, server.as_deref()));
+    Ok(channel)
+}
+
 pub(crate) fn build(
     channel: &Channel,
     source: &Option<Source>,
     settings: &Settings,
+    server: Option<&str>,
 ) -> Result<PlayRequest> {
     let headers = sql::get_channel_headers_by_id(channel.id.context("no channel id?")?)?;
     let mut urls = vec![channel.url.clone().context("no url")?];
     if channel.episode_num.is_some() {
         urls.extend(sql::find_all_episodes_after(channel)?);
     }
+    let urls: Vec<String> = urls.iter().map(|url| full_url(url, server)).collect();
+    crate::log::log_url("Playing", &urls[0]);
     // Catch-up/timeshift streams commonly don't start exactly on a clean
     // keyframe boundary (the server seeks into an already-recorded
     // segment), which hardware decoding tends to choke on - confirmed via
@@ -112,6 +145,22 @@ mod tests {
     }
 
     #[test]
+    fn xtream_paths_go_on_the_server() {
+        assert_eq!(
+            full_url("/live/u/p/1.ts", Some("http://backup.example:8080")),
+            "http://backup.example:8080/live/u/p/1.ts"
+        );
+    }
+
+    #[test]
+    fn whole_urls_are_left_alone() {
+        let url = "http://example.com/live/1.ts";
+        assert_eq!(full_url(url, Some("http://backup.example")), url);
+        // A local file in an M3U source has no server.
+        assert_eq!(full_url("/home/me/video.mp4", None), "/home/me/video.mp4");
+    }
+
+    #[test]
     fn no_headers_without_channel_headers_or_a_source() {
         assert_eq!(with_headers(None, &None), PlayRequest::default());
     }
@@ -153,8 +202,8 @@ mod tests {
         assert!(request.ignore_ssl);
     }
 
-    #[test]
-    fn describes_a_livestream_with_default_settings() {
+    #[tokio::test]
+    async fn describes_a_livestream_with_default_settings() {
         let _db = test_db::lock();
         let source = test_db::add_source("playback livestream");
         let channel = test_db::add_channel(
@@ -167,7 +216,7 @@ mod tests {
             None,
         );
         assert_eq!(
-            request(&channel).unwrap(),
+            request(&channel).await.unwrap(),
             PlayRequest {
                 title: "News".to_string(),
                 urls: vec!["http://example.com/live/1.ts".to_string()],
@@ -180,8 +229,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn movies_save_their_position() {
+    #[tokio::test]
+    async fn movies_save_their_position() {
         let _db = test_db::lock();
         let source = test_db::add_source("playback movie");
         let channel = test_db::add_channel(
@@ -189,13 +238,13 @@ mod tests {
             test_db::channel("Film", "http://example.com/movie/1.mkv", media_type::MOVIE),
             None,
         );
-        let request = request(&channel).unwrap();
+        let request = request(&channel).await.unwrap();
         assert!(request.save_position && request.resume);
         assert!(!request.live);
     }
 
-    #[test]
-    fn applies_playback_settings() {
+    #[tokio::test]
+    async fn applies_playback_settings() {
         let _db = test_db::lock();
         test_db::set_setting(settings::ENABLE_HWDEC, "false");
         test_db::set_setting(settings::USE_STREAM_CACHING, "false");
@@ -210,7 +259,7 @@ mod tests {
             ),
             None,
         );
-        let request = request(&channel).unwrap();
+        let request = request(&channel).await.unwrap();
         assert!(!request.hardware_decoding);
         assert!(!request.stream_caching);
         assert_eq!(request.volume, Some(50));

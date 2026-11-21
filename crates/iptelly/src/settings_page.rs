@@ -38,7 +38,6 @@ fn with_page<R>(f: impl FnOnce(&mut Page) -> R) -> R {
 
 pub fn setup(window: &AppWindow) {
     let state = window.global::<SettingsState>();
-    state.set_is_flatpak(utils::is_flatpak());
     state.set_has_tray(cfg!(any(target_os = "macos", target_os = "windows")));
 
     let weak = window.as_weak();
@@ -380,16 +379,14 @@ fn save(window: &AppWindow) {
         }
         .into(),
     );
-    if !state.get_is_flatpak() {
-        s.player = Some(
-            if state.get_player() == 1 {
-                "vlc"
-            } else {
-                "mpv"
-            }
-            .into(),
-        );
-    }
+    s.player = Some(
+        if state.get_player() == 1 {
+            "vlc"
+        } else {
+            "mpv"
+        }
+        .into(),
+    );
     s.default_view = Some(state.get_default_view() as u8);
     s.default_sort = Some(state.get_default_sort() as u8);
     s.volume = Some(state.get_volume().clamp(0, 100) as u8);
@@ -534,6 +531,8 @@ fn refresh_tiles(window: &AppWindow) {
                     source_type: s.source_type as i32,
                     type_name: type_name(s.source_type).into(),
                     url: s.url.clone().unwrap_or_default().into(),
+                    url_2: s.url_2.clone().unwrap_or_default().into(),
+                    url_3: s.url_3.clone().unwrap_or_default().into(),
                     user_agent: s.user_agent.clone().unwrap_or_default().into(),
                     stream_user_agent: s.stream_user_agent.clone().unwrap_or_default().into(),
                     max_streams: s
@@ -682,6 +681,8 @@ fn source_action(window: &AppWindow, index: usize, action: SourceAction) {
         }
         SourceAction::Edit => {
             state.set_edit_url(source.url.clone().unwrap_or_default().into());
+            state.set_edit_url_2(source.url_2.clone().unwrap_or_default().into());
+            state.set_edit_url_3(source.url_3.clone().unwrap_or_default().into());
             state.set_edit_user_agent(source.user_agent.clone().unwrap_or_default().into());
             state.set_edit_stream_user_agent(
                 source.stream_user_agent.clone().unwrap_or_default().into(),
@@ -718,12 +719,20 @@ fn source_action(window: &AppWindow, index: usize, action: SourceAction) {
         SourceAction::Save => {
             let mut edited = source.clone();
             edited.url = optional(&state.get_edit_url());
+            if matches!(
+                source.source_type,
+                source_type::M3U_LINK | source_type::XTREAM
+            ) {
+                edited.url_2 = optional(&state.get_edit_url_2());
+                edited.url_3 = optional(&state.get_edit_url_3());
+            }
             edited.user_agent = optional(&state.get_edit_user_agent());
             edited.stream_user_agent = optional(&state.get_edit_stream_user_agent());
             edited.max_streams = state.get_edit_max_streams().trim().parse().ok();
             if source.source_type == source_type::XTREAM {
                 edited.username = optional(&state.get_edit_username());
                 edited.password = optional(&state.get_edit_password());
+                crate::setup::tidy_servers(&mut edited);
             }
             edited.epg_url = optional(&state.get_edit_epg_url());
             edited.epg_retention_days = state

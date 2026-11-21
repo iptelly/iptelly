@@ -90,10 +90,15 @@ pub struct Source {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<i64>,
     pub name: String,
+    // An M3U URL source's playlist link, or an Xtream source's server
+    // ("http://host:port").
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
+    // Backups for url, tried in order when it doesn't answer (see urls()).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub url_origin: Option<String>,
+    pub url_2: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url_3: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub username: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -122,6 +127,19 @@ pub struct Source {
     pub include_live: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub include_vod: Option<bool>,
+}
+
+impl Source {
+    /// The source's URLs in the order they're tried, blank ones left out.
+    pub fn urls(&self) -> Vec<String> {
+        [&self.url, &self.url_2, &self.url_3]
+            .into_iter()
+            .flatten()
+            .map(|url| url.trim())
+            .filter(|url| !url.is_empty())
+            .map(str::to_string)
+            .collect()
+    }
 }
 
 // An Xtream account's expiry (a Unix time; None for one that doesn't

@@ -66,6 +66,7 @@ async fn download(source: &Source, url: &str) -> Result<String> {
     let user_agent = get_user_agent_from_source(source)?;
     let client = crate::utils::new_http_client(&user_agent)?;
     let fetch_start = std::time::Instant::now();
+    crate::log::log_url("Downloading EPG", url);
     let mut response = client.get(url).send().await?;
     if !response.status().is_success() {
         bail!("Failed to fetch EPG, status: {}", response.status());

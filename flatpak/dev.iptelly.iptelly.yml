@@ -1,0 +1,65 @@
+# Local Flatpak build of IPTelly. mpv, VLC, ffmpeg and yt-dlp aren't
+# bundled: IPTelly runs the host's through flatpak-spawn (see
+# utils::host_command), which needs the org.freedesktop.Flatpak permission.
+#
+#   flatpak-builder --user --install --force-clean \
+#     --state-dir=.flatpak-builder .flatpak-builder/build-dir \
+#     flatpak/dev.iptelly.iptelly.yml
+#
+# Cargo downloads crates during the build (build-args below), which is fine
+# for a local build but not accepted by Flathub.
+id: dev.iptelly.iptelly
+runtime: org.freedesktop.Platform
+runtime-version: '26.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: iptelly
+
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=pulseaudio
+  - --device=dri
+  # Recordings and downloads.
+  - --filesystem=xdg-videos
+  - --filesystem=xdg-download
+  - --talk-name=org.freedesktop.Notifications
+  # Running the host's mpv, VLC, ffmpeg and yt-dlp.
+  - --talk-name=org.freedesktop.Flatpak
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  build-args:
+    - --share=network
+  env:
+    CARGO_HOME: /run/build/iptelly/cargo
+
+modules:
+  - name: iptelly
+    buildsystem: simple
+    build-commands:
+      - cargo build --release --locked -p iptelly
+      - install -Dm755 target/release/iptelly /app/bin/iptelly
+      - install -Dm644 flatpak/iptelly.desktop /app/share/applications/dev.iptelly.iptelly.desktop
+      - install -Dm644 flatpak/dev.iptelly.iptelly.metainfo.xml /app/share/metainfo/dev.iptelly.iptelly.metainfo.xml
+      - install -Dm644 crates/iptelly/icons/32x32.png /app/share/icons/hicolor/32x32/apps/dev.iptelly.iptelly.png
+      - install -Dm644 crates/iptelly/icons/128x128.png /app/share/icons/hicolor/128x128/apps/dev.iptelly.iptelly.png
+      - install -Dm644 crates/iptelly/icons/256x256.png /app/share/icons/hicolor/256x256/apps/dev.iptelly.iptelly.png
+      - install -Dm644 crates/iptelly/icons/icon.png /app/share/icons/hicolor/512x512/apps/dev.iptelly.iptelly.png
+      - install -Dm644 crates/iptelly/icons/icon.svg /app/share/icons/hicolor/scalable/apps/dev.iptelly.iptelly.svg
+    # Only what the build needs, not the whole checkout (target/ alone is
+    # many gigabytes).
+    sources:
+      - type: file
+        path: ../Cargo.toml
+      - type: file
+        path: ../Cargo.lock
+      - type: dir
+        path: ../crates
+        dest: crates
+      - type: dir
+        path: .
+        dest: flatpak

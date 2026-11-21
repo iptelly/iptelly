@@ -1,6 +1,6 @@
 use std::{
     path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
+    process::{Child, Stdio},
     time::Duration,
 };
 
@@ -22,7 +22,7 @@ use crate::{
     settings::get_settings,
     sql,
     types::{AppState, Channel, CustomChannel, NetworkInfo},
-    utils::{get_bin, serialize_to_file},
+    utils::serialize_to_file,
 };
 
 const WAN_IP_API: &str = "https://api.ipify.org";
@@ -38,7 +38,7 @@ fn start_ffmpeg_listening(channel: Channel, restream_dir: PathBuf) -> Result<Chi
         .and_then(|id| sql::get_source_from_id(id).ok());
     let settings = get_settings()?;
     let playlist_dir = get_playlist_dir(restream_dir);
-    let mut command = Command::new(get_bin(FFMPEG_BIN_NAME));
+    let mut command = crate::utils::host_command(FFMPEG_BIN_NAME);
     // Only errors, so the pipe read when ffmpeg exits (see
     // ffmpeg_failure) can't fill up and stall it while it runs.
     command.args(["-hide_banner", "-nostats", "-loglevel", "error"]);
@@ -82,7 +82,11 @@ fn start_ffmpeg_listening(channel: Channel, restream_dir: PathBuf) -> Result<Chi
     command.creation_flags(CREATE_NO_WINDOW);
     let child = command
         .arg("-i")
-        .arg(channel.url.context("no channel url")?)
+        .arg({
+            let url = channel.url.context("no channel url")?;
+            crate::log::log_url("Re-streaming", &url);
+            url
+        })
         .args([
             "-c",
             "copy",
@@ -123,11 +127,14 @@ async fn start_web_server(
 ) -> Result<(Sender<bool>, tokio::task::JoinHandle<()>)> {
     let file_server = warp::fs::dir(restream_dir);
     let (tx, rx) = oneshot::channel::<bool>();
-    let (_, server) =
-        warp::serve(file_server).bind_with_graceful_shutdown(([0, 0, 0, 0], port), async {
-            rx.await.ok();
-        });
-    let handle = tokio::spawn(server);
+    // Bound here rather than by warp, which panics when the port is taken.
+    let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::UNSPECIFIED, port))
+        .await
+        .with_context(|| format!("Couldn't listen on port {port}"))?;
+    let server = warp::serve(file_server).incoming(listener).graceful(async {
+        rx.await.ok();
+    });
+    let handle = tokio::spawn(server.run());
     return Ok((tx, handle));
 }
 
@@ -142,6 +149,7 @@ pub async fn start_restream(
     let restream_dir = get_restream_folder()?;
     delete_old_segments(&restream_dir).await?;
     let playlist = PathBuf::from(get_playlist_dir(restream_dir.clone()));
+    let channel = crate::playback::resolve(channel).await?;
     let mut ffmpeg_child = start_ffmpeg_listening(channel, restream_dir.clone())?;
     let (web_server_tx, web_server_handle) = start_web_server(restream_dir, port).await?;
 
@@ -169,7 +177,9 @@ pub async fn start_restream(
         }
         tokio::time::sleep(Duration::from_millis(500)).await
     }
-    let _ = ffmpeg_child.kill();
+    if !crate::utils::is_flatpak() || !crate::utils::terminate(Some(ffmpeg_child.id())) {
+        let _ = ffmpeg_child.kill();
+    }
     let _ = web_server_tx.send(true);
     let _ = ffmpeg_child.wait();
     let _ = web_server_handle.await;
