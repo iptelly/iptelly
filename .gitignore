@@ -9,8 +9,26 @@
 /.cargo/config.toml
 /tmp
 
+# Leftovers from the removed TV app
+/apps/
+/packages/
+/node_modules/
+/.yarn/
+
+# Placeholder files that sandboxed tools leave in the checkout
+/.bash_profile
+/.bashrc
+/.gitconfig
+/.profile
+/.ripgreprc
+/.zprofile
+/.zshrc
+/build.xml
+/scripts
+/.mcp.json
+
 # IDEs and editors
-.idea/
+.idea
 .project
 .classpath
 .c9/
@@ -20,7 +38,6 @@
 
 # Visual Studio Code
 .vscode/*
-!.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
